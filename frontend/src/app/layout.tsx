@@ -3,12 +3,13 @@ import { Inter } from "next/font/google";
 import "./globals.css";
 import Header from "@/components/Header";
 import Link from "next/link";
+import ThemeProviderWrapper from "@/theme/ThemeProvider";
 
 const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
-  title: "AI Receptionist",
-  description: "Your AI-powered phone receptionist",
+  title: "AI Receptionist Pro",
+  description: "Premium AI-powered business phone management platform",
 };
 
 export default function RootLayout({
@@ -19,10 +20,12 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <Link href="/">
-          <Header />
-        </Link>
-        {children}
+        <ThemeProviderWrapper>
+          <Link href="/">
+            <Header />
+          </Link>
+          {children}
+        </ThemeProviderWrapper>
       </body>
     </html>
   );

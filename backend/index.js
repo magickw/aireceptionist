@@ -14,6 +14,7 @@ const appointmentRoutes = require('./routes/appointments');
 const callLogRoutes = require('./routes/call_logs');
 const twilioRoutes = require('./routes/twilio');
 const analyticsRoutes = require('./routes/analytics');
+const openRouterTestRoutes = require('./routes/openrouter-test');
 
 app.use(cors());
 app.use(bodyParser.json());
@@ -29,6 +30,7 @@ app.use('/api/appointments', appointmentRoutes);
 app.use('/api/call-logs', callLogRoutes);
 app.use('/twilio', twilioRoutes);
 app.use('/api/analytics', analyticsRoutes);
+app.use('/api/test', openRouterTestRoutes);
 
 app.listen(port, () => {
   console.log(`Server listening on port ${port}`);

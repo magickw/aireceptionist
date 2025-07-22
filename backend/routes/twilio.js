@@ -9,7 +9,12 @@ const crmIntegration = require('../services/crmIntegration');
 const axios = require('axios');
 
 const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
+  apiKey: process.env.OPENROUTER_API_KEY || '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',
+  baseURL: 'https://openrouter.ai/api/v1',
+  defaultHeaders: {
+    'HTTP-Referer': 'http://localhost:3002',
+    'X-Title': 'AI Receptionist Pro',
+  }
 });
 
 // In-memory store for conversation context (for simplicity, replace with a proper database in production)
@@ -70,6 +75,8 @@ router.post('/incoming-call', async (req, res) => {
   res.send(twiml.toString());
 });
 
+// WebSocket stream endpoint - temporarily disabled
+/* 
 router.ws('/stream', (ws, req) => {
   console.log('New WebSocket Connection');
 
@@ -182,8 +189,7 @@ router.ws('/stream', (ws, req) => {
       const fullTranscript = conversations[streamSid].messages
         .filter(msg => msg.role === 'user' || msg.role === 'assistant')
         .map(msg => `${msg.role === 'user' ? 'Caller' : 'AI'}: ${msg.content}`)
-        .join('
-');
+        .join('\n');
 
       // For now, we\'ll use a hardcoded business ID. In a real app, this would come from the call context.
       const businessId = conversations[streamSid].businessId;
@@ -223,6 +229,7 @@ router.ws('/stream', (ws, req) => {
     console.error('WebSocket error:', error);
   });
 });
+*/
 
 router.post('/recording-status', async (req, res) => {
   const { CallSid, RecordingUrl, TranscriptionText, From } = req.body;
