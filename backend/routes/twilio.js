@@ -49,7 +49,9 @@ router.post('/incoming-call', async (req, res) => {
     if (operatingHours && currentHour >= operatingHours.open && currentHour < operatingHours.close) {
       // Within operating hours
       twiml.say('Please wait while I connect you to our AI receptionist.');
-      twiml.connect().stream({ url: `wss://${req.headers.host}/twilio/stream?callSid=${callSid}&businessId=${businessId}&fromNumber=${fromNumber}` });
+      twiml.connect().stream({ 
+      url: `wss://${process.env.WEBSOCKET_HOST || req.headers.host}/twilio/stream?callSid=${callSid}&businessId=${businessId}&fromNumber=${fromNumber}` 
+    });
     } else {
       // Outside operating hours
       twiml.say('Thank you for calling. Our business is currently closed. Please call back during operating hours.');
@@ -58,7 +60,9 @@ router.post('/incoming-call', async (req, res) => {
   } else {
     // No operating hours defined, assume always open or handle as per default policy
     twiml.say('Please wait while I connect you to our AI receptionist.');
-    twiml.connect().stream({ url: `wss://${req.headers.host}/twilio/stream?callSid=${callSid}&businessId=${businessId}&fromNumber=${fromNumber}` });
+    twiml.connect().stream({ 
+      url: `wss://${process.env.WEBSOCKET_HOST || req.headers.host}/twilio/stream?callSid=${callSid}&businessId=${businessId}&fromNumber=${fromNumber}` 
+    });
   }
 
   twiml.record({

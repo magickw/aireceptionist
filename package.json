@@ -1,0 +1,43 @@
+{
+  "name": "ai-receptionist-pro",
+  "version": "2.0.0",
+  "description": "AI-powered business phone management platform with WebSocket, Authentication, and Comprehensive Logging",
+  "private": true,
+  "workspaces": [
+    "frontend",
+    "backend"
+  ],
+  "scripts": {
+    "dev": "echo \"Please run 'cd frontend && npm run dev' and 'cd backend && npm run dev' in separate terminals\"",
+    "dev:frontend": "cd frontend && npm run dev",
+    "dev:backend": "cd backend && npm run dev",
+    "build": "npm run build:frontend",
+    "build:frontend": "cd frontend && npm run build",
+    "start": "echo \"Please run 'cd frontend && npm run start' and 'cd backend && npm run start' in separate terminals\"",
+    "start:frontend": "cd frontend && npm run start",
+    "start:backend": "cd backend && npm run start",
+    "test": "cd backend && npm run test",
+    "test:coverage": "cd backend && npm run test:coverage",
+    "lint": "echo \"Please run 'cd frontend && npm run lint' and 'cd backend && npm run lint' in separate terminals\"",
+    "lint:frontend": "cd frontend && npm run lint",
+    "lint:backend": "cd backend && npm run lint",
+    "install:all": "echo \"Please run 'cd frontend && npm install' and 'cd backend && npm install' in separate terminals\"",
+    "install:frontend": "cd frontend && npm install",
+    "install:backend": "cd backend && npm install"
+  },
+  "keywords": [
+    "ai",
+    "receptionist",
+    "voice",
+    "websocket",
+    "authentication",
+    "twilio",
+    "openrouter"
+  ],
+  "author": "AI Receptionist Team",
+  "license": "MIT",
+  "dependencies": {},
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}
