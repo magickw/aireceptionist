@@ -1,5 +1,4 @@
 {
-  "/ai-training/page": "app/ai-training/page.js",
   "/business-setup/page": "app/business-setup/page.js",
   "/call-management/page": "app/call-management/page.js",
   "/call-simulator/page": "app/call-simulator/page.js",

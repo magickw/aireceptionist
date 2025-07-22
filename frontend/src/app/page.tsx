@@ -329,27 +329,23 @@ export default function Dashboard() {
                       </ListItemAvatar>
                       <ListItemText
                         primary={call.customerPhone}
-                        secondary={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 1 }}>
-                            <Chip
-                              label={call.status.toUpperCase()}
-                              color={getStatusColor(call.status) as any}
-                              size="small"
-                            />
-                            <Typography variant="caption">
-                              {formatDuration(call.duration)}
-                            </Typography>
-                            {call.aiHandling && (
-                              <Chip
-                                label="AI HANDLING"
-                                color="primary"
-                                size="small"
-                                variant="outlined"
-                              />
-                            )}
-                          </Box>
-                        }
+                        secondary={`${call.status.toUpperCase()} • ${formatDuration(call.duration)}${call.aiHandling ? ' • AI HANDLING' : ''}`}
                       />
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Chip
+                          label={call.status.toUpperCase()}
+                          color={getStatusColor(call.status) as any}
+                          size="small"
+                        />
+                        {call.aiHandling && (
+                          <Chip
+                            label="AI HANDLING"
+                            color="primary"
+                            size="small"
+                            variant="outlined"
+                          />
+                        )}
+                      </Box>
                     </ListItem>
                   ))}
                 </List>
@@ -382,16 +378,7 @@ export default function Dashboard() {
                       </ListItemAvatar>
                       <ListItemText
                         primary={activity.customer}
-                        secondary={
-                          <Box>
-                            <Typography variant="body2" color="text.primary">
-                              {activity.description}
-                            </Typography>
-                            <Typography variant="caption" color="text.secondary">
-                              {activity.time}
-                            </Typography>
-                          </Box>
-                        }
+                        secondary={`${activity.description} • ${activity.time}`}
                       />
                     </ListItem>
                   ))}

@@ -24,30 +24,14 @@ export default function Header() {
           <Typography variant="h6" component="div" sx={{ flexGrow: 1, fontWeight: 'bold' }}>
             AI Receptionist Pro
           </Typography>
-          <Link href="/" passHref legacyBehavior>
-            <Button color="inherit" component="a">Dashboard</Button>
-          </Link>
-          <Link href="/business-setup" passHref legacyBehavior>
-            <Button color="inherit" component="a">Business</Button>
-          </Link>
-          <Link href="/call-management" passHref legacyBehavior>
-            <Button color="inherit" component="a">Calls</Button>
-          </Link>
-          <Link href="/call-simulator" passHref legacyBehavior>
-            <Button color="inherit" component="a">AI Test</Button>
-          </Link>
-          <Link href="/integrations" passHref legacyBehavior>
-            <Button color="inherit" component="a">Integrations</Button>
-          </Link>
-          <Link href="/ai-training" passHref legacyBehavior>
-            <Button color="inherit" component="a">AI Training</Button>
-          </Link>
-          <Link href="/customers" passHref legacyBehavior>
-            <Button color="inherit" component="a">Customers</Button>
-          </Link>
-          <Link href="/settings" passHref legacyBehavior>
-            <Button color="inherit" component="a">Settings</Button>
-          </Link>
+          <Button color="inherit" component={Link} href="/">Dashboard</Button>
+          <Button color="inherit" component={Link} href="/business-setup">Business</Button>
+          <Button color="inherit" component={Link} href="/call-management">Calls</Button>
+          <Button color="inherit" component={Link} href="/call-simulator">AI Test</Button>
+          <Button color="inherit" component={Link} href="/integrations">Integrations</Button>
+          <Button color="inherit" component={Link} href="/ai-training">AI Training</Button>
+          <Button color="inherit" component={Link} href="/customers">Customers</Button>
+          <Button color="inherit" component={Link} href="/settings">Settings</Button>
           <Button color="inherit" variant="outlined" sx={{ ml: 2, borderColor: 'rgba(255,255,255,0.3)' }}>
             Login
           </Button>

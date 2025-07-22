@@ -11,6 +11,10 @@ import Select from '@mui/material/Select';
 import MenuItem from '@mui/material/MenuItem';
 import InputLabel from '@mui/material/InputLabel';
 import FormControl from '@mui/material/FormControl';
+import RestaurantIcon from '@mui/icons-material/Restaurant';
+import ContentCutIcon from '@mui/icons-material/ContentCut';
+import SpaIcon from '@mui/icons-material/Spa';
+import BusinessIcon from '@mui/icons-material/Business';
 
 export default function SettingsPage() {
   const [businessName, setBusinessName] = useState('');
@@ -82,6 +86,30 @@ export default function SettingsPage() {
     }
   };
 
+  const businessTypes = [
+    { value: 'restaurant', label: 'Restaurant', icon: <RestaurantIcon /> },
+    { value: 'salon', label: 'Hair Salon', icon: <ContentCutIcon /> },
+    { value: 'spa', label: 'Spa & Wellness', icon: <SpaIcon /> },
+    { value: 'medical', label: 'Medical Practice', icon: <BusinessIcon /> },
+    { value: 'dental', label: 'Dental Office', icon: <BusinessIcon /> },
+    { value: 'fitness', label: 'Fitness Center', icon: <BusinessIcon /> },
+    { value: 'automotive', label: 'Auto Service', icon: <BusinessIcon /> },
+    { value: 'legal', label: 'Law Firm', icon: <BusinessIcon /> },
+    { value: 'accounting', label: 'Accounting', icon: <BusinessIcon /> },
+    { value: 'consulting', label: 'Consulting', icon: <BusinessIcon /> },
+    { value: 'real-estate', label: 'Real Estate', icon: <BusinessIcon /> },
+    { value: 'veterinary', label: 'Veterinary Clinic', icon: <BusinessIcon /> },
+    { value: 'retail', label: 'Retail Store', icon: <BusinessIcon /> },
+    { value: 'cleaning', label: 'Cleaning Service', icon: <BusinessIcon /> },
+    { value: 'education', label: 'Education/Tutoring', icon: <BusinessIcon /> },
+    { value: 'photography', label: 'Photography Studio', icon: <BusinessIcon /> },
+    { value: 'plumbing', label: 'Plumbing Service', icon: <BusinessIcon /> },
+    { value: 'electrical', label: 'Electrical Service', icon: <BusinessIcon /> },
+    { value: 'landscaping', label: 'Landscaping', icon: <BusinessIcon /> },
+    { value: 'insurance', label: 'Insurance Agency', icon: <BusinessIcon /> },
+    { value: 'other', label: 'Other', icon: <BusinessIcon /> },
+  ];
+
   const daysOfWeek = [
     'Sunday',
     'Monday',
@@ -108,15 +136,23 @@ export default function SettingsPage() {
             onChange={(e) => setBusinessName(e.target.value)}
             required
           />
-          <TextField
-            label="Business Type (e.g., restaurant, salon)"
-            variant="outlined"
-            fullWidth
-            margin="normal"
-            value={businessType}
-            onChange={(e) => setBusinessType(e.target.value)}
-            required
-          />
+          <FormControl fullWidth margin="normal" required>
+            <InputLabel>Business Type</InputLabel>
+            <Select
+              value={businessType}
+              label="Business Type"
+              onChange={(e) => setBusinessType(e.target.value)}
+            >
+              {businessTypes.map((type) => (
+                <MenuItem key={type.value} value={type.value}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    {type.icon}
+                    {type.label}
+                  </Box>
+                </MenuItem>
+              ))}
+            </Select>
+          </FormControl>
 
           <Typography variant="h5" component="h2" sx={{ mt: 4, mb: 2 }}>
             Operating Hours

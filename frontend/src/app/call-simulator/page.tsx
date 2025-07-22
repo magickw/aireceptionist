@@ -643,7 +643,10 @@ export default function CallSimulator() {
                           <Button
                             variant="outlined"
                             size="small"
-                            onClick={() => useTestScenario(scenario)}
+                            onClick={() => {
+                              setUserInput(scenario.userInput);
+                              setSelectedScenario(scenario);
+                            }}
                           >
                             Test
                           </Button>

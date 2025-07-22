@@ -255,16 +255,8 @@ export default function AITraining() {
                                     />
                                   </Box>
                                 }
-                                secondary={
-                                  <Box sx={{ mt: 1 }}>
-                                    <Typography variant="body2" color="text.primary" sx={{ mb: 1 }}>
-                                      {scenario.description}
-                                    </Typography>
-                                    <Typography variant="caption" color="text.secondary">
-                                      <strong>Sample Response:</strong> {scenario.response.substring(0, 100)}...
-                                    </Typography>
-                                  </Box>
-                                }
+                                secondary={`${scenario.description} • Sample Response: ${scenario.response.substring(0, 100)}...`}
+                                secondaryTypographyProps={{ component: 'div' }}
                               />
                               <ListItemSecondaryAction>
                                 <IconButton
@@ -375,12 +367,12 @@ export default function AITraining() {
               <CardContent>
                 <Paper sx={{ p: 2, bgcolor: 'grey.50', mb: 2 }}>
                   <Typography variant="body2" sx={{ fontStyle: 'italic' }}>
-                    "Hello, I'd like to book an appointment for tomorrow."
+                    &quot;Hello, I&apos;d like to book an appointment for tomorrow.&quot;
                   </Typography>
                 </Paper>
                 <Paper sx={{ p: 2, bgcolor: 'primary.light', color: 'primary.contrastText' }}>
                   <Typography variant="body2">
-                    {aiPersonality.greeting} I'd be happy to help you schedule an appointment. What service would you like to book and what time works best for you?
+                    {aiPersonality.greeting} I&apos;d be happy to help you schedule an appointment. What service would you like to book and what time works best for you?
                   </Typography>
                 </Paper>
                 <Box sx={{ mt: 2 }}>
@@ -428,7 +420,7 @@ export default function AITraining() {
           />
           <CardContent>
             <Typography variant="body1" color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
-              Voice settings will be available in the next update. This feature will allow you to customize the AI's voice, speaking speed, and accent.
+              Voice settings will be available in the next update. This feature will allow you to customize the AI&apos;s voice, speaking speed, and accent.
             </Typography>
           </CardContent>
         </Card>

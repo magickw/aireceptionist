@@ -605,7 +605,6 @@ function TabPanel(props) {
 _c = TabPanel;
 function CallSimulator() {
     _s();
-    var _s1 = __turbopack_context__.k.signature();
     const [tabValue, setTabValue] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(0);
     const [currentCall, setCurrentCall] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(null);
     const [messageInput, setMessageInput] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])('');
@@ -1784,14 +1783,10 @@ function CallSimulator() {
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Button$2f$Button$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
                                                             variant: "outlined",
                                                             size: "small",
-                                                            onClick: _s1(()=>{
-                                                                _s1();
-                                                                return useTestScenario(scenario);
-                                                            }, "LwlKLZ9vYnPSaNSS5fID/Gei0Mk=", false, function() {
-                                                                return [
-                                                                    useTestScenario
-                                                                ];
-                                                            }),
+                                                            onClick: ()=>{
+                                                                setUserInput(scenario.userInput);
+                                                                setSelectedScenario(scenario);
+                                                            },
                                                             children: "Test"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/app/call-simulator/page.tsx",
@@ -1844,7 +1839,7 @@ function CallSimulator() {
                             title: "AI Performance Analytics"
                         }, void 0, false, {
                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                            lineNumber: 663,
+                            lineNumber: 666,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$CardContent$2f$CardContent$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1858,23 +1853,23 @@ function CallSimulator() {
                                 children: "Performance analytics will show after completing test calls. Metrics include response accuracy, conversation success rate, and customer satisfaction scores."
                             }, void 0, false, {
                                 fileName: "[project]/src/app/call-simulator/page.tsx",
-                                lineNumber: 665,
+                                lineNumber: 668,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                            lineNumber: 664,
+                            lineNumber: 667,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/app/call-simulator/page.tsx",
-                    lineNumber: 662,
+                    lineNumber: 665,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/app/call-simulator/page.tsx",
-                lineNumber: 660,
+                lineNumber: 663,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Dialog$2f$Dialog$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1887,7 +1882,7 @@ function CallSimulator() {
                         children: "Call Summary"
                     }, void 0, false, {
                         fileName: "[project]/src/app/call-simulator/page.tsx",
-                        lineNumber: 680,
+                        lineNumber: 683,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$DialogContent$2f$DialogContent$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1906,7 +1901,7 @@ function CallSimulator() {
                                             children: "Satisfaction Score"
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                                            lineNumber: 685,
+                                            lineNumber: 688,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Typography$2f$Typography$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1918,13 +1913,13 @@ function CallSimulator() {
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                                            lineNumber: 686,
+                                            lineNumber: 689,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/app/call-simulator/page.tsx",
-                                    lineNumber: 684,
+                                    lineNumber: 687,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Grid$2f$Grid$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1938,7 +1933,7 @@ function CallSimulator() {
                                             children: "Resolution Status"
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                                            lineNumber: 691,
+                                            lineNumber: 694,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Chip$2f$Chip$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1946,13 +1941,13 @@ function CallSimulator() {
                                             color: currentCall.summary.resolved ? 'success' : 'warning'
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                                            lineNumber: 692,
+                                            lineNumber: 695,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/app/call-simulator/page.tsx",
-                                    lineNumber: 690,
+                                    lineNumber: 693,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Grid$2f$Grid$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1965,7 +1960,7 @@ function CallSimulator() {
                                             children: "Actions Taken"
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                                            lineNumber: 698,
+                                            lineNumber: 701,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Box$2f$Box$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -1979,18 +1974,18 @@ function CallSimulator() {
                                                     variant: "outlined"
                                                 }, index, false, {
                                                     fileName: "[project]/src/app/call-simulator/page.tsx",
-                                                    lineNumber: 701,
+                                                    lineNumber: 704,
                                                     columnNumber: 21
                                                 }, this))
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                                            lineNumber: 699,
+                                            lineNumber: 702,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/app/call-simulator/page.tsx",
-                                    lineNumber: 697,
+                                    lineNumber: 700,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Grid$2f$Grid$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -2003,7 +1998,7 @@ function CallSimulator() {
                                             children: "Key Topics"
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                                            lineNumber: 706,
+                                            lineNumber: 709,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Box$2f$Box$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -2018,29 +2013,29 @@ function CallSimulator() {
                                                     variant: "outlined"
                                                 }, index, false, {
                                                     fileName: "[project]/src/app/call-simulator/page.tsx",
-                                                    lineNumber: 709,
+                                                    lineNumber: 712,
                                                     columnNumber: 21
                                                 }, this))
                                         }, void 0, false, {
                                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                                            lineNumber: 707,
+                                            lineNumber: 710,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/app/call-simulator/page.tsx",
-                                    lineNumber: 705,
+                                    lineNumber: 708,
                                     columnNumber: 15
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/app/call-simulator/page.tsx",
-                            lineNumber: 683,
+                            lineNumber: 686,
                             columnNumber: 13
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/app/call-simulator/page.tsx",
-                        lineNumber: 681,
+                        lineNumber: 684,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$DialogActions$2f$DialogActions$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -2050,7 +2045,7 @@ function CallSimulator() {
                                 children: "Close"
                             }, void 0, false, {
                                 fileName: "[project]/src/app/call-simulator/page.tsx",
-                                lineNumber: 717,
+                                lineNumber: 720,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$mui$2f$material$2f$Button$2f$Button$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["default"], {
@@ -2059,19 +2054,19 @@ function CallSimulator() {
                                 children: "Start New Call"
                             }, void 0, false, {
                                 fileName: "[project]/src/app/call-simulator/page.tsx",
-                                lineNumber: 718,
+                                lineNumber: 721,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/app/call-simulator/page.tsx",
-                        lineNumber: 716,
+                        lineNumber: 719,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/app/call-simulator/page.tsx",
-                lineNumber: 674,
+                lineNumber: 677,
                 columnNumber: 7
             }, this)
         ]
