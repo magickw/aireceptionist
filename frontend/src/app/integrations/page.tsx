@@ -25,6 +25,14 @@ import Chip from '@mui/material/Chip';
 import Alert from '@mui/material/Alert';
 import Divider from '@mui/material/Divider';
 import LinearProgress from '@mui/material/LinearProgress';
+import Tabs from '@mui/material/Tabs';
+import Tab from '@mui/material/Tab';
+import Paper from '@mui/material/Paper';
+import Snackbar from '@mui/material/Snackbar';
+import IconButton from '@mui/material/IconButton';
+import Tooltip from '@mui/material/Tooltip';
+import Badge from '@mui/material/Badge';
+import Stack from '@mui/material/Stack';
 import CalendarTodayIcon from '@mui/icons-material/CalendarToday';
 import AssessmentIcon from '@mui/icons-material/Assessment';
 import CloudIcon from '@mui/icons-material/Cloud';
@@ -37,170 +45,350 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import ErrorIcon from '@mui/icons-material/Error';
 import SettingsIcon from '@mui/icons-material/Settings';
 import ChatIcon from '@mui/icons-material/Chat';
+import SyncIcon from '@mui/icons-material/Sync';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import LaunchIcon from '@mui/icons-material/Launch';
+import CreditCardIcon from '@mui/icons-material/CreditCard';
+import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import EmailIcon from '@mui/icons-material/Email';
+import axios from 'axios';
 
 interface Integration {
   id: string;
   name: string;
   description: string;
   category: string;
-  status: 'connected' | 'disconnected' | 'error';
+  status: 'connected' | 'disconnected' | 'error' | 'connecting';
   icon: React.ReactNode;
   features: string[];
-  setupRequired: boolean;
-  lastSync?: Date;
+  authType: 'oauth2' | 'api_key' | 'webhook';
+  lastSync?: string;
   config?: Record<string, any>;
+  error_message?: string;
+}
+
+interface IntegrationType {
+  type: string;
+  name: string;
+  description: string;
+  integrations: Array<{
+    id: string;
+    name: string;
+    description: string;
+    features: string[];
+    authType: string;
+    icon: string;
+    status: string;
+  }>;
+}
+
+interface TabPanelProps {
+  children?: React.ReactNode;
+  index: number;
+  value: number;
+}
+
+function TabPanel(props: TabPanelProps) {
+  const { children, value, index, ...other } = props;
+  return (
+    <div role="tabpanel" hidden={value !== index} {...other}>
+      {value === index && <Box>{children}</Box>}
+    </div>
+  );
 }
 
 export default function Integrations() {
-  const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [selectedIntegration, setSelectedIntegration] = useState<Integration | null>(null);
+  const [tabValue, setTabValue] = useState(0);
+  const [integrationTypes, setIntegrationTypes] = useState<IntegrationType[]>([]);
+  const [userIntegrations, setUserIntegrations] = useState<Integration[]>([]);
+  const [selectedIntegration, setSelectedIntegration] = useState<any>(null);
   const [configDialogOpen, setConfigDialogOpen] = useState(false);
+  const [oauthDialogOpen, setOAuthDialogOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [businessId, setBusinessId] = useState<number | null>(null);
+  const [snackbar, setSnackbar] = useState({ open: false, message: '', severity: 'success' as 'success' | 'error' });
+  const [testingConnection, setTestingConnection] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState<string | null>(null);
 
-  useEffect(() => {
-    // Mock integrations data
-    const mockIntegrations: Integration[] = [
-      {
-        id: 'google-calendar',
-        name: 'Google Calendar',
-        description: 'Sync appointments with Google Calendar for seamless scheduling',
-        category: 'Calendar',
-        status: 'disconnected',
-        icon: <CalendarTodayIcon />,
-        features: ['Appointment sync', 'Availability checking', 'Meeting reminders'],
-        setupRequired: true,
-      },
-      {
-        id: 'microsoft-outlook',
-        name: 'Microsoft Outlook',
-        description: 'Connect with Outlook calendar and email system',
-        category: 'Calendar',
-        status: 'disconnected',
-        icon: <CalendarTodayIcon />,
-        features: ['Calendar integration', 'Email notifications', 'Contact sync'],
-        setupRequired: true,
-      },
-      {
-        id: 'square-pos',
-        name: 'Square POS',
-        description: 'Integrate with Square for payment processing and inventory',
-        category: 'POS',
-        status: 'disconnected',
-        icon: <AssessmentIcon />,
-        features: ['Payment processing', 'Inventory sync', 'Customer data'],
-        setupRequired: true,
-      },
-      {
-        id: 'shopify',
-        name: 'Shopify',
-        description: 'Connect with Shopify for e-commerce integration',
-        category: 'E-commerce',
-        status: 'disconnected',
-        icon: <StorageIcon />,
-        features: ['Product catalog', 'Order management', 'Customer sync'],
-        setupRequired: true,
-      },
-      {
-        id: 'salesforce',
-        name: 'Salesforce CRM',
-        description: 'Sync customer data and interactions with Salesforce',
-        category: 'CRM',
-        status: 'disconnected',
-        icon: <PeopleIcon />,
-        features: ['Contact management', 'Lead tracking', 'Activity logging'],
-        setupRequired: true,
-      },
-      {
-        id: 'hubspot',
-        name: 'HubSpot',
-        description: 'Connect with HubSpot for comprehensive CRM functionality',
-        category: 'CRM',
-        status: 'disconnected',
-        icon: <PeopleIcon />,
-        features: ['Contact sync', 'Deal tracking', 'Marketing automation'],
-        setupRequired: true,
-      },
-      {
-        id: 'twilio',
-        name: 'Twilio',
-        description: 'Enhanced phone system integration with Twilio',
-        category: 'Communication',
-        status: 'connected',
-        icon: <PhoneIcon />,
-        features: ['Voice calls', 'SMS messaging', 'Call recording'],
-        setupRequired: false,
-        lastSync: new Date(),
-        config: { accountSid: 'ACxxxxx', phoneNumber: '+1234567890' },
-      },
-      {
-        id: 'slack',
-        name: 'Slack',
-        description: 'Get notifications and updates in your Slack workspace',
-        category: 'Communication',
-        status: 'disconnected',
-        icon: <ChatIcon />,
-        features: ['Call notifications', 'Appointment alerts', 'Team updates'],
-        setupRequired: true,
-      },
-      {
-        id: 'zapier',
-        name: 'Zapier',
-        description: 'Connect with 3000+ apps through Zapier automation',
-        category: 'Automation',
-        status: 'disconnected',
-        icon: <SmartToyIcon />,
-        features: ['Custom workflows', 'Data synchronization', 'Automated actions'],
-        setupRequired: true,
-      },
-      {
-        id: 'google-analytics',
-        name: 'Google Analytics',
-        description: 'Track call performance and customer interactions',
-        category: 'Analytics',
-        status: 'disconnected',
-        icon: <AssessmentIcon />,
-        features: ['Call tracking', 'Conversion analytics', 'Performance reports'],
-        setupRequired: true,
-      },
-    ];
+  const [configForm, setConfigForm] = useState<Record<string, any>>({});
 
-    setIntegrations(mockIntegrations);
-    setIsLoading(false);
-  }, []);
-
-  const handleToggleIntegration = (integrationId: string) => {
-    setIntegrations(prev => prev.map(integration => {
-      if (integration.id === integrationId) {
-        if (integration.status === 'connected') {
-          return { ...integration, status: 'disconnected' };
-        } else if (integration.setupRequired) {
-          setSelectedIntegration(integration);
-          setConfigDialogOpen(true);
-          return integration;
-        } else {
-          return { ...integration, status: 'connected', lastSync: new Date() };
-        }
-      }
-      return integration;
-    }));
+  const getIntegrationIcon = (iconName: string) => {
+    const icons: Record<string, React.ReactNode> = {
+      'salesforce': <PeopleIcon />,
+      'hubspot': <PeopleIcon />,
+      'pipedrive': <PeopleIcon />,
+      'google_calendar': <CalendarTodayIcon />,
+      'microsoft': <CalendarTodayIcon />,
+      'calendly': <CalendarTodayIcon />,
+      'slack': <ChatIcon />,
+      'teams': <ChatIcon />,
+      'discord': <ChatIcon />,
+      'stripe': <CreditCardIcon />,
+      'square': <CreditCardIcon />,
+      'paypal': <CreditCardIcon />,
+      'google_analytics': <AssessmentIcon />,
+      'mixpanel': <AssessmentIcon />,
+      'shopify': <ShoppingCartIcon />,
+      'woocommerce': <ShoppingCartIcon />,
+    };
+    return icons[iconName] || <LanguageIcon />;
   };
 
-  const handleConfigSave = () => {
-    if (selectedIntegration) {
-      setIntegrations(prev => prev.map(integration => 
-        integration.id === selectedIntegration.id 
-          ? { ...integration, status: 'connected' as const, lastSync: new Date(), setupRequired: false }
-          : integration
-      ));
+  useEffect(() => {
+    const fetchBusinessId = async () => {
+      try {
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        if (businessResponse.data.length > 0) {
+          setBusinessId(businessResponse.data[0].id);
+        }
+      } catch (error) {
+        console.error('Error fetching business ID:', error);
+      }
+    };
+    fetchBusinessId();
+  }, []);
+
+  useEffect(() => {
+    if (!businessId) return;
+    fetchData();
+  }, [businessId]);
+
+  const fetchData = async () => {
+    if (!businessId) return;
+
+    try {
+      setIsLoading(true);
+      const [typesResponse, userIntegrationsResponse] = await Promise.all([
+        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/types`),
+        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}`)
+      ]);
+
+      setIntegrationTypes(typesResponse.data);
+      
+      // Convert user integrations to the format expected by the UI
+      const convertedIntegrations = userIntegrationsResponse.data.map((integration: any) => ({
+        id: integration.integration_type,
+        name: integration.name,
+        description: 'Connected integration',
+        category: getCategoryByType(integration.integration_type),
+        status: integration.status,
+        icon: getIntegrationIcon(integration.integration_type),
+        features: [],
+        authType: 'oauth2',
+        lastSync: integration.last_sync,
+        config: integration.configuration ? JSON.parse(integration.configuration) : {},
+        error_message: integration.error_message
+      }));
+      
+      setUserIntegrations(convertedIntegrations);
+    } catch (error) {
+      console.error('Error fetching data:', error);
+      setSnackbar({ open: true, message: 'Error loading integrations', severity: 'error' });
+    } finally {
+      setIsLoading(false);
     }
-    setConfigDialogOpen(false);
-    setSelectedIntegration(null);
+  };
+
+  const getCategoryByType = (type: string): string => {
+    const categoryMap: Record<string, string> = {
+      'salesforce': 'CRM',
+      'hubspot': 'CRM',
+      'pipedrive': 'CRM',
+      'google_calendar': 'Calendar',
+      'microsoft_outlook': 'Calendar',
+      'calendly': 'Calendar',
+      'slack': 'Communication',
+      'microsoft_teams': 'Communication',
+      'discord': 'Communication',
+      'stripe': 'Payment',
+      'square': 'Payment',
+      'paypal': 'Payment',
+      'google_analytics': 'Analytics',
+      'mixpanel': 'Analytics',
+      'shopify': 'E-commerce',
+      'woocommerce': 'E-commerce'
+    };
+    return categoryMap[type] || 'Other';
+  };
+
+  const handleTabChange = (event: React.SyntheticEvent, newValue: number) => {
+    setTabValue(newValue);
+  };
+
+  const handleConnectIntegration = async (integration: any) => {
+    setSelectedIntegration(integration);
+    
+    if (integration.authType === 'oauth2') {
+      // Start OAuth flow
+      try {
+        const oauthResponse = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/oauth/url`, {
+          integration_id: integration.id,
+          business_id: businessId,
+          redirect_uri: `${window.location.origin}/integrations/oauth-callback`
+        });
+
+        if (oauthResponse.data.oauth_url) {
+          window.location.href = oauthResponse.data.oauth_url;
+        }
+      } catch (error) {
+        console.error('Error starting OAuth flow:', error);
+        setSnackbar({ open: true, message: 'Error starting OAuth flow', severity: 'error' });
+      }
+    } else {
+      // Show manual configuration dialog
+      setConfigForm({});
+      setConfigDialogOpen(true);
+    }
+  };
+
+  const handleSaveConfiguration = async () => {
+    if (!selectedIntegration || !businessId) return;
+
+    try {
+      const payload = {
+        integration_type: selectedIntegration.type || selectedIntegration.id,
+        integration_id: selectedIntegration.id,
+        name: selectedIntegration.name,
+        configuration: {},
+        credentials: configForm
+      };
+
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}`,
+        payload
+      );
+
+      setSnackbar({ 
+        open: true, 
+        message: `${selectedIntegration.name} connected successfully`, 
+        severity: 'success' 
+      });
+      
+      setConfigDialogOpen(false);
+      setSelectedIntegration(null);
+      fetchData();
+    } catch (error) {
+      console.error('Error saving configuration:', error);
+      setSnackbar({ 
+        open: true, 
+        message: 'Error connecting integration', 
+        severity: 'error' 
+      });
+    }
+  };
+
+  const handleTestConnection = async (integration: Integration) => {
+    if (!businessId) return;
+
+    try {
+      setTestingConnection(integration.id);
+      
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}/test/${integration.id}`,
+        {
+          credentials: integration.config,
+          configuration: integration.config
+        }
+      );
+
+      if (response.data.success) {
+        setSnackbar({ 
+          open: true, 
+          message: `${integration.name} connection test successful`, 
+          severity: 'success' 
+        });
+      } else {
+        setSnackbar({ 
+          open: true, 
+          message: `Connection test failed: ${response.data.error}`, 
+          severity: 'error' 
+        });
+      }
+    } catch (error) {
+      console.error('Error testing connection:', error);
+      setSnackbar({ 
+        open: true, 
+        message: 'Error testing connection', 
+        severity: 'error' 
+      });
+    } finally {
+      setTestingConnection(null);
+    }
+  };
+
+  const handleSyncIntegration = async (integration: Integration) => {
+    if (!businessId) return;
+
+    try {
+      setSyncing(integration.id);
+      
+      // Find the database integration ID
+      const userIntegration = userIntegrations.find(ui => ui.id === integration.id);
+      
+      const response = await axios.post(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}/sync/${userIntegration?.id || integration.id}`
+      );
+
+      if (response.data.success) {
+        setSnackbar({ 
+          open: true, 
+          message: `${integration.name} sync completed successfully`, 
+          severity: 'success' 
+        });
+        fetchData(); // Refresh to update last sync time
+      } else {
+        setSnackbar({ 
+          open: true, 
+          message: `Sync failed: ${response.data.error}`, 
+          severity: 'error' 
+        });
+      }
+    } catch (error) {
+      console.error('Error syncing integration:', error);
+      setSnackbar({ 
+        open: true, 
+        message: 'Error syncing integration', 
+        severity: 'error' 
+      });
+    } finally {
+      setSyncing(null);
+    }
+  };
+
+  const handleDisconnectIntegration = async (integrationId: string) => {
+    if (!businessId) return;
+
+    try {
+      // Find the user integration
+      const userIntegration = userIntegrations.find(ui => ui.id === integrationId);
+      if (!userIntegration) return;
+
+      await axios.delete(
+        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}/integration/${userIntegration.id}`
+      );
+
+      setSnackbar({ 
+        open: true, 
+        message: 'Integration disconnected successfully', 
+        severity: 'success' 
+      });
+      
+      fetchData();
+    } catch (error) {
+      console.error('Error disconnecting integration:', error);
+      setSnackbar({ 
+        open: true, 
+        message: 'Error disconnecting integration', 
+        severity: 'error' 
+      });
+    }
   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'connected': return 'success';
       case 'error': return 'error';
+      case 'connecting': return 'warning';
       default: return 'default';
     }
   };
@@ -209,15 +397,25 @@ export default function Integrations() {
     switch (status) {
       case 'connected': return <CheckCircleIcon color="success" />;
       case 'error': return <ErrorIcon color="error" />;
+      case 'connecting': return <SyncIcon color="warning" />;
       default: return <SettingsIcon color="action" />;
     }
   };
 
-  const categories = [...new Set(integrations.map(i => i.category))];
+  const isIntegrationConnected = (integrationId: string) => {
+    return userIntegrations.some(ui => ui.id === integrationId && ui.status === 'connected');
+  };
+
+  const getUserIntegration = (integrationId: string) => {
+    return userIntegrations.find(ui => ui.id === integrationId);
+  };
 
   if (isLoading) {
     return (
       <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+        <Typography variant="h4" component="h1" gutterBottom>
+          Integrations
+        </Typography>
         <LinearProgress />
       </Container>
     );
@@ -230,7 +428,7 @@ export default function Integrations() {
           Integrations
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Connect your AI receptionist with your favorite business tools
+          Connect your AI receptionist with your favorite business tools and automate your workflows
         </Typography>
       </Box>
 
@@ -243,7 +441,7 @@ export default function Integrations() {
                 <CheckCircleIcon />
               </Avatar>
               <Typography variant="h6">
-                {integrations.filter(i => i.status === 'connected').length}
+                {userIntegrations.filter(i => i.status === 'connected').length}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Connected
@@ -258,7 +456,7 @@ export default function Integrations() {
                 <CloudIcon />
               </Avatar>
               <Typography variant="h6">
-                {integrations.length}
+                {integrationTypes.reduce((total, type) => total + type.integrations.length, 0)}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Available
@@ -273,10 +471,10 @@ export default function Integrations() {
                 <SettingsIcon />
               </Avatar>
               <Typography variant="h6">
-                {integrations.filter(i => i.setupRequired).length}
+                {userIntegrations.filter(i => i.status === 'connecting').length}
               </Typography>
               <Typography variant="body2" color="text.secondary">
-                Setup Required
+                Setting Up
               </Typography>
             </CardContent>
           </Card>
@@ -288,7 +486,7 @@ export default function Integrations() {
                 <ErrorIcon />
               </Avatar>
               <Typography variant="h6">
-                {integrations.filter(i => i.status === 'error').length}
+                {userIntegrations.filter(i => i.status === 'error').length}
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Errors
@@ -298,89 +496,274 @@ export default function Integrations() {
         </Grid>
       </Grid>
 
-      {/* Integration Categories */}
-      {categories.map((category) => (
-        <Card key={category} sx={{ mb: 3 }}>
-          <CardHeader
-            title={category}
-            subheader={`${integrations.filter(i => i.category === category).length} integrations available`}
-          />
-          <CardContent>
-            <Grid container spacing={2}>
-              {integrations
-                .filter(integration => integration.category === category)
-                .map((integration) => (
-                  <Grid item xs={12} md={6} lg={4} key={integration.id}>
-                    <Card variant="outlined" sx={{ height: '100%' }}>
-                      <CardContent>
-                        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                          <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
-                            {integration.icon}
-                          </Avatar>
-                          <Box sx={{ flexGrow: 1 }}>
-                            <Typography variant="h6">{integration.name}</Typography>
-                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              {getStatusIcon(integration.status)}
-                              <Chip
-                                label={integration.status.toUpperCase()}
-                                color={getStatusColor(integration.status) as any}
-                                size="small"
-                              />
+      <Tabs value={tabValue} onChange={handleTabChange} sx={{ mb: 3 }}>
+        <Tab label="All Integrations" />
+        <Tab label="Connected" />
+        <Tab label="Popular" />
+      </Tabs>
+
+      <TabPanel value={tabValue} index={0}>
+        {/* All Integrations */}
+        {integrationTypes.map((category) => (
+          <Card key={category.type} sx={{ mb: 3 }}>
+            <CardHeader
+              title={
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Typography variant="h5">{category.name}</Typography>
+                  <Chip 
+                    label={`${category.integrations.length} available`} 
+                    size="small" 
+                    color="primary" 
+                    variant="outlined"
+                  />
+                </Box>
+              }
+              subheader={category.description}
+            />
+            <CardContent>
+              <Grid container spacing={3}>
+                {category.integrations.map((integration) => {
+                  const userIntegration = getUserIntegration(integration.id);
+                  const isConnected = isIntegrationConnected(integration.id);
+                  
+                  return (
+                    <Grid item xs={12} md={6} lg={4} key={integration.id}>
+                      <Card variant="outlined" sx={{ height: '100%', position: 'relative' }}>
+                        {isConnected && (
+                          <Badge
+                            badgeContent={<CheckCircleIcon sx={{ fontSize: 16 }} />}
+                            color="success"
+                            sx={{ 
+                              position: 'absolute', 
+                              top: 16, 
+                              right: 16, 
+                              zIndex: 1 
+                            }}
+                          />
+                        )}
+                        <CardContent>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                            <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                              {getIntegrationIcon(integration.icon)}
+                            </Avatar>
+                            <Box sx={{ flexGrow: 1 }}>
+                              <Typography variant="h6">{integration.name}</Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                                {userIntegration && getStatusIcon(userIntegration.status)}
+                                <Chip
+                                  label={isConnected ? 'CONNECTED' : 'AVAILABLE'}
+                                  color={getStatusColor(userIntegration?.status || 'default') as any}
+                                  size="small"
+                                />
+                              </Box>
                             </Box>
                           </Box>
-                        </Box>
-                        
-                        <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                          {integration.description}
-                        </Typography>
-                        
-                        <Box sx={{ mb: 2 }}>
-                          <Typography variant="subtitle2" gutterBottom>Features:</Typography>
-                          <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
-                            {integration.features.slice(0, 3).map((feature, index) => (
-                              <Chip key={index} label={feature} size="small" variant="outlined" />
-                            ))}
-                          </Box>
-                        </Box>
-
-                        {integration.status === 'connected' && integration.lastSync && (
-                          <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
-                            Last synced: {integration.lastSync.toLocaleString()}
+                          
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                            {integration.description}
                           </Typography>
-                        )}
 
-                        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                          <FormControlLabel
-                            control={
-                              <Switch
-                                checked={integration.status === 'connected'}
-                                onChange={() => handleToggleIntegration(integration.id)}
-                                color="primary"
-                              />
-                            }
-                            label={integration.status === 'connected' ? 'Connected' : 'Connect'}
-                          />
-                          {integration.status === 'connected' && (
-                            <Button
-                              size="small"
-                              variant="outlined"
-                              onClick={() => {
-                                setSelectedIntegration(integration);
-                                setConfigDialogOpen(true);
-                              }}
-                            >
-                              Configure
-                            </Button>
+                          {userIntegration?.error_message && (
+                            <Alert severity="error" sx={{ mb: 2 }}>
+                              {userIntegration.error_message}
+                            </Alert>
                           )}
-                        </Box>
-                      </CardContent>
-                    </Card>
-                  </Grid>
-                ))}
+                          
+                          <Box sx={{ mb: 2 }}>
+                            <Typography variant="subtitle2" gutterBottom>Features:</Typography>
+                            <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
+                              {integration.features.slice(0, 3).map((feature, index) => (
+                                <Chip key={index} label={feature} size="small" variant="outlined" />
+                              ))}
+                            </Box>
+                          </Box>
+
+                          {userIntegration?.lastSync && (
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                              Last synced: {new Date(userIntegration.lastSync).toLocaleString()}
+                            </Typography>
+                          )}
+
+                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                            {!isConnected ? (
+                              <Button
+                                variant="contained"
+                                onClick={() => handleConnectIntegration(integration)}
+                                startIcon={integration.authType === 'oauth2' ? <LaunchIcon /> : <SettingsIcon />}
+                                fullWidth
+                              >
+                                Connect
+                              </Button>
+                            ) : (
+                              <>
+                                <Button
+                                  variant="outlined"
+                                  onClick={() => handleTestConnection(userIntegration)}
+                                  disabled={testingConnection === integration.id}
+                                  startIcon={testingConnection === integration.id ? <SyncIcon className="animate-spin" /> : <RefreshIcon />}
+                                  size="small"
+                                >
+                                  Test
+                                </Button>
+                                <Button
+                                  variant="outlined"
+                                  onClick={() => handleSyncIntegration(userIntegration)}
+                                  disabled={syncing === integration.id}
+                                  startIcon={syncing === integration.id ? <SyncIcon className="animate-spin" /> : <SyncIcon />}
+                                  size="small"
+                                >
+                                  Sync
+                                </Button>
+                                <Button
+                                  variant="outlined"
+                                  color="error"
+                                  onClick={() => handleDisconnectIntegration(integration.id)}
+                                  size="small"
+                                >
+                                  Disconnect
+                                </Button>
+                              </>
+                            )}
+                          </Box>
+                        </CardContent>
+                      </Card>
+                    </Grid>
+                  );
+                })}
+              </Grid>
+            </CardContent>
+          </Card>
+        ))}
+      </TabPanel>
+
+      <TabPanel value={tabValue} index={1}>
+        {/* Connected Integrations */}
+        <Grid container spacing={3}>
+          {userIntegrations
+            .filter(integration => integration.status === 'connected')
+            .map((integration) => (
+              <Grid item xs={12} md={6} lg={4} key={integration.id}>
+                <Card>
+                  <CardContent>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                      <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                        {integration.icon}
+                      </Avatar>
+                      <Box sx={{ flexGrow: 1 }}>
+                        <Typography variant="h6">{integration.name}</Typography>
+                        <Typography variant="body2" color="text.secondary">
+                          {integration.category}
+                        </Typography>
+                      </Box>
+                      <CheckCircleIcon color="success" />
+                    </Box>
+
+                    {integration.lastSync && (
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                        Last synced: {new Date(integration.lastSync).toLocaleString()}
+                      </Typography>
+                    )}
+
+                    <Stack direction="row" spacing={1}>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => handleSyncIntegration(integration)}
+                        disabled={syncing === integration.id}
+                        startIcon={<SyncIcon />}
+                      >
+                        Sync Now
+                      </Button>
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        onClick={() => {
+                          setSelectedIntegration(integration);
+                          setConfigForm(integration.config || {});
+                          setConfigDialogOpen(true);
+                        }}
+                        startIcon={<SettingsIcon />}
+                      >
+                        Configure
+                      </Button>
+                    </Stack>
+                  </CardContent>
+                </Card>
+              </Grid>
+          ))}
+          
+          {userIntegrations.filter(i => i.status === 'connected').length === 0 && (
+            <Grid item xs={12}>
+              <Paper sx={{ p: 4, textAlign: 'center' }}>
+                <CloudIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
+                <Typography variant="h6" gutterBottom>
+                  No connected integrations
+                </Typography>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                  Connect your favorite business tools to automate workflows and sync data
+                </Typography>
+                <Button variant="contained" onClick={() => setTabValue(0)}>
+                  Browse Integrations
+                </Button>
+              </Paper>
             </Grid>
-          </CardContent>
-        </Card>
-      ))}
+          )}
+        </Grid>
+      </TabPanel>
+
+      <TabPanel value={tabValue} index={2}>
+        {/* Popular Integrations */}
+        <Grid container spacing={3}>
+          {integrationTypes
+            .flatMap(type => type.integrations)
+            .filter(integration => ['salesforce', 'hubspot', 'google_calendar', 'slack', 'stripe'].includes(integration.id))
+            .map((integration) => {
+              const userIntegration = getUserIntegration(integration.id);
+              const isConnected = isIntegrationConnected(integration.id);
+              
+              return (
+                <Grid item xs={12} md={6} lg={4} key={integration.id}>
+                  <Card variant="outlined" sx={{ height: '100%' }}>
+                    <CardContent>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+                        <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                          {getIntegrationIcon(integration.icon)}
+                        </Avatar>
+                        <Box sx={{ flexGrow: 1 }}>
+                          <Typography variant="h6">{integration.name}</Typography>
+                          <Chip
+                            label={isConnected ? 'CONNECTED' : 'POPULAR'}
+                            color={isConnected ? 'success' : 'warning'}
+                            size="small"
+                          />
+                        </Box>
+                      </Box>
+                      
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                        {integration.description}
+                      </Typography>
+
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 2 }}>
+                        {integration.features.slice(0, 2).map((feature, index) => (
+                          <Chip key={index} label={feature} size="small" variant="outlined" />
+                        ))}
+                      </Box>
+
+                      <Button
+                        variant={isConnected ? 'outlined' : 'contained'}
+                        onClick={() => isConnected ? handleSyncIntegration(userIntegration!) : handleConnectIntegration(integration)}
+                        fullWidth
+                        startIcon={isConnected ? <SyncIcon /> : <LaunchIcon />}
+                      >
+                        {isConnected ? 'Sync Now' : 'Connect'}
+                      </Button>
+                    </CardContent>
+                  </Card>
+                </Grid>
+              );
+            })}
+        </Grid>
+      </TabPanel>
 
       {/* Configuration Dialog */}
       <Dialog
@@ -396,47 +779,21 @@ export default function Integrations() {
           {selectedIntegration && (
             <Box sx={{ mt: 2 }}>
               <Alert severity="info" sx={{ mb: 3 }}>
-                To connect {selectedIntegration.name}, you'll need to provide your API credentials or authorize access.
+                To connect {selectedIntegration.name}, please provide your API credentials. 
+                Your credentials are encrypted and stored securely.
               </Alert>
               
-              {selectedIntegration.id === 'google-calendar' && (
+              {selectedIntegration.id === 'pipedrive' && (
                 <Box>
-                  <Typography variant="h6" gutterBottom>Google Calendar Setup</Typography>
                   <TextField
                     fullWidth
-                    label="Google Client ID"
+                    label="Company Domain"
                     variant="outlined"
                     margin="normal"
-                    helperText="Get this from your Google Cloud Console"
-                  />
-                  <TextField
-                    fullWidth
-                    label="Google Client Secret"
-                    variant="outlined"
-                    margin="normal"
-                    type="password"
-                  />
-                  <Button variant="outlined" sx={{ mt: 2 }}>
-                    Authorize with Google
-                  </Button>
-                </Box>
-              )}
-
-              {selectedIntegration.id === 'salesforce' && (
-                <Box>
-                  <Typography variant="h6" gutterBottom>Salesforce CRM Setup</Typography>
-                  <TextField
-                    fullWidth
-                    label="Salesforce Instance URL"
-                    variant="outlined"
-                    margin="normal"
-                    placeholder="https://your-instance.salesforce.com"
-                  />
-                  <TextField
-                    fullWidth
-                    label="API Username"
-                    variant="outlined"
-                    margin="normal"
+                    placeholder="your-company"
+                    helperText="Your Pipedrive domain (without .pipedrive.com)"
+                    value={configForm.company_domain || ''}
+                    onChange={(e) => setConfigForm({ ...configForm, company_domain: e.target.value })}
                   />
                   <TextField
                     fullWidth
@@ -444,45 +801,74 @@ export default function Integrations() {
                     variant="outlined"
                     margin="normal"
                     type="password"
+                    helperText="Get this from your Pipedrive settings"
+                    value={configForm.api_token || ''}
+                    onChange={(e) => setConfigForm({ ...configForm, api_token: e.target.value })}
                   />
                 </Box>
               )}
 
-              {selectedIntegration.id === 'square-pos' && (
+              {selectedIntegration.id === 'stripe' && (
                 <Box>
-                  <Typography variant="h6" gutterBottom>Square POS Setup</Typography>
                   <TextField
                     fullWidth
-                    label="Square Application ID"
+                    label="Publishable Key"
                     variant="outlined"
                     margin="normal"
+                    placeholder="pk_test_..."
+                    helperText="Your Stripe publishable key"
+                    value={configForm.publishable_key || ''}
+                    onChange={(e) => setConfigForm({ ...configForm, publishable_key: e.target.value })}
                   />
                   <TextField
                     fullWidth
-                    label="Square Access Token"
+                    label="Secret Key"
                     variant="outlined"
                     margin="normal"
                     type="password"
-                  />
-                  <TextField
-                    fullWidth
-                    label="Location ID"
-                    variant="outlined"
-                    margin="normal"
-                    helperText="Square location to sync with"
+                    placeholder="sk_test_..."
+                    helperText="Your Stripe secret key"
+                    value={configForm.secret_key || ''}
+                    onChange={(e) => setConfigForm({ ...configForm, secret_key: e.target.value })}
                   />
                 </Box>
               )}
 
-              {!['google-calendar', 'salesforce', 'square-pos'].includes(selectedIntegration.id) && (
+              {selectedIntegration.authType === 'webhook' && (
                 <Box>
-                  <Typography variant="h6" gutterBottom>{selectedIntegration.name} Setup</Typography>
+                  <TextField
+                    fullWidth
+                    label="Webhook URL"
+                    variant="outlined"
+                    margin="normal"
+                    value={configForm.webhook_url || ''}
+                    onChange={(e) => setConfigForm({ ...configForm, webhook_url: e.target.value })}
+                    helperText="The webhook URL for this integration"
+                  />
+                  <TextField
+                    fullWidth
+                    label="Secret Token (Optional)"
+                    variant="outlined"
+                    margin="normal"
+                    type="password"
+                    value={configForm.secret_token || ''}
+                    onChange={(e) => setConfigForm({ ...configForm, secret_token: e.target.value })}
+                    helperText="Secret token for webhook verification"
+                  />
+                </Box>
+              )}
+
+              {!['pipedrive', 'stripe'].includes(selectedIntegration.id) && selectedIntegration.authType === 'api_key' && (
+                <Box>
                   <TextField
                     fullWidth
                     label="API Key"
                     variant="outlined"
                     margin="normal"
                     type="password"
+                    value={configForm.api_key || ''}
+                    onChange={(e) => setConfigForm({ ...configForm, api_key: e.target.value })}
+                    helperText={`Get this from your ${selectedIntegration.name} settings`}
                   />
                   <TextField
                     fullWidth
@@ -490,15 +876,8 @@ export default function Integrations() {
                     variant="outlined"
                     margin="normal"
                     type="password"
-                  />
-                  <TextField
-                    fullWidth
-                    label="Webhook URL"
-                    variant="outlined"
-                    margin="normal"
-                    value="https://your-app.com/webhooks"
-                    disabled
-                    helperText="Use this URL in your integration settings"
+                    value={configForm.api_secret || ''}
+                    onChange={(e) => setConfigForm({ ...configForm, api_secret: e.target.value })}
                   />
                 </Box>
               )}
@@ -507,7 +886,7 @@ export default function Integrations() {
               
               <Typography variant="h6" gutterBottom>Features Enabled</Typography>
               <List>
-                {selectedIntegration.features.map((feature, index) => (
+                {selectedIntegration.features.map((feature: string, index: number) => (
                   <ListItem key={index}>
                     <ListItemIcon>
                       <CheckCircleIcon color="success" />
@@ -521,11 +900,26 @@ export default function Integrations() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setConfigDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleConfigSave}>
-            {selectedIntegration?.status === 'connected' ? 'Save Changes' : 'Connect'}
+          <Button variant="contained" onClick={handleSaveConfiguration}>
+            Connect Integration
           </Button>
         </DialogActions>
       </Dialog>
+
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={6000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+      >
+        <Alert
+          onClose={() => setSnackbar({ ...snackbar, open: false })}
+          severity={snackbar.severity}
+          sx={{ width: '100%' }}
+        >
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Container>
   );
 }

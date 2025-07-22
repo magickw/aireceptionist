@@ -1,0 +1,20 @@
+{"level":"info","message":"WebSocket server initialized","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:31:51"}
+{"environment":"development","level":"info","message":"Server started successfully","port":"3003","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:31:51"}
+{"ip":"::1","level":"info","message":"HTTP Request","method":"GET","requestId":"d6b6fc77-0b40-405d-95ce-84d8a3853ff3","responseTime":"8ms","service":"ai-receptionist-backend","statusCode":200,"timestamp":"2025-07-22 14:32:00","url":"/health","userAgent":"curl/8.7.1","userId":null}
+{"ip":"::1","level":"info","message":"HTTP Request","method":"GET","requestId":"f604f349-b97d-49c3-a16d-a26c78cb017b","responseTime":"4ms","service":"ai-receptionist-backend","statusCode":200,"timestamp":"2025-07-22 14:32:07","url":"/health","userAgent":"curl/8.7.1","userId":null}
+{"ip":"::1","level":"info","message":"HTTP Request","method":"GET","requestId":"fd92e5de-699c-4a02-8947-5762f691c44f","responseTime":"93ms","service":"ai-receptionist-backend","statusCode":200,"timestamp":"2025-07-22 14:32:15","url":"/api/businesses","userAgent":"curl/8.7.1","userId":null}
+{"level":"info","message":"WebSocket server initialized","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:32:43"}
+{"environment":"development","level":"info","message":"Server started successfully","port":"3003","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:32:43"}
+{"level":"info","message":"WebSocket server initialized","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:33:42"}
+{"environment":"development","level":"info","message":"Server started successfully","port":"3003","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:33:42"}
+{"level":"info","message":"WebSocket server initialized","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:33:53"}
+{"environment":"development","level":"info","message":"Server started successfully","port":"3003","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:33:53"}
+{"level":"info","message":"WebSocket server initialized","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:34:04"}
+{"environment":"development","level":"info","message":"Server started successfully","port":"3003","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:34:04"}
+{"level":"info","message":"WebSocket server initialized","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:34:17"}
+{"environment":"development","level":"info","message":"Server started successfully","port":"3003","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:34:17"}
+{"level":"info","message":"WebSocket server initialized","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:34:47"}
+{"environment":"development","level":"info","message":"Server started successfully","port":"3003","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:34:47"}
+{"ip":"::1","level":"info","message":"HTTP Request","method":"GET","requestId":"c43c95a3-6df3-4a8b-ad6c-ea56d6b96581","responseTime":"8ms","service":"ai-receptionist-backend","statusCode":200,"timestamp":"2025-07-22 14:34:54","url":"/health","userAgent":"curl/8.7.1","userId":null}
+{"level":"info","message":"WebSocket server initialized","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:34:57"}
+{"environment":"development","level":"info","message":"Server started successfully","port":"3003","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:34:57"}

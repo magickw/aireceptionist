@@ -70,6 +70,7 @@ app.get('/', (req, res) => {
       analytics: '/api/analytics',
       aiTraining: '/api/ai-training',
       aiImprovement: '/api/ai-improvement',
+      integrations: '/api/integrations',
       twilio: '/twilio',
       websocket: '/ws'
     }
@@ -85,6 +86,7 @@ const twilioRoutes = require('./routes/twilio');
 const analyticsRoutes = require('./routes/analytics');
 const aiTrainingRoutes = require('./routes/aiTraining');
 const aiImprovementRoutes = require('./routes/aiImprovement');
+const integrationsRoutes = require('./routes/integrations');
 const openRouterTestRoutes = require('./routes/openrouter-test');
 
 // Use routes
@@ -96,6 +98,7 @@ app.use('/twilio', twilioRoutes);
 app.use('/api/analytics', analyticsRoutes);
 app.use('/api/ai-training', aiTrainingRoutes);
 app.use('/api/ai-improvement', aiImprovementRoutes);
+app.use('/api/integrations', integrationsRoutes);
 app.use('/api/test', openRouterTestRoutes);
 
 // Initialize WebSocket server
