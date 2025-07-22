@@ -121,37 +121,43 @@ export default function BusinessSetup() {
         const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
         if (businessResponse.data.length > 0) {
           const business = businessResponse.data[0];
+          const settings = business.settings || {};
           setProfile({
             id: business.id,
             name: business.name || '',
             type: business.type || '',
-            phone: business.phone || '',
-            address: business.address || '',
-            description: business.description || '',
-            website: business.website || '',
+            phone: settings.phone || '',
+            address: settings.address || '',
+            description: settings.description || '',
+            website: settings.website || '',
             operatingHours: business.operating_hours || profile.operatingHours,
           });
+          
+          // Load services from settings if available
+          if (settings.services) {
+            setServices(settings.services);
+          } else {
+            // Default services if none exist
+            setServices([
+              {
+                id: 1,
+                name: 'Consultation',
+                description: 'Initial consultation with our AI receptionist',
+                duration: 15,
+                price: 0,
+                category: 'General',
+              },
+              {
+                id: 2,
+                name: 'Appointment Booking',
+                description: 'Book appointments through AI assistant',
+                duration: 5,
+                price: 0,
+                category: 'Booking',
+              },
+            ]);
+          }
         }
-        
-        // Mock services data (in real app, fetch from API)
-        setServices([
-          {
-            id: 1,
-            name: 'Consultation',
-            description: 'Initial consultation with our AI receptionist',
-            duration: 15,
-            price: 0,
-            category: 'General',
-          },
-          {
-            id: 2,
-            name: 'Appointment Booking',
-            description: 'Book appointments through AI assistant',
-            duration: 5,
-            price: 0,
-            category: 'Booking',
-          },
-        ]);
       } catch (error) {
         console.error('Error fetching business data:', error);
       }
@@ -162,24 +168,27 @@ export default function BusinessSetup() {
 
   const handleProfileSave = async () => {
     try {
+      // Prepare settings object with additional business info
+      const businessSettings = {
+        phone: profile.phone,
+        address: profile.address,
+        description: profile.description,
+        website: profile.website,
+        services: services,
+      };
+
       if (profile.id) {
         await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses/${profile.id}`, {
           name: profile.name,
           type: profile.type,
-          phone: profile.phone,
-          address: profile.address,
-          description: profile.description,
-          website: profile.website,
+          settings: businessSettings,
           operating_hours: profile.operatingHours,
         });
       } else {
         const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`, {
           name: profile.name,
           type: profile.type,
-          phone: profile.phone,
-          address: profile.address,
-          description: profile.description,
-          website: profile.website,
+          settings: businessSettings,
           operating_hours: profile.operatingHours,
         });
         setProfile({ ...profile, id: response.data.id });

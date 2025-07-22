@@ -64,16 +64,19 @@ class AIConversationEngine {
 
     // Generate appropriate response
     let response: string;
-    if (this.useAdvancedAI && intent !== 'unknown') {
-      try {
+    
+    try {
+      if (this.useAdvancedAI) {
         // Use OpenRouter for more natural responses
+        console.log('Using advanced AI for response generation');
         response = await this.openRouterService.generateSmartResponse(message, context);
-      } catch (error) {
-        console.warn('OpenRouter fallback to rule-based response:', error);
+      } else {
+        console.log('Using rule-based response generation');
         response = this.generateResponse(message, intent, entities, context);
       }
-    } else {
-      // Use rule-based response
+    } catch (error) {
+      console.error('AI response generation error:', error);
+      // Fallback to rule-based response
       response = this.generateResponse(message, intent, entities, context);
     }
 
@@ -84,7 +87,7 @@ class AIConversationEngine {
       confidence,
       intent,
       entities,
-      actions,
+      actions: actions || [], // Ensure actions is always an array
     };
   }
 
@@ -162,7 +165,7 @@ class AIConversationEngine {
     entities: Record<string, any>,
     context: ConversationContext
   ): string {
-    const businessType = this.businessContext.type;
+    const businessType = context.businessContext?.businessType || this.businessContext.type;
 
     switch (intent) {
       case 'booking':

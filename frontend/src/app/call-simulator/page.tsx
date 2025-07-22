@@ -183,7 +183,12 @@ export default function CallSimulator() {
       context: {
         customerInfo: {},
         intent: 'unknown',
-        businessContext: businessContext,
+        businessContext: {
+          businessType: businessContext?.type || 'business',
+          services: businessContext?.services || [],
+          operatingHours: businessContext?.operatingHours || {},
+          menu: businessContext?.menu || [],
+        },
       },
     };
 
@@ -245,13 +250,13 @@ export default function CallSimulator() {
     try {
       await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate processing time
 
-      const aiResponse = aiEngine.processMessage(userMessage, currentCall.context);
+      const aiResponse = await aiEngine.processMessage(userMessage, currentCall.context);
       
       // Add AI response
       addAIMessage(aiResponse.message);
 
       // Execute actions
-      if (aiResponse.actions.length > 0) {
+      if (aiResponse.actions && Array.isArray(aiResponse.actions) && aiResponse.actions.length > 0) {
         for (const action of aiResponse.actions) {
           await executeAction(action);
         }

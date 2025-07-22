@@ -10,12 +10,14 @@ class OpenRouterService {
 
   async generateResponse(messages: any[], model: string = 'openai/gpt-3.5-turbo'): Promise<string> {
     try {
+      console.log('Making OpenRouter API call with messages:', messages);
+      
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         method: 'POST',
         headers: {
           'Authorization': `Bearer ${this.apiKey}`,
           'Content-Type': 'application/json',
-          'HTTP-Referer': 'http://localhost:3002',
+          'HTTP-Referer': 'http://localhost:3003', // Updated port
           'X-Title': 'AI Receptionist Pro',
         },
         body: JSON.stringify({
@@ -26,16 +28,52 @@ class OpenRouterService {
         }),
       });
 
+      console.log('OpenRouter response status:', response.status);
+
       if (!response.ok) {
-        throw new Error(`OpenRouter API error: ${response.statusText}`);
+        const errorText = await response.text();
+        console.error('OpenRouter API error response:', errorText);
+        throw new Error(`OpenRouter API error: ${response.status} ${response.statusText}`);
       }
 
       const data = await response.json();
-      return data.choices[0]?.message?.content || 'I apologize, I had trouble processing that request.';
+      console.log('OpenRouter API response data:', data);
+      
+      const aiMessage = data.choices[0]?.message?.content;
+      if (!aiMessage) {
+        throw new Error('No message content in API response');
+      }
+      
+      return aiMessage;
     } catch (error) {
       console.error('OpenRouter API error:', error);
-      return 'I apologize, I\'m experiencing technical difficulties. Please try again or speak with a human agent.';
+      // Return a more helpful fallback based on the user's message
+      return this.generateFallbackResponse(messages);
     }
+  }
+
+  private generateFallbackResponse(messages: any[]): string {
+    const userMessage = messages[messages.length - 1]?.content?.toLowerCase() || '';
+    
+    // Basic intent detection for fallback
+    if (userMessage.includes('book') || userMessage.includes('appointment') || userMessage.includes('schedule')) {
+      return "I'd be happy to help you book an appointment! May I get your name and what service you're interested in?";
+    }
+    
+    if (userMessage.includes('hours') || userMessage.includes('open') || userMessage.includes('close')) {
+      return "We're open Monday through Friday from 9 AM to 5 PM. Would you like to schedule an appointment?";
+    }
+    
+    if (userMessage.includes('service') || userMessage.includes('price') || userMessage.includes('cost')) {
+      return "I'd be happy to tell you about our services! What specific service are you interested in learning about?";
+    }
+    
+    if (userMessage.includes('hello') || userMessage.includes('hi')) {
+      return "Hello! Welcome to our business. How can I help you today?";
+    }
+    
+    // General fallback
+    return "Thank you for calling! I'm here to help with appointments, questions about our services, or connecting you with the right person. How can I assist you today?";
   }
 
   async generateSmartResponse(userMessage: string, context: any): Promise<string> {
