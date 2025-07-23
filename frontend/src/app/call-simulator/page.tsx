@@ -68,6 +68,81 @@ export default function CallSimulator() {
   const [callSummaryOpen, setCallSummaryOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
+  const quickTestScenarios = [
+    {
+      emoji: '🍽️',
+      title: 'Book a table',
+      script: "Hi, I'd like to make a reservation for dinner tonight. Table for 2 at 7 PM please.",
+      category: 'restaurant'
+    },
+    {
+      emoji: '🛍️',
+      title: 'Place an order',
+      script: "I'd like to place an order for delivery. Can I get a Caesar salad and the grilled chicken?",
+      category: 'restaurant'
+    },
+    {
+      emoji: '❓',
+      title: 'Ask about hours',
+      script: "What are your business hours? Are you open on weekends?",
+      category: 'general'
+    },
+    {
+      emoji: '🥗',
+      title: 'Ask about menu',
+      script: "What do you have on the menu today? Do you have any vegetarian options?",
+      category: 'restaurant'
+    },
+    {
+      emoji: '💇',
+      title: 'Book appointment',
+      script: "Hi, I need to schedule a haircut appointment for this Friday afternoon. What times are available?",
+      category: 'salon'
+    },
+    {
+      emoji: '💊',
+      title: 'Medical appointment',
+      script: "I need to see the doctor as soon as possible. Do you have any appointments available this week?",
+      category: 'medical'
+    },
+    {
+      emoji: '🚗',
+      title: 'Service appointment',
+      script: "My car needs an oil change. Can I schedule a service appointment for next week?",
+      category: 'automotive'
+    },
+    {
+      emoji: '💰',
+      title: 'Ask about pricing',
+      script: "How much do your services cost? Do you have a price list I can see?",
+      category: 'general'
+    },
+    {
+      emoji: '📞',
+      title: 'Transfer to human',
+      script: "This is complicated. Can I speak to a real person please? I need to talk to someone directly.",
+      category: 'general'
+    },
+    {
+      emoji: '😤',
+      title: 'Customer complaint',
+      script: "I'm very unhappy with my last visit. The service was terrible and I want to speak to a manager.",
+      category: 'general'
+    },
+    {
+      emoji: '📅',
+      title: 'Reschedule appointment',
+      script: "I need to reschedule my appointment for tomorrow. Can we move it to next week instead?",
+      category: 'general'
+    },
+    {
+      emoji: '📍',
+      title: 'Ask about location',
+      script: "Where are you located? Do you have parking available? What's your address?",
+      category: 'general'
+    }
+  ];
+
   const testScenarios = [
     {
       id: 'booking-basic',
@@ -134,27 +209,97 @@ export default function CallSimulator() {
         if (businessResponse.data.length > 0) {
           const business = businessResponse.data[0];
           
-          // Mock services and menu data
+          // Create business-specific context based on type
+          const getServicesForBusinessType = (businessType: string) => {
+            switch (businessType) {
+              case 'restaurant':
+                return [
+                  { id: '1', name: 'Table Reservation', description: 'Reserve a table for dining', duration: 120, price: 0, category: 'Dining' },
+                  { id: '2', name: 'Private Event', description: 'Book private dining space', duration: 240, price: 200, category: 'Events' },
+                  { id: '3', name: 'Catering Order', description: 'Order catering for events', duration: 60, price: 100, category: 'Catering' },
+                ];
+              case 'salon':
+                return [
+                  { id: '1', name: 'Haircut', description: 'Professional haircut and styling', duration: 45, price: 80, category: 'Hair' },
+                  { id: '2', name: 'Hair Coloring', description: 'Professional hair coloring service', duration: 120, price: 150, category: 'Hair' },
+                  { id: '3', name: 'Styling', description: 'Hair styling for special events', duration: 60, price: 100, category: 'Hair' },
+                ];
+              case 'medical':
+                return [
+                  { id: '1', name: 'General Consultation', description: 'General medical consultation', duration: 30, price: 150, category: 'Consultation' },
+                  { id: '2', name: 'Specialist Consultation', description: 'Specialist medical consultation', duration: 45, price: 250, category: 'Consultation' },
+                  { id: '3', name: 'Follow-up Visit', description: 'Follow-up medical visit', duration: 20, price: 100, category: 'Follow-up' },
+                ];
+              case 'spa':
+                return [
+                  { id: '1', name: 'Massage', description: 'Relaxing full body massage', duration: 60, price: 120, category: 'Wellness' },
+                  { id: '2', name: 'Facial', description: 'Rejuvenating facial treatment', duration: 90, price: 150, category: 'Skincare' },
+                  { id: '3', name: 'Body Treatment', description: 'Full body wellness treatment', duration: 120, price: 200, category: 'Wellness' },
+                ];
+              default:
+                return [
+                  { id: '1', name: 'Consultation', description: 'Initial consultation', duration: 30, price: 50, category: 'General' },
+                  { id: '2', name: 'Service Appointment', description: 'General service appointment', duration: 60, price: 100, category: 'General' },
+                ];
+            }
+          };
+
+          const getMenuForRestaurant = (businessType: string) => {
+            if (businessType === 'restaurant') {
+              return [
+                { id: '1', name: 'Caesar Salad', description: 'Fresh romaine lettuce with parmesan and croutons', price: 14.99, category: 'Salads', available: true },
+                { id: '2', name: 'Grilled Salmon', description: 'Fresh Atlantic salmon with herbs', price: 28.99, category: 'Main Course', available: true },
+                { id: '3', name: 'Pasta Carbonara', description: 'Classic Italian pasta with cream sauce and pancetta', price: 18.99, category: 'Pasta', available: true },
+                { id: '4', name: 'Ribeye Steak', description: 'Premium cut ribeye steak cooked to perfection', price: 35.99, category: 'Main Course', available: true },
+                { id: '5', name: 'Margherita Pizza', description: 'Classic pizza with fresh mozzarella and basil', price: 16.99, category: 'Pizza', available: true },
+                { id: '6', name: 'Chocolate Lava Cake', description: 'Decadent chocolate cake with molten center', price: 8.99, category: 'Desserts', available: true },
+              ];
+            }
+            return [];
+          };
+
+          // Determine business type from business data or default to restaurant for testing
+          const businessType = business.type || 'restaurant';
+          
           const context = {
             ...business,
-            services: [
-              { id: '1', name: 'Consultation', description: 'Initial consultation', duration: 30, price: 50, category: 'General' },
-              { id: '2', name: 'Haircut', description: 'Professional haircut', duration: 45, price: 80, category: 'Hair' },
-              { id: '3', name: 'Massage', description: 'Relaxing massage', duration: 60, price: 120, category: 'Wellness' },
-              { id: '4', name: 'Facial', description: 'Rejuvenating facial', duration: 90, price: 150, category: 'Skincare' },
-            ],
-            menu: business.type === 'restaurant' ? [
-              { id: '1', name: 'Caesar Salad', description: 'Fresh romaine lettuce with parmesan', price: 12.99, category: 'Salads', available: true },
-              { id: '2', name: 'Grilled Chicken', description: 'Herb-seasoned grilled chicken breast', price: 18.99, category: 'Main Course', available: true },
-              { id: '3', name: 'Pasta Carbonara', description: 'Classic Italian pasta with cream sauce', price: 16.99, category: 'Pasta', available: true },
-            ] : [],
+            type: businessType,
+            services: getServicesForBusinessType(businessType),
+            menu: getMenuForRestaurant(businessType),
           };
+          
+          console.log('🏢 Business context created:', context);
           
           setBusinessContext(context);
           setAiEngine(new AIConversationEngine(context));
         }
       } catch (error) {
         console.error('Error fetching business context:', error);
+        // Fallback to restaurant context for testing
+        const fallbackContext = {
+          type: 'restaurant',
+          name: 'AI Receptionist Test Restaurant',
+          services: [
+            { id: '1', name: 'Table Reservation', description: 'Reserve a table for dining', duration: 120, price: 0, category: 'Dining' },
+            { id: '2', name: 'Private Event', description: 'Book private dining space', duration: 240, price: 200, category: 'Events' },
+          ],
+          menu: [
+            { id: '1', name: 'Caesar Salad', description: 'Fresh romaine lettuce with parmesan', price: 14.99, category: 'Salads', available: true },
+            { id: '2', name: 'Grilled Salmon', description: 'Fresh Atlantic salmon', price: 28.99, category: 'Main Course', available: true },
+          ],
+          operatingHours: {
+            0: { open: 11, close: 22, closed: false },
+            1: { open: 11, close: 22, closed: false },
+            2: { open: 11, close: 22, closed: false },
+            3: { open: 11, close: 22, closed: false },
+            4: { open: 11, close: 22, closed: false },
+            5: { open: 11, close: 23, closed: false },
+            6: { open: 11, close: 23, closed: false },
+          }
+        };
+        console.log('🏢 Using fallback restaurant context:', fallbackContext);
+        setBusinessContext(fallbackContext);
+        setAiEngine(new AIConversationEngine(fallbackContext));
       }
     };
 
@@ -216,20 +361,33 @@ export default function CallSimulator() {
   };
 
   const addMessage = (content: string, sender: 'customer' | 'ai', type: 'text' | 'action' | 'system' = 'text') => {
-    if (!currentCall) return;
+    if (!currentCall) {
+      console.error('❌ Cannot add message - no current call');
+      return;
+    }
 
-    const message: ConversationMessage = {
-      id: `msg-${Date.now()}`,
-      timestamp: new Date(),
-      sender,
-      content,
-      type,
-    };
+    try {
+      const message: ConversationMessage = {
+        id: `msg-${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        sender,
+        content,
+        type,
+      };
 
-    setCurrentCall({
-      ...currentCall,
-      messages: [...currentCall.messages, message],
-    });
+      console.log('➕ Adding message:', message);
+
+      setCurrentCall(prevCall => {
+        if (!prevCall) return prevCall;
+        
+        return {
+          ...prevCall,
+          messages: [...prevCall.messages, message],
+        };
+      });
+    } catch (error) {
+      console.error('❌ Error adding message:', error);
+    }
   };
 
   const addAIMessage = (content: string, type: 'text' | 'action' | 'system' = 'text') => {
@@ -237,41 +395,76 @@ export default function CallSimulator() {
   };
 
   const sendMessage = async () => {
-    if (!messageInput.trim() || !currentCall || !aiEngine) return;
+    if (!messageInput.trim() || !currentCall || !aiEngine) {
+      console.log('❌ Cannot send message - missing requirements:', {
+        messageInput: messageInput.trim(),
+        currentCall: !!currentCall,
+        aiEngine: !!aiEngine
+      });
+      return;
+    }
 
     const userMessage = messageInput.trim();
+    console.log('📤 Sending message:', userMessage);
+    
+    // Store the message first, then clear the input
+    const messageCopy = userMessage;
     setMessageInput('');
     setIsProcessing(true);
 
-    // Add user message
-    addMessage(userMessage, 'customer');
-
-    // Process with AI
     try {
+      // Add user message to conversation
+      console.log('➕ Adding user message to conversation');
+      addMessage(messageCopy, 'customer');
+
+      // Process with AI
+      console.log('🤖 Starting AI processing...');
       await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate processing time
 
-      const aiResponse = await aiEngine.processMessage(userMessage, currentCall.context);
+      const aiResponse = await aiEngine.processMessage(messageCopy, currentCall.context);
+      console.log('🤖 AI response received:', aiResponse);
       
       // Add AI response
-      addAIMessage(aiResponse.message);
+      if (aiResponse && aiResponse.message) {
+        console.log('➕ Adding AI response to conversation');
+        addAIMessage(aiResponse.message);
+      } else {
+        console.error('❌ No message in AI response:', aiResponse);
+        addAIMessage("I apologize, I didn't quite understand that. Could you please rephrase your request?");
+      }
 
       // Execute actions
       if (aiResponse.actions && Array.isArray(aiResponse.actions) && aiResponse.actions.length > 0) {
+        console.log('🎬 Executing actions:', aiResponse.actions);
         for (const action of aiResponse.actions) {
           await executeAction(action);
         }
       }
 
-      // Update call context
-      setCurrentCall({
-        ...currentCall,
-        context: currentCall.context,
+      // Update call context with any changes
+      setCurrentCall(prevCall => {
+        if (!prevCall) return prevCall;
+        
+        return {
+          ...prevCall,
+          context: {
+            ...prevCall.context,
+            intent: aiResponse.intent || prevCall.context.intent,
+            customerInfo: {
+              ...prevCall.context.customerInfo,
+              ...(aiResponse.entities?.name && { name: aiResponse.entities.name }),
+              ...(aiResponse.entities?.phone && { phone: aiResponse.entities.phone }),
+              ...(aiResponse.entities?.email && { email: aiResponse.entities.email }),
+            }
+          }
+        };
       });
 
     } catch (error) {
-      console.error('Error processing message:', error);
+      console.error('❌ Error processing message:', error);
       addAIMessage("I apologize, I'm having trouble processing your request. Let me connect you with a human agent.");
     } finally {
+      console.log('✅ Message processing complete');
       setIsProcessing(false);
     }
   };
@@ -333,18 +526,45 @@ export default function CallSimulator() {
   const handleKeyPress = (event: React.KeyboardEvent) => {
     if (event.key === 'Enter' && !event.shiftKey) {
       event.preventDefault();
+      event.stopPropagation();
       sendMessage();
     }
+  };
+
+  const handleSendClick = (event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+    sendMessage();
   };
 
   const useTestScenario = (scenario: any) => {
     if (!currentCall) {
       startCall();
       setTimeout(() => {
-        setMessageInput(scenario.starter);
+        setMessageInput(scenario.starter || scenario.script);
       }, 1500);
     } else {
-      setMessageInput(scenario.starter);
+      setMessageInput(scenario.starter || scenario.script);
+    }
+  };
+
+  const useQuickScenario = (scenario: any) => {
+    console.log('🎯 Using quick scenario:', scenario.title);
+    
+    try {
+      if (!currentCall) {
+        console.log('🎯 Starting new call for scenario');
+        startCall();
+        setTimeout(() => {
+          console.log('🎯 Setting message input after call start:', scenario.script);
+          setMessageInput(scenario.script);
+        }, 1500);
+      } else {
+        console.log('🎯 Setting message input for existing call:', scenario.script);
+        setMessageInput(scenario.script);
+      }
+    } catch (error) {
+      console.error('❌ Error in useQuickScenario:', error);
     }
   };
 
@@ -357,27 +577,50 @@ export default function CallSimulator() {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+    <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
+      <Box sx={{ mb: { xs: 2, sm: 4 } }}>
+        <Typography 
+          variant="h4" 
+          component="h1" 
+          gutterBottom 
+          sx={{ 
+            fontWeight: 'bold', 
+            color: 'primary.main',
+            fontSize: { xs: '1.75rem', sm: '2.125rem' }
+          }}
+        >
           AI Call Simulator
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
           Test your AI receptionist with realistic call scenarios
         </Typography>
       </Box>
 
-      <Tabs value={tabValue} onChange={handleTabChange} sx={{ mb: 3 }}>
+      <Tabs 
+        value={tabValue} 
+        onChange={handleTabChange} 
+        sx={{ 
+          mb: 3,
+          '& .MuiTab-root': {
+            fontSize: { xs: '0.875rem', sm: '1rem' },
+            minWidth: { xs: 'auto', sm: 'auto' },
+            px: { xs: 1, sm: 2 }
+          }
+        }}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+      >
         <Tab label="Call Simulation" />
         <Tab label="Test Scenarios" />
         <Tab label="Performance Analytics" />
       </Tabs>
 
       <TabPanel value={tabValue} index={0}>
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3 }}>
           {/* Call Interface */}
           <Grid item xs={12} lg={8}>
-            <Card sx={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
+            <Card sx={{ height: { xs: '500px', sm: '600px' }, display: 'flex', flexDirection: 'column' }}>
               <CardHeader
                 avatar={
                   <Avatar sx={{ bgcolor: currentCall?.status === 'active' ? 'success.main' : 'grey.500' }}>
@@ -508,7 +751,7 @@ export default function CallSimulator() {
                 {/* Message Input */}
                 {currentCall?.status === 'active' && (
                   <Box sx={{ p: 2, borderTop: 1, borderColor: 'divider' }}>
-                    <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Box component="form" onSubmit={(e) => { e.preventDefault(); handleSendClick(e as any); }} sx={{ display: 'flex', gap: 1 }}>
                       <TextField
                         fullWidth
                         variant="outlined"
@@ -521,8 +764,9 @@ export default function CallSimulator() {
                         maxRows={3}
                       />
                       <IconButton
+                        type="submit"
                         color="primary"
-                        onClick={sendMessage}
+                        onClick={handleSendClick}
                         disabled={!messageInput.trim() || isProcessing}
                         sx={{ alignSelf: 'flex-end' }}
                       >
@@ -531,6 +775,56 @@ export default function CallSimulator() {
                     </Box>
                   </Box>
                 )}
+              </CardContent>
+            </Card>
+          </Grid>
+
+          {/* Quick Test Scenarios */}
+          <Grid item xs={12} lg={8}>
+            <Card>
+              <CardHeader 
+                title="Quick Test Scenarios" 
+                subheader="Click any scenario to instantly test your AI with realistic customer requests"
+              />
+              <CardContent>
+                <Grid container spacing={2}>
+                  {quickTestScenarios.map((scenario, index) => (
+                    <Grid item xs={6} sm={4} md={3} key={index}>
+                      <Button
+                        variant="outlined"
+                        fullWidth
+                        onClick={() => useQuickScenario(scenario)}
+                        sx={{
+                          height: 80,
+                          display: 'flex',
+                          flexDirection: 'column',
+                          gap: 1,
+                          fontSize: { xs: '0.75rem', sm: '0.875rem' },
+                          p: 1,
+                          border: '2px solid',
+                          borderColor: 'primary.light',
+                          '&:hover': {
+                            borderColor: 'primary.main',
+                            bgcolor: 'primary.50',
+                          }
+                        }}
+                      >
+                        <Typography variant="h5" component="span">
+                          {scenario.emoji}
+                        </Typography>
+                        <Typography variant="caption" textAlign="center" sx={{ lineHeight: 1.2 }}>
+                          {scenario.title}
+                        </Typography>
+                      </Button>
+                    </Grid>
+                  ))}
+                </Grid>
+                <Alert severity="info" sx={{ mt: 2 }}>
+                  <Typography variant="body2">
+                    💡 <strong>Tip:</strong> These scenarios automatically start a call and input realistic customer messages. 
+                    Perfect for quickly testing how your AI handles common situations!
+                  </Typography>
+                </Alert>
               </CardContent>
             </Card>
           </Grid>
@@ -648,10 +942,7 @@ export default function CallSimulator() {
                           <Button
                             variant="outlined"
                             size="small"
-                            onClick={() => {
-                              setUserInput(scenario.userInput);
-                              setSelectedScenario(scenario);
-                            }}
+                            onClick={() => useTestScenario(scenario)}
                           >
                             Test
                           </Button>
@@ -684,8 +975,16 @@ export default function CallSimulator() {
         onClose={() => setCallSummaryOpen(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: {
+            m: { xs: 2, sm: 3 },
+            maxHeight: { xs: 'calc(100vh - 64px)', sm: 'calc(100vh - 128px)' }
+          }
+        }}
       >
-        <DialogTitle>Call Summary</DialogTitle>
+        <DialogTitle sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
+          Call Summary
+        </DialogTitle>
         <DialogContent>
           {currentCall?.summary && (
             <Grid container spacing={2}>

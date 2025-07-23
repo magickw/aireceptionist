@@ -21,9 +21,7 @@ export default function RootLayout({
     <html lang="en">
       <body className={inter.className}>
         <ThemeProviderWrapper>
-          <Link href="/">
-            <Header />
-          </Link>
+          <Header />
           {children}
         </ThemeProviderWrapper>
       </body>

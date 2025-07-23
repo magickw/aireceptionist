@@ -1,8 +1,4 @@
 {
-  "/business-setup/page": "app/business-setup/page.js",
-  "/call-management/page": "app/call-management/page.js",
   "/call-simulator/page": "app/call-simulator/page.js",
-  "/favicon.ico/route": "app/favicon.ico/route.js",
-  "/integrations/page": "app/integrations/page.js",
-  "/page": "app/page.js"
+  "/favicon.ico/route": "app/favicon.ico/route.js"
 }

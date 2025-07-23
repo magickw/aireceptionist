@@ -122,6 +122,18 @@ export default function BusinessSetup() {
         if (businessResponse.data.length > 0) {
           const business = businessResponse.data[0];
           const settings = business.settings || {};
+          
+          // Define default operating hours
+          const defaultOperatingHours = {
+            0: { open: 9, close: 17, closed: false },
+            1: { open: 9, close: 17, closed: false },
+            2: { open: 9, close: 17, closed: false },
+            3: { open: 9, close: 17, closed: false },
+            4: { open: 9, close: 17, closed: false },
+            5: { open: 9, close: 17, closed: false },
+            6: { open: 10, close: 16, closed: false },
+          };
+          
           setProfile({
             id: business.id,
             name: business.name || '',
@@ -130,7 +142,7 @@ export default function BusinessSetup() {
             address: settings.address || '',
             description: settings.description || '',
             website: settings.website || '',
-            operatingHours: business.operating_hours || profile.operatingHours,
+            operatingHours: business.operating_hours || defaultOperatingHours,
           });
           
           // Load services from settings if available
@@ -237,31 +249,48 @@ export default function BusinessSetup() {
   };
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+    <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
+      <Box sx={{ mb: { xs: 2, sm: 4 } }}>
+        <Typography 
+          variant="h4" 
+          component="h1" 
+          gutterBottom 
+          sx={{ 
+            fontWeight: 'bold', 
+            color: 'primary.main',
+            fontSize: { xs: '1.75rem', sm: '2.125rem' }
+          }}
+        >
           Business Setup
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
           Configure your business profile, services, and operating hours for AI training
         </Typography>
       </Box>
 
-      <Grid container spacing={3}>
+      <Grid container spacing={{ xs: 2, sm: 3 }}>
         {/* Business Profile */}
         <Grid item xs={12} lg={8}>
           <Card>
             <CardHeader
               avatar={
-                <Avatar sx={{ bgcolor: 'primary.main' }}>
+                <Avatar sx={{ bgcolor: 'primary.main', width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
                   {getBusinessTypeIcon(profile.type)}
                 </Avatar>
               }
-              title="Business Profile"
-              subheader="Basic information about your business"
+              title={
+                <Typography variant="h6" sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
+                  Business Profile
+                </Typography>
+              }
+              subheader={
+                <Typography variant="body2" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+                  Basic information about your business
+                </Typography>
+              }
             />
             <CardContent>
-              <Grid container spacing={3}>
+              <Grid container spacing={{ xs: 2, sm: 3 }}>
                 <Grid item xs={12} md={6}>
                   <TextField
                     label="Business Name"
@@ -270,10 +299,11 @@ export default function BusinessSetup() {
                     value={profile.name}
                     onChange={(e) => setProfile({ ...profile, name: e.target.value })}
                     required
+                    size="small"
                   />
                 </Grid>
                 <Grid item xs={12} md={6}>
-                  <FormControl variant="outlined" fullWidth>
+                  <FormControl variant="outlined" fullWidth size="small">
                     <InputLabel>Business Type</InputLabel>
                     <Select
                       value={profile.type}
@@ -284,7 +314,9 @@ export default function BusinessSetup() {
                         <MenuItem key={type.value} value={type.value}>
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             {type.icon}
-                            {type.label}
+                            <Typography sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+                              {type.label}
+                            </Typography>
                           </Box>
                         </MenuItem>
                       ))}
@@ -298,6 +330,7 @@ export default function BusinessSetup() {
                     fullWidth
                     value={profile.phone}
                     onChange={(e) => setProfile({ ...profile, phone: e.target.value })}
+                    size="small"
                   />
                 </Grid>
                 <Grid item xs={12} md={6}>
@@ -307,6 +340,7 @@ export default function BusinessSetup() {
                     fullWidth
                     value={profile.website}
                     onChange={(e) => setProfile({ ...profile, website: e.target.value })}
+                    size="small"
                   />
                 </Grid>
                 <Grid item xs={12}>
@@ -316,6 +350,7 @@ export default function BusinessSetup() {
                     fullWidth
                     value={profile.address}
                     onChange={(e) => setProfile({ ...profile, address: e.target.value })}
+                    size="small"
                   />
                 </Grid>
                 <Grid item xs={12}>
@@ -328,15 +363,17 @@ export default function BusinessSetup() {
                     value={profile.description}
                     onChange={(e) => setProfile({ ...profile, description: e.target.value })}
                     helperText="Describe your business to help AI provide better responses"
+                    size="small"
                   />
                 </Grid>
               </Grid>
-              <Box sx={{ mt: 3, display: 'flex', justifyContent: 'flex-end' }}>
+              <Box sx={{ mt: 3, display: 'flex', justifyContent: { xs: 'stretch', sm: 'flex-end' } }}>
                 <Button
                   variant="contained"
                   color="primary"
                   onClick={handleProfileSave}
-                  sx={{ minWidth: 120 }}
+                  sx={{ minWidth: { xs: '100%', sm: 120 } }}
+                  size="medium"
                 >
                   Save Profile
                 </Button>
@@ -349,14 +386,22 @@ export default function BusinessSetup() {
         <Grid item xs={12} lg={4}>
           <Card sx={{ height: 'fit-content' }}>
             <CardHeader
-              title="Operating Hours"
-              subheader="Configure your business hours"
+              title={
+                <Typography variant="h6" sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
+                  Operating Hours
+                </Typography>
+              }
+              subheader={
+                <Typography variant="body2" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+                  Configure your business hours
+                </Typography>
+              }
             />
             <CardContent>
               {daysOfWeek.map((dayName, index) => (
                 <Box key={index} sx={{ mb: 2 }}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                    <Typography sx={{ width: 100, fontWeight: 'medium' }}>
+                  <Box sx={{ display: 'flex', alignItems: 'center', mb: 1, flexDirection: { xs: 'column', sm: 'row' }, gap: { xs: 1, sm: 0 } }}>
+                    <Typography sx={{ width: { xs: '100%', sm: 100 }, fontWeight: 'medium', textAlign: { xs: 'center', sm: 'left' }, fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                       {dayName}
                     </Typography>
                     <FormControlLabel
@@ -368,12 +413,12 @@ export default function BusinessSetup() {
                         />
                       }
                       label="Open"
-                      sx={{ ml: 'auto' }}
+                      sx={{ ml: { xs: 0, sm: 'auto' } }}
                     />
                   </Box>
                   {!profile.operatingHours[index]?.closed && (
-                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                      <FormControl variant="outlined" size="small" sx={{ minWidth: 80 }}>
+                    <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' } }}>
+                      <FormControl variant="outlined" size="small" sx={{ minWidth: { xs: '100%', sm: 80 } }}>
                         <InputLabel>Open</InputLabel>
                         <Select
                           value={profile.operatingHours[index]?.open || 0}
@@ -387,8 +432,8 @@ export default function BusinessSetup() {
                           ))}
                         </Select>
                       </FormControl>
-                      <Typography variant="body2">to</Typography>
-                      <FormControl variant="outlined" size="small" sx={{ minWidth: 80 }}>
+                      <Typography variant="body2" sx={{ display: { xs: 'none', sm: 'block' } }}>to</Typography>
+                      <FormControl variant="outlined" size="small" sx={{ minWidth: { xs: '100%', sm: 80 } }}>
                         <InputLabel>Close</InputLabel>
                         <Select
                           value={profile.operatingHours[index]?.close || 0}
@@ -415,8 +460,16 @@ export default function BusinessSetup() {
         <Grid item xs={12}>
           <Card>
             <CardHeader
-              title="Services & Menu"
-              subheader="Configure services for AI booking and information"
+              title={
+                <Typography variant="h6" sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
+                  Services & Menu
+                </Typography>
+              }
+              subheader={
+                <Typography variant="body2" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+                  Configure services for AI booking and information
+                </Typography>
+              }
               action={
                 <Button
                   variant="contained"
@@ -426,47 +479,53 @@ export default function BusinessSetup() {
                     setNewService({ name: '', description: '', duration: 30, price: 0, category: '' });
                     setServiceDialogOpen(true);
                   }}
+                  size="small"
+                  sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}
                 >
-                  Add Service
+                  <Box component="span" sx={{ display: { xs: 'none', sm: 'inline' } }}>Add Service</Box>
+                  <Box component="span" sx={{ display: { xs: 'inline', sm: 'none' } }}>Add</Box>
                 </Button>
               }
             />
             <CardContent>
               {services.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography variant="body2" color="text.secondary">
+                <Box sx={{ textAlign: 'center', py: { xs: 3, sm: 4 } }}>
+                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                     No services configured. Add services to help AI provide better information.
                   </Typography>
                 </Box>
               ) : (
                 <List>
                   {services.map((service) => (
-                    <ListItem key={service.id} divider>
+                    <ListItem key={service.id} divider sx={{ flexDirection: { xs: 'column', sm: 'row' }, alignItems: { xs: 'stretch', sm: 'center' }, py: { xs: 2, sm: 1 } }}>
                       <ListItemText
                         primary={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
-                            <Typography variant="h6">{service.name}</Typography>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1, flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
+                            <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.125rem' } }}>
+                              {service.name}
+                            </Typography>
                             <Chip label={service.category} size="small" color="primary" />
                           </Box>
                         }
                         secondary={
-                          <Box>
-                            <Typography variant="body2" color="text.primary" sx={{ mb: 1 }}>
+                          <Box sx={{ textAlign: { xs: 'center', sm: 'left' } }}>
+                            <Typography variant="body2" component="span" color="text.primary" sx={{ mb: 1, display: 'block', fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                               {service.description}
                             </Typography>
-                            <Box sx={{ display: 'flex', gap: 2 }}>
+                            <Box sx={{ display: 'flex', gap: 2, justifyContent: { xs: 'center', sm: 'flex-start' }, flexWrap: 'wrap' }}>
                               <Chip label={`${service.duration} min`} size="small" variant="outlined" />
                               <Chip label={`$${service.price}`} size="small" variant="outlined" />
                             </Box>
                           </Box>
                         }
+                        sx={{ flex: 1 }}
                       />
-                      <ListItemSecondaryAction>
+                      <ListItemSecondaryAction sx={{ position: { xs: 'static', sm: 'absolute' }, right: { xs: 'auto', sm: 16 }, display: 'flex', gap: 1, mt: { xs: 2, sm: 0 }, justifyContent: { xs: 'center', sm: 'flex-end' } }}>
                         <IconButton
                           edge="end"
                           aria-label="edit"
                           onClick={() => handleServiceEdit(service)}
-                          sx={{ mr: 1 }}
+                          size="small"
                         >
                           <EditIcon />
                         </IconButton>
@@ -474,6 +533,7 @@ export default function BusinessSetup() {
                           edge="end"
                           aria-label="delete"
                           onClick={() => service.id && handleServiceDelete(service.id)}
+                          size="small"
                         >
                           <DeleteIcon />
                         </IconButton>
@@ -493,8 +553,14 @@ export default function BusinessSetup() {
         onClose={() => setServiceDialogOpen(false)}
         maxWidth="sm"
         fullWidth
+        PaperProps={{
+          sx: {
+            m: { xs: 2, sm: 3 },
+            maxHeight: { xs: 'calc(100vh - 64px)', sm: 'calc(100vh - 128px)' }
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
           {editingService ? 'Edit Service' : 'Add New Service'}
         </DialogTitle>
         <DialogContent>
@@ -507,6 +573,7 @@ export default function BusinessSetup() {
                 value={newService.name}
                 onChange={(e) => setNewService({ ...newService, name: e.target.value })}
                 required
+                size={{ xs: 'small', sm: 'medium' }}
               />
             </Grid>
             <Grid item xs={12}>
@@ -518,6 +585,7 @@ export default function BusinessSetup() {
                 rows={2}
                 value={newService.description}
                 onChange={(e) => setNewService({ ...newService, description: e.target.value })}
+                size={{ xs: 'small', sm: 'medium' }}
               />
             </Grid>
             <Grid item xs={6}>
@@ -528,6 +596,7 @@ export default function BusinessSetup() {
                 type="number"
                 value={newService.duration}
                 onChange={(e) => setNewService({ ...newService, duration: parseInt(e.target.value) || 0 })}
+                size={{ xs: 'small', sm: 'medium' }}
               />
             </Grid>
             <Grid item xs={6}>
@@ -538,6 +607,7 @@ export default function BusinessSetup() {
                 type="number"
                 value={newService.price}
                 onChange={(e) => setNewService({ ...newService, price: parseFloat(e.target.value) || 0 })}
+                size={{ xs: 'small', sm: 'medium' }}
               />
             </Grid>
             <Grid item xs={12}>
@@ -548,13 +618,23 @@ export default function BusinessSetup() {
                 value={newService.category}
                 onChange={(e) => setNewService({ ...newService, category: e.target.value })}
                 helperText="e.g., Hair Services, Treatments, Consultation"
+                size={{ xs: 'small', sm: 'medium' }}
               />
             </Grid>
           </Grid>
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setServiceDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleServiceSave}>
+        <DialogActions sx={{ p: { xs: 2, sm: 3 }, flexDirection: { xs: 'column', sm: 'row' }, gap: { xs: 1, sm: 0 } }}>
+          <Button 
+            onClick={() => setServiceDialogOpen(false)}
+            fullWidth
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleServiceSave}
+            fullWidth
+          >
             {editingService ? 'Update' : 'Add'} Service
           </Button>
         </DialogActions>

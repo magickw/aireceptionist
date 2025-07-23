@@ -63,11 +63,11 @@ export default function CallLogsPage() {
                         {log.transcript || 'No transcript available.'}
                       </Typography>
                       {log.recording_url && (
-                        <Typography component="span" variant="body2" color="text.secondary" display="block">
+                        <Box component="span" sx={{ display: 'block', mt: 1 }}>
                           <a href={log.recording_url} target="_blank" rel="noopener noreferrer">
                             Listen to Recording
                           </a>
-                        </Typography>
+                        </Box>
                       )}
                     </>
                   }
