@@ -82,34 +82,49 @@ class AIConversationEngine {
   public async processMessage(message: string, context: ConversationContext): Promise<AIResponse> {
     console.log('🔥 AI Engine - Processing message:', message);
     console.log('🔥 AI Engine - Current context:', context);
+    
+    const intent = this.detectIntent(message);
+    const entities = this.extractEntities(message);
+    const confidence = this.calculateConfidence(message, intent, entities);
 
-    if (context.expectedInput) {
-      const newEntities = { [context.expectedInput]: message };
-      this.updateContext(context, newEntities, context.intent || 'unknown');
-      context.expectedInput = undefined; // Clear expected input
-    } else {
-      const intent = this.detectIntent(message);
-      const entities = this.extractEntities(message);
-      const confidence = this.calculateConfidence(message, intent, entities);
+    console.log('🔥 AI Engine - Detected intent:', intent);
+    console.log('🔥 AI Engine - Extracted entities:', entities);
 
-      console.log('🔥 AI Engine - Detected intent:', intent);
-      console.log('🔥 AI Engine - Extracted entities:', entities);
+    // Update context with extracted entities
+    this.updateContext(context, entities, intent);
 
-      this.updateContext(context, entities, intent);
+    // Generate appropriate response
+    let response: string;
+    
+    try {
+      if (this.useAdvancedAI) {
+        // Use OpenRouter for more natural responses
+        console.log('🔥 AI Engine - Using advanced AI for response generation');
+        response = await this.openRouterService.generateSmartResponse(message, context.businessContext || this.businessContext);
+        console.log('🔥 AI Engine - OpenRouter response:', response);
+      } else {
+        console.log('🔥 AI Engine - Using rule-based response generation');
+        response = this.generateResponse(message, intent, entities, context);
+        console.log('🔥 AI Engine - Rule-based response:', response);
+      }
+    } catch (error) {
+      console.error('🔥 AI Engine - AI response generation error:', error);
+      // Fallback to rule-based response
+      console.log('🔥 AI Engine - Falling back to rule-based response');
+      response = this.generateResponse(message, intent, entities, context);
     }
 
-    const response = this.generateResponse(message, context.intent || 'unknown', {}, context);
-    const actions = this.determineActions(context.intent || 'unknown', {}, context);
+    const actions = this.determineActions(intent, entities, context);
 
     console.log('🔥 AI Engine - Final response:', response);
     console.log('🔥 AI Engine - Determined actions:', actions);
 
     const result = {
       message: response,
-      confidence: this.calculateConfidence(message, context.intent || 'unknown', {}),
-      intent: context.intent || 'unknown',
-      entities: {},
-      actions: actions || [],
+      confidence,
+      intent,
+      entities,
+      actions: actions || [], // Ensure actions is always an array
     };
 
     console.log('🔥 AI Engine - Returning result:', result);
@@ -163,15 +178,10 @@ class AIConversationEngine {
   }
 
   private updateContext(context: ConversationContext, entities: Record<string, any>, intent: string): void {
-    if (context.expectedInput && entities[context.expectedInput]) {
-      context.customerInfo.name = entities[context.expectedInput].trim();
-      context.expectedInput = undefined;
-    } else {
-      // Update customer info
-      if (entities.name) context.customerInfo.name = entities.name.trim();
-      if (entities.phone) context.customerInfo.phone = entities.phone;
-      if (entities.email) context.customerInfo.email = entities.email;
-    }
+    // Update customer info
+    if (entities.name) context.customerInfo.name = entities.name.trim();
+    if (entities.phone) context.customerInfo.phone = entities.phone;
+    if (entities.email) context.customerInfo.email = entities.email;
 
     // Update intent if more specific
     if (intent !== 'unknown') context.intent = intent as any;
@@ -274,7 +284,6 @@ class AIConversationEngine {
 
     // Ask for missing information
     if (!customer.name) {
-      context.expectedInput = 'name';
       return "I'd be happy to help you book an appointment! May I start by getting your name?";
     }
     if (!customer.phone) {

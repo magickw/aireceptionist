@@ -48,7 +48,6 @@ export interface ConversationContext {
     operatingHours: Record<string, any>;
     menu?: MenuItem[];
   };
-  expectedInput?: string;
 }
 
 export interface OrderItem {
