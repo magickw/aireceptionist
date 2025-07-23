@@ -171,39 +171,30 @@ export default function Dashboard() {
   }
 
   return (
-    <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
-      <Box sx={{ mb: { xs: 2, sm: 4 } }}>
-        <Typography 
-          variant="h4" 
-          component="h1" 
-          gutterBottom 
-          sx={{ 
-            fontWeight: 'bold', 
-            color: 'primary.main',
-            fontSize: { xs: '1.75rem', sm: '2.125rem' }
-          }}
-        >
+    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
+      <Box sx={{ mb: 4 }}>
+        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
           Dashboard Overview
         </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+        <Typography variant="body1" color="text.secondary">
           Real-time insights into your AI receptionist performance
         </Typography>
       </Box>
 
       {/* Key Metrics */}
-      <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: { xs: 3, sm: 4 } }}>
-        <Grid item xs={6} sm={4} md={2}>
+      <Grid container spacing={3} sx={{ mb: 4 }}>
+        <Grid item xs={12} sm={6} md={2}>
           <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'primary.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <PhoneIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                  <PhoneIcon />
                 </Avatar>
                 <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                  <Typography variant="h6" component="div">
                     {metrics.totalCalls}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+                  <Typography variant="body2" color="text.secondary">
                     Total Calls
                   </Typography>
                 </Box>
@@ -212,18 +203,18 @@ export default function Dashboard() {
           </Card>
         </Grid>
         
-        <Grid item xs={6} sm={4} md={2}>
+        <Grid item xs={12} sm={6} md={2}>
           <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'success.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <EventIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Avatar sx={{ bgcolor: 'success.main', mr: 2 }}>
+                  <EventIcon />
                 </Avatar>
                 <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                  <Typography variant="h6" component="div">
                     {metrics.appointmentsBooked}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
+                  <Typography variant="body2" color="text.secondary">
                     Appointments
                   </Typography>
                 </Box>
@@ -232,19 +223,19 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        <Grid item xs={6} sm={4} md={2}>
+        <Grid item xs={12} sm={6} md={2}>
           <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'info.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <PeopleIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Avatar sx={{ bgcolor: 'info.main', mr: 2 }}>
+                  <PeopleIcon />
                 </Avatar>
                 <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                  <Typography variant="h6" component="div">
                     {metrics.activeCustomers}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-                    Customers
+                  <Typography variant="body2" color="text.secondary">
+                    Active Customers
                   </Typography>
                 </Box>
               </Box>
@@ -252,19 +243,19 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        <Grid item xs={6} sm={4} md={2}>
+        <Grid item xs={12} sm={6} md={2}>
           <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'secondary.main', color: 'primary.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <SmartToyIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Avatar sx={{ bgcolor: 'secondary.main', color: 'primary.main', mr: 2 }}>
+                  <SmartToyIcon />
                 </Avatar>
                 <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                  <Typography variant="h6" component="div">
                     {metrics.aiResponseRate}%
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-                    AI Success
+                  <Typography variant="body2" color="text.secondary">
+                    AI Success Rate
                   </Typography>
                 </Box>
               </Box>
@@ -272,19 +263,19 @@ export default function Dashboard() {
           </Card>
         </Grid>
 
-        <Grid item xs={6} sm={4} md={2}>
+        <Grid item xs={12} sm={6} md={2}>
           <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'warning.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <TrendingUpIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
+            <CardContent>
+              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
+                <Avatar sx={{ bgcolor: 'warning.main', mr: 2 }}>
+                  <TrendingUpIcon />
                 </Avatar>
                 <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                  <Typography variant="h6" component="div">
                     {metrics.callsToday}
                   </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-                    Today
+                  <Typography variant="body2" color="text.secondary">
+                    Calls Today
                   </Typography>
                 </Box>
               </Box>

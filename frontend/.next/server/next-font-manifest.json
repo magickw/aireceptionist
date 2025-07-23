@@ -1,6 +1,18 @@
 {
   "app": {
+    "[project]/src/app/business-setup/page": [
+      "static/media/06ba6ef833b337bc-s.p.0faac26c.woff2"
+    ],
+    "[project]/src/app/call-management/page": [
+      "static/media/06ba6ef833b337bc-s.p.0faac26c.woff2"
+    ],
     "[project]/src/app/call-simulator/page": [
+      "static/media/06ba6ef833b337bc-s.p.0faac26c.woff2"
+    ],
+    "[project]/src/app/integrations/page": [
+      "static/media/06ba6ef833b337bc-s.p.0faac26c.woff2"
+    ],
+    "[project]/src/app/page": [
       "static/media/06ba6ef833b337bc-s.p.0faac26c.woff2"
     ]
   },

@@ -4,12 +4,8 @@ import OpenRouterService from './openRouterService';
 class AIConversationEngine {
   private businessContext: any;
   private openRouterService: OpenRouterService;
-  private useAdvancedAI: boolean = true; // Re-enable OpenRouter with better error handling
+  private useAdvancedAI: boolean = true; // Toggle for using OpenRouter vs rule-based
   private intents: Record<string, RegExp[]> = {
-    greeting: [
-      /^(hi|hello|hey|good morning|good afternoon|good evening)$/i,
-      /^(how are you|howdy)$/i,
-    ],
     booking: [
       /book.*appointment/i,
       /schedule.*appointment/i,
@@ -17,15 +13,6 @@ class AIConversationEngine {
       /book.*reservation/i,
       /need.*appointment/i,
       /want.*appointment/i,
-      /reserve.*table/i,
-      /table.*for/i,
-      /reservation.*for/i,
-      /book.*table/i,
-      /i'd like.*reservation/i,
-      /i would like.*reservation/i,
-      /i'd like.*table/i,
-      /dinner.*tonight/i,
-      /lunch.*today/i,
     ],
     ordering: [
       /order/i,
@@ -34,8 +21,6 @@ class AIConversationEngine {
       /get.*food/i,
       /delivery/i,
       /takeout/i,
-      /place.*order/i,
-      /i'd like.*order/i,
     ],
     inquiry: [
       /what.*hours/i,
@@ -45,9 +30,6 @@ class AIConversationEngine {
       /price/i,
       /cost/i,
       /menu/i,
-      /location/i,
-      /address/i,
-      /where.*located/i,
     ],
     complaint: [
       /problem/i,
@@ -55,13 +37,6 @@ class AIConversationEngine {
       /complaint/i,
       /unhappy/i,
       /dissatisfied/i,
-      /terrible/i,
-      /awful/i,
-      /manager/i,
-    ],
-    farewell: [
-      /^(goodbye|bye|thanks|thank you|that's all|have a good day)$/i,
-      /^(see you|talk to you later|take care)$/i,
     ],
   };
 
@@ -80,59 +55,50 @@ class AIConversationEngine {
   }
 
   public async processMessage(message: string, context: ConversationContext): Promise<AIResponse> {
-    console.log('🔥 AI Engine - Processing message:', message);
-    console.log('🔥 AI Engine - Current context:', context);
+    const intent = this.detectIntent(message);
+    const entities = this.extractEntities(message);
+    const confidence = this.calculateConfidence(message, intent, entities);
 
-    if (context.expectedInput) {
-      const newEntities = { [context.expectedInput]: message };
-      this.updateContext(context, newEntities, context.intent || 'unknown');
-      context.expectedInput = undefined; // Clear expected input
-    } else {
-      const intent = this.detectIntent(message);
-      const entities = this.extractEntities(message);
-      const confidence = this.calculateConfidence(message, intent, entities);
+    // Update context with extracted entities
+    this.updateContext(context, entities, intent);
 
-      console.log('🔥 AI Engine - Detected intent:', intent);
-      console.log('🔥 AI Engine - Extracted entities:', entities);
-
-      this.updateContext(context, entities, intent);
+    // Generate appropriate response
+    let response: string;
+    
+    try {
+      if (this.useAdvancedAI) {
+        // Use OpenRouter for more natural responses
+        console.log('Using advanced AI for response generation');
+        response = await this.openRouterService.generateSmartResponse(message, context);
+      } else {
+        console.log('Using rule-based response generation');
+        response = this.generateResponse(message, intent, entities, context);
+      }
+    } catch (error) {
+      console.error('AI response generation error:', error);
+      // Fallback to rule-based response
+      response = this.generateResponse(message, intent, entities, context);
     }
 
-    const response = this.generateResponse(message, context.intent || 'unknown', {}, context);
-    const actions = this.determineActions(context.intent || 'unknown', {}, context);
+    const actions = this.determineActions(intent, entities, context);
 
-    console.log('🔥 AI Engine - Final response:', response);
-    console.log('🔥 AI Engine - Determined actions:', actions);
-
-    const result = {
+    return {
       message: response,
-      confidence: this.calculateConfidence(message, context.intent || 'unknown', {}),
-      intent: context.intent || 'unknown',
-      entities: {},
-      actions: actions || [],
+      confidence,
+      intent,
+      entities,
+      actions: actions || [], // Ensure actions is always an array
     };
-
-    console.log('🔥 AI Engine - Returning result:', result);
-    return result;
   }
 
   private detectIntent(message: string): string {
-    console.log('🔍 Detecting intent for message:', message);
-    
-    // Priority order: booking > ordering > complaint > inquiry > greeting
-    const intentPriority = ['booking', 'ordering', 'complaint', 'inquiry', 'greeting'];
-    
-    for (const intent of intentPriority) {
-      const patterns = this.intents[intent];
+    for (const [intent, patterns] of Object.entries(this.intents)) {
       for (const pattern of patterns) {
         if (pattern.test(message)) {
-          console.log('🔍 Matched intent:', intent, 'with pattern:', pattern);
           return intent;
         }
       }
     }
-    
-    console.log('🔍 No intent matched, returning unknown');
     return 'unknown';
   }
 
@@ -163,15 +129,10 @@ class AIConversationEngine {
   }
 
   private updateContext(context: ConversationContext, entities: Record<string, any>, intent: string): void {
-    if (context.expectedInput && entities[context.expectedInput]) {
-      context.customerInfo.name = entities[context.expectedInput].trim();
-      context.expectedInput = undefined;
-    } else {
-      // Update customer info
-      if (entities.name) context.customerInfo.name = entities.name.trim();
-      if (entities.phone) context.customerInfo.phone = entities.phone;
-      if (entities.email) context.customerInfo.email = entities.email;
-    }
+    // Update customer info
+    if (entities.name) context.customerInfo.name = entities.name.trim();
+    if (entities.phone) context.customerInfo.phone = entities.phone;
+    if (entities.email) context.customerInfo.email = entities.email;
 
     // Update intent if more specific
     if (intent !== 'unknown') context.intent = intent as any;
@@ -207,8 +168,6 @@ class AIConversationEngine {
     const businessType = context.businessContext?.businessType || this.businessContext.type;
 
     switch (intent) {
-      case 'greeting':
-        return this.generateGreetingResponse(businessType);
       case 'booking':
         return this.generateBookingResponse(entities, context, businessType);
       case 'ordering':
@@ -217,56 +176,14 @@ class AIConversationEngine {
         return this.generateInquiryResponse(message, entities, context, businessType);
       case 'complaint':
         return "I understand your concern and I want to help resolve this issue. Let me connect you with a manager who can assist you better.";
-      case 'farewell':
-        return this.generateFarewellResponse(businessType);
       default:
         return this.generateDefaultResponse(businessType);
     }
   }
 
-  private generateGreetingResponse(businessType: string): string {
-    // For stand-alone greetings, provide a welcoming response that encourages continuation
-    const businessSpecificGreetings = {
-      restaurant: [
-        "Hello! Welcome to our restaurant. Are you looking to make a reservation or place an order?",
-        "Hi there! Thank you for calling. Would you like to book a table or hear about our menu?",
-        "Good day! How can I help you today? Are you interested in dining with us?",
-      ],
-      salon: [
-        "Hello! Welcome to our salon. Are you looking to book an appointment today?",
-        "Hi there! Thanks for calling. What service can we schedule for you?",
-        "Good day! How can I help you? Are you interested in booking a hair appointment?",
-      ],
-      medical: [
-        "Hello, thank you for calling our medical practice. How may I assist you today?",
-        "Hi there! Are you looking to schedule an appointment with one of our doctors?",
-        "Good day! How can I help you? Do you need to book a consultation?",
-      ],
-      default: [
-        "Hello! Thank you for calling. How can I help you today?",
-        "Hi there! Welcome. What can I do for you?",
-        "Good day! How may I assist you?",
-      ]
-    };
-
-    const greetings = businessSpecificGreetings[businessType] || businessSpecificGreetings.default;
-    return greetings[Math.floor(Math.random() * greetings.length)];
-  }
-
-  private generateFarewellResponse(businessType: string): string {
-    const farewells = [
-      "Thank you for calling! Have a wonderful day and we look forward to serving you soon.",
-      "It was great talking with you! Thank you for choosing us. Have a great day!",
-      "Thank you for your call! We appreciate your business. Have a wonderful day!",
-    ];
-    return farewells[Math.floor(Math.random() * farewells.length)];
-  }
-
   private generateBookingResponse(entities: Record<string, any>, context: ConversationContext, businessType: string): string {
     const booking = context.bookingInfo;
     const customer = context.customerInfo;
-
-    console.log('Generating booking response - entities:', entities, 'booking:', booking, 'customer:', customer);
 
     if (booking?.completed) {
       return `Perfect! I have all the information I need. Let me book your ${booking.service} appointment for ${booking.date} at ${booking.time} under the name ${customer.name}. You'll receive a confirmation call at ${customer.phone}. Is there anything else I can help you with?`;
@@ -274,19 +191,14 @@ class AIConversationEngine {
 
     // Ask for missing information
     if (!customer.name) {
-      context.expectedInput = 'name';
       return "I'd be happy to help you book an appointment! May I start by getting your name?";
     }
     if (!customer.phone) {
       return `Thank you, ${customer.name}! I'll need your phone number for the appointment.`;
     }
     if (!booking?.service) {
-      const services = (this.businessContext.services || []).map((s: any) => s.name).join(', ');
-      if (services) {
-        return `What service would you like to book? We offer: ${services}.`;
-      } else {
-        return "What type of appointment would you like to schedule?";
-      }
+      const services = this.businessContext.services.map((s: any) => s.name).join(', ');
+      return `What service would you like to book? We offer: ${services}.`;
     }
     if (!booking?.date) {
       return "What date would work best for your appointment?";
