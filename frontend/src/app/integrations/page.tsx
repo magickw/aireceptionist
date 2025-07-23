@@ -422,73 +422,82 @@ export default function Integrations() {
   }
 
   return (
-    <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      <Box sx={{ mb: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+    <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
+      <Box sx={{ mb: { xs: 2, sm: 4 } }}>
+        <Typography 
+          variant="h4" 
+          component="h1" 
+          gutterBottom 
+          sx={{ 
+            fontWeight: 'bold', 
+            color: 'primary.main',
+            fontSize: { xs: '1.75rem', sm: '2.125rem' }
+          }}
+        >
           Integrations
         </Typography>
-        <Typography variant="body1" color="text.secondary">
+        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
           Connect your AI receptionist with your favorite business tools and automate your workflows
         </Typography>
       </Box>
 
       {/* Integration Overview */}
-      <Grid container spacing={3} sx={{ mb: 4 }}>
-        <Grid item xs={12} sm={3}>
+      <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: { xs: 3, sm: 4 } }}>
+        <Grid item xs={6} sm={3}>
           <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Avatar sx={{ bgcolor: 'success.main', mx: 'auto', mb: 1 }}>
-                <CheckCircleIcon />
+            <CardContent sx={{ textAlign: 'center', p: { xs: 2, sm: 3 } }}>
+              <Avatar sx={{ bgcolor: 'success.main', mx: 'auto', mb: 1, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
+                <CheckCircleIcon sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }} />
               </Avatar>
-              <Typography variant="h6">
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
                 {userIntegrations.filter(i => i.status === 'connected').length}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
                 Connected
               </Typography>
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={3}>
+        <Grid item xs={6} sm={3}>
           <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Avatar sx={{ bgcolor: 'info.main', mx: 'auto', mb: 1 }}>
-                <CloudIcon />
+            <CardContent sx={{ textAlign: 'center', p: { xs: 2, sm: 3 } }}>
+              <Avatar sx={{ bgcolor: 'info.main', mx: 'auto', mb: 1, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
+                <CloudIcon sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }} />
               </Avatar>
-              <Typography variant="h6">
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
                 {integrationTypes.reduce((total, type) => total + type.integrations.length, 0)}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
                 Available
               </Typography>
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={3}>
+        <Grid item xs={6} sm={3}>
           <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Avatar sx={{ bgcolor: 'warning.main', mx: 'auto', mb: 1 }}>
-                <SettingsIcon />
+            <CardContent sx={{ textAlign: 'center', p: { xs: 2, sm: 3 } }}>
+              <Avatar sx={{ bgcolor: 'warning.main', mx: 'auto', mb: 1, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
+                <SettingsIcon sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }} />
               </Avatar>
-              <Typography variant="h6">
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
                 {userIntegrations.filter(i => i.status === 'connecting').length}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
                 Setting Up
               </Typography>
             </CardContent>
           </Card>
         </Grid>
-        <Grid item xs={12} sm={3}>
+        <Grid item xs={6} sm={3}>
           <Card>
-            <CardContent sx={{ textAlign: 'center' }}>
-              <Avatar sx={{ bgcolor: 'error.main', mx: 'auto', mb: 1 }}>
-                <ErrorIcon />
+            <CardContent sx={{ textAlign: 'center', p: { xs: 2, sm: 3 } }}>
+              <Avatar sx={{ bgcolor: 'error.main', mx: 'auto', mb: 1, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
+                <ErrorIcon sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }} />
               </Avatar>
-              <Typography variant="h6">
+              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
                 {userIntegrations.filter(i => i.status === 'error').length}
               </Typography>
-              <Typography variant="body2" color="text.secondary">
+              <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
                 Errors
               </Typography>
             </CardContent>
@@ -496,7 +505,21 @@ export default function Integrations() {
         </Grid>
       </Grid>
 
-      <Tabs value={tabValue} onChange={handleTabChange} sx={{ mb: 3 }}>
+      <Tabs 
+        value={tabValue} 
+        onChange={handleTabChange} 
+        sx={{ 
+          mb: 3,
+          '& .MuiTab-root': {
+            fontSize: { xs: '0.875rem', sm: '1rem' },
+            minWidth: { xs: 'auto', sm: 'auto' },
+            px: { xs: 1, sm: 2 }
+          }
+        }}
+        variant="scrollable"
+        scrollButtons="auto"
+        allowScrollButtonsMobile
+      >
         <Tab label="All Integrations" />
         <Tab label="Connected" />
         <Tab label="Popular" />
@@ -505,11 +528,13 @@ export default function Integrations() {
       <TabPanel value={tabValue} index={0}>
         {/* All Integrations */}
         {integrationTypes.map((category) => (
-          <Card key={category.type} sx={{ mb: 3 }}>
+          <Card key={category.type} sx={{ mb: { xs: 2, sm: 3 } }}>
             <CardHeader
               title={
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  <Typography variant="h5">{category.name}</Typography>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
+                  <Typography variant="h5" sx={{ fontSize: { xs: '1.25rem', sm: '1.5rem' } }}>
+                    {category.name}
+                  </Typography>
                   <Chip 
                     label={`${category.integrations.length} available`} 
                     size="small" 
@@ -518,16 +543,20 @@ export default function Integrations() {
                   />
                 </Box>
               }
-              subheader={category.description}
+              subheader={
+                <Typography variant="body2" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+                  {category.description}
+                </Typography>
+              }
             />
             <CardContent>
-              <Grid container spacing={3}>
+              <Grid container spacing={{ xs: 2, sm: 3 }}>
                 {category.integrations.map((integration) => {
                   const userIntegration = getUserIntegration(integration.id);
                   const isConnected = isIntegrationConnected(integration.id);
                   
                   return (
-                    <Grid item xs={12} md={6} lg={4} key={integration.id}>
+                    <Grid item xs={12} sm={6} md={4} key={integration.id}>
                       <Card variant="outlined" sx={{ height: '100%', position: 'relative' }}>
                         {isConnected && (
                           <Badge
@@ -541,14 +570,16 @@ export default function Integrations() {
                             }}
                           />
                         )}
-                        <CardContent>
-                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                            <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                        <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
+                            <Avatar sx={{ bgcolor: 'primary.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
                               {getIntegrationIcon(integration.icon)}
                             </Avatar>
                             <Box sx={{ flexGrow: 1 }}>
-                              <Typography variant="h6">{integration.name}</Typography>
-                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                              <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                                {integration.name}
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, justifyContent: { xs: 'center', sm: 'flex-start' } }}>
                                 {userIntegration && getStatusIcon(userIntegration.status)}
                                 <Chip
                                   label={isConnected ? 'CONNECTED' : 'AVAILABLE'}
@@ -559,7 +590,7 @@ export default function Integrations() {
                             </Box>
                           </Box>
                           
-                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                          <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                             {integration.description}
                           </Typography>
 
@@ -570,7 +601,9 @@ export default function Integrations() {
                           )}
                           
                           <Box sx={{ mb: 2 }}>
-                            <Typography variant="subtitle2" gutterBottom>Features:</Typography>
+                            <Typography variant="subtitle2" gutterBottom sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+                              Features:
+                            </Typography>
                             <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap' }}>
                               {integration.features.slice(0, 3).map((feature, index) => (
                                 <Chip key={index} label={feature} size="small" variant="outlined" />
@@ -579,18 +612,19 @@ export default function Integrations() {
                           </Box>
 
                           {userIntegration?.lastSync && (
-                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                            <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2, fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
                               Last synced: {new Date(userIntegration.lastSync).toLocaleString()}
                             </Typography>
                           )}
 
-                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', flexDirection: { xs: 'column', sm: 'row' } }}>
                             {!isConnected ? (
                               <Button
                                 variant="contained"
                                 onClick={() => handleConnectIntegration(integration)}
                                 startIcon={integration.authType === 'oauth2' ? <LaunchIcon /> : <SettingsIcon />}
                                 fullWidth
+                                size="small"
                               >
                                 Connect
                               </Button>
@@ -602,6 +636,7 @@ export default function Integrations() {
                                   disabled={testingConnection === integration.id}
                                   startIcon={testingConnection === integration.id ? <SyncIcon className="animate-spin" /> : <RefreshIcon />}
                                   size="small"
+                                  sx={{ flex: 1 }}
                                 >
                                   Test
                                 </Button>
@@ -611,6 +646,7 @@ export default function Integrations() {
                                   disabled={syncing === integration.id}
                                   startIcon={syncing === integration.id ? <SyncIcon className="animate-spin" /> : <SyncIcon />}
                                   size="small"
+                                  sx={{ flex: 1 }}
                                 >
                                   Sync
                                 </Button>
@@ -619,6 +655,7 @@ export default function Integrations() {
                                   color="error"
                                   onClick={() => handleDisconnectIntegration(integration.id)}
                                   size="small"
+                                  sx={{ flex: 1 }}
                                 >
                                   Disconnect
                                 </Button>
@@ -638,39 +675,42 @@ export default function Integrations() {
 
       <TabPanel value={tabValue} index={1}>
         {/* Connected Integrations */}
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3 }}>
           {userIntegrations
             .filter(integration => integration.status === 'connected')
             .map((integration) => (
-              <Grid item xs={12} md={6} lg={4} key={integration.id}>
+              <Grid item xs={12} sm={6} md={4} key={integration.id}>
                 <Card>
-                  <CardContent>
-                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                      <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                  <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
+                      <Avatar sx={{ bgcolor: 'primary.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
                         {integration.icon}
                       </Avatar>
                       <Box sx={{ flexGrow: 1 }}>
-                        <Typography variant="h6">{integration.name}</Typography>
-                        <Typography variant="body2" color="text.secondary">
+                        <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                          {integration.name}
+                        </Typography>
+                        <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                           {integration.category}
                         </Typography>
                       </Box>
-                      <CheckCircleIcon color="success" />
+                      <CheckCircleIcon color="success" sx={{ mt: { xs: 1, sm: 0 } }} />
                     </Box>
 
                     {integration.lastSync && (
-                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2 }}>
+                      <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 2, fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
                         Last synced: {new Date(integration.lastSync).toLocaleString()}
                       </Typography>
                     )}
 
-                    <Stack direction="row" spacing={1}>
+                    <Stack direction={{ xs: 'column', sm: 'row' }} spacing={1}>
                       <Button
                         variant="outlined"
                         size="small"
                         onClick={() => handleSyncIntegration(integration)}
                         disabled={syncing === integration.id}
                         startIcon={<SyncIcon />}
+                        fullWidth
                       >
                         Sync Now
                       </Button>
@@ -683,6 +723,7 @@ export default function Integrations() {
                           setConfigDialogOpen(true);
                         }}
                         startIcon={<SettingsIcon />}
+                        fullWidth
                       >
                         Configure
                       </Button>
@@ -694,12 +735,12 @@ export default function Integrations() {
           
           {userIntegrations.filter(i => i.status === 'connected').length === 0 && (
             <Grid item xs={12}>
-              <Paper sx={{ p: 4, textAlign: 'center' }}>
-                <CloudIcon sx={{ fontSize: 64, color: 'text.secondary', mb: 2 }} />
-                <Typography variant="h6" gutterBottom>
+              <Paper sx={{ p: { xs: 3, sm: 4 }, textAlign: 'center' }}>
+                <CloudIcon sx={{ fontSize: { xs: 48, sm: 64 }, color: 'text.secondary', mb: 2 }} />
+                <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
                   No connected integrations
                 </Typography>
-                <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
+                <Typography variant="body2" color="text.secondary" sx={{ mb: 3, fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                   Connect your favorite business tools to automate workflows and sync data
                 </Typography>
                 <Button variant="contained" onClick={() => setTabValue(0)}>
@@ -713,7 +754,7 @@ export default function Integrations() {
 
       <TabPanel value={tabValue} index={2}>
         {/* Popular Integrations */}
-        <Grid container spacing={3}>
+        <Grid container spacing={{ xs: 2, sm: 3 }}>
           {integrationTypes
             .flatMap(type => type.integrations)
             .filter(integration => ['salesforce', 'hubspot', 'google_calendar', 'slack', 'stripe'].includes(integration.id))
@@ -722,28 +763,32 @@ export default function Integrations() {
               const isConnected = isIntegrationConnected(integration.id);
               
               return (
-                <Grid item xs={12} md={6} lg={4} key={integration.id}>
+                <Grid item xs={12} sm={6} md={4} key={integration.id}>
                   <Card variant="outlined" sx={{ height: '100%' }}>
-                    <CardContent>
-                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-                        <Avatar sx={{ bgcolor: 'primary.main', mr: 2 }}>
+                    <CardContent sx={{ p: { xs: 2, sm: 3 } }}>
+                      <Box sx={{ display: 'flex', alignItems: 'center', mb: 2, flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
+                        <Avatar sx={{ bgcolor: 'primary.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
                           {getIntegrationIcon(integration.icon)}
                         </Avatar>
                         <Box sx={{ flexGrow: 1 }}>
-                          <Typography variant="h6">{integration.name}</Typography>
-                          <Chip
-                            label={isConnected ? 'CONNECTED' : 'POPULAR'}
-                            color={isConnected ? 'success' : 'warning'}
-                            size="small"
-                          />
+                          <Typography variant="h6" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
+                            {integration.name}
+                          </Typography>
+                          <Box sx={{ display: 'flex', justifyContent: { xs: 'center', sm: 'flex-start' } }}>
+                            <Chip
+                              label={isConnected ? 'CONNECTED' : 'POPULAR'}
+                              color={isConnected ? 'success' : 'warning'}
+                              size="small"
+                            />
+                          </Box>
                         </Box>
                       </Box>
                       
-                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
+                      <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontSize: { xs: '0.875rem', sm: '1rem' } }}>
                         {integration.description}
                       </Typography>
 
-                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 2 }}>
+                      <Box sx={{ display: 'flex', gap: 0.5, flexWrap: 'wrap', mb: 2, justifyContent: { xs: 'center', sm: 'flex-start' } }}>
                         {integration.features.slice(0, 2).map((feature, index) => (
                           <Chip key={index} label={feature} size="small" variant="outlined" />
                         ))}
@@ -754,6 +799,7 @@ export default function Integrations() {
                         onClick={() => isConnected ? handleSyncIntegration(userIntegration!) : handleConnectIntegration(integration)}
                         fullWidth
                         startIcon={isConnected ? <SyncIcon /> : <LaunchIcon />}
+                        size="small"
                       >
                         {isConnected ? 'Sync Now' : 'Connect'}
                       </Button>
@@ -771,16 +817,24 @@ export default function Integrations() {
         onClose={() => setConfigDialogOpen(false)}
         maxWidth="md"
         fullWidth
+        PaperProps={{
+          sx: {
+            m: { xs: 2, sm: 3 },
+            maxHeight: { xs: 'calc(100vh - 64px)', sm: 'calc(100vh - 128px)' }
+          }
+        }}
       >
-        <DialogTitle>
+        <DialogTitle sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
           Configure {selectedIntegration?.name}
         </DialogTitle>
         <DialogContent>
           {selectedIntegration && (
             <Box sx={{ mt: 2 }}>
               <Alert severity="info" sx={{ mb: 3 }}>
-                To connect {selectedIntegration.name}, please provide your API credentials. 
-                Your credentials are encrypted and stored securely.
+                <Typography variant="body2" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+                  To connect {selectedIntegration.name}, please provide your API credentials. 
+                  Your credentials are encrypted and stored securely.
+                </Typography>
               </Alert>
               
               {selectedIntegration.id === 'pipedrive' && (
@@ -794,6 +848,7 @@ export default function Integrations() {
                     helperText="Your Pipedrive domain (without .pipedrive.com)"
                     value={configForm.company_domain || ''}
                     onChange={(e) => setConfigForm({ ...configForm, company_domain: e.target.value })}
+                    size="small"
                   />
                   <TextField
                     fullWidth
@@ -804,6 +859,7 @@ export default function Integrations() {
                     helperText="Get this from your Pipedrive settings"
                     value={configForm.api_token || ''}
                     onChange={(e) => setConfigForm({ ...configForm, api_token: e.target.value })}
+                    size="small"
                   />
                 </Box>
               )}
@@ -819,6 +875,7 @@ export default function Integrations() {
                     helperText="Your Stripe publishable key"
                     value={configForm.publishable_key || ''}
                     onChange={(e) => setConfigForm({ ...configForm, publishable_key: e.target.value })}
+                    size="small"
                   />
                   <TextField
                     fullWidth
@@ -830,6 +887,7 @@ export default function Integrations() {
                     helperText="Your Stripe secret key"
                     value={configForm.secret_key || ''}
                     onChange={(e) => setConfigForm({ ...configForm, secret_key: e.target.value })}
+                    size="small"
                   />
                 </Box>
               )}
@@ -844,6 +902,7 @@ export default function Integrations() {
                     value={configForm.webhook_url || ''}
                     onChange={(e) => setConfigForm({ ...configForm, webhook_url: e.target.value })}
                     helperText="The webhook URL for this integration"
+                    size="small"
                   />
                   <TextField
                     fullWidth
@@ -854,6 +913,7 @@ export default function Integrations() {
                     value={configForm.secret_token || ''}
                     onChange={(e) => setConfigForm({ ...configForm, secret_token: e.target.value })}
                     helperText="Secret token for webhook verification"
+                    size="small"
                   />
                 </Box>
               )}
@@ -869,6 +929,7 @@ export default function Integrations() {
                     value={configForm.api_key || ''}
                     onChange={(e) => setConfigForm({ ...configForm, api_key: e.target.value })}
                     helperText={`Get this from your ${selectedIntegration.name} settings`}
+                    size="small"
                   />
                   <TextField
                     fullWidth
@@ -878,29 +939,46 @@ export default function Integrations() {
                     type="password"
                     value={configForm.api_secret || ''}
                     onChange={(e) => setConfigForm({ ...configForm, api_secret: e.target.value })}
+                    size="small"
                   />
                 </Box>
               )}
 
               <Divider sx={{ my: 3 }} />
               
-              <Typography variant="h6" gutterBottom>Features Enabled</Typography>
+              <Typography variant="h6" gutterBottom sx={{ fontSize: { xs: '1rem', sm: '1.125rem' } }}>
+                Features Enabled
+              </Typography>
               <List>
                 {selectedIntegration.features.map((feature: string, index: number) => (
-                  <ListItem key={index}>
+                  <ListItem key={index} sx={{ px: 0 }}>
                     <ListItemIcon>
                       <CheckCircleIcon color="success" />
                     </ListItemIcon>
-                    <ListItemText primary={feature} />
+                    <ListItemText 
+                      primary={feature} 
+                      primaryTypographyProps={{ 
+                        fontSize: { xs: '0.875rem', sm: '1rem' } 
+                      }}
+                    />
                   </ListItem>
                 ))}
               </List>
             </Box>
           )}
         </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setConfigDialogOpen(false)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveConfiguration}>
+        <DialogActions sx={{ p: { xs: 2, sm: 3 }, flexDirection: { xs: 'column', sm: 'row' }, gap: { xs: 1, sm: 0 } }}>
+          <Button 
+            onClick={() => setConfigDialogOpen(false)}
+            fullWidth={{ xs: true, sm: false }}
+          >
+            Cancel
+          </Button>
+          <Button 
+            variant="contained" 
+            onClick={handleSaveConfiguration}
+            fullWidth={{ xs: true, sm: false }}
+          >
             Connect Integration
           </Button>
         </DialogActions>

@@ -12,6 +12,10 @@ class OpenRouterService {
     try {
       console.log('Making OpenRouter API call with messages:', messages);
       
+      // Add timeout to prevent hanging
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+      
       const response = await fetch(`${this.baseURL}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -26,8 +30,10 @@ class OpenRouterService {
           temperature: 0.7,
           max_tokens: 500,
         }),
+        signal: controller.signal,
       });
 
+      clearTimeout(timeoutId);
       console.log('OpenRouter response status:', response.status);
 
       if (!response.ok) {
@@ -39,14 +45,20 @@ class OpenRouterService {
       const data = await response.json();
       console.log('OpenRouter API response data:', data);
       
-      const aiMessage = data.choices[0]?.message?.content;
+      const aiMessage = data.choices?.[0]?.message?.content;
+      console.log('Extracted AI message:', aiMessage);
+      
       if (!aiMessage) {
+        console.error('No message content in API response, data structure:', data);
         throw new Error('No message content in API response');
       }
       
       return aiMessage;
     } catch (error) {
       console.error('OpenRouter API error:', error);
+      if (error.name === 'AbortError') {
+        console.error('Request timed out after 10 seconds');
+      }
       // Return a more helpful fallback based on the user's message
       return this.generateFallbackResponse(messages);
     }
@@ -77,26 +89,68 @@ class OpenRouterService {
   }
 
   async generateSmartResponse(userMessage: string, context: any): Promise<string> {
-    const systemPrompt = `You are an AI receptionist for a ${context.businessType || 'business'}. 
+    try {
+      console.log('Generating smart response for message:', userMessage);
+      console.log('Business context:', context);
+
+      // Handle case where context might be undefined or missing data
+      const businessType = context?.businessType || context?.type || 'business';
+      const services = context?.services || [];
+      const operatingHours = context?.operatingHours || {};
+
+      const systemPrompt = `You are an AI receptionist for a ${businessType}. 
 Your role is to:
-- Help customers book appointments
-- Answer questions about services and hours
-- Take messages
-- Be friendly and professional
+- Help customers make reservations and bookings
+- Answer questions about services, menu, and hours
+- Take orders (if restaurant)
+- Handle inquiries professionally
+- Keep responses concise and helpful
 
-Business context:
-- Type: ${context.businessType || 'general business'}
-- Services: ${context.services?.map((s: any) => s.name).join(', ') || 'various services'}
-- Hours: ${this.formatBusinessHours(context.operatingHours)}
+Business Details:
+- Type: ${businessType}
+- Available Services: ${services.map((s: any) => s.name).join(', ') || 'various services available'}
+- Operating Hours: ${this.formatBusinessHours(operatingHours)}
 
-Respond naturally and helpfully to the customer's message.`;
+${businessType === 'restaurant' ? `
+Restaurant-Specific Instructions:
+- For table reservations, ask for: party size, date, time, and contact name
+- For food orders, offer menu items and take detailed orders
+- Always be welcoming and enthusiastic about dining experiences
+- Ask about dietary restrictions or preferences when relevant
+` : businessType === 'salon' ? `
+Salon-Specific Instructions:
+- For appointments, ask for: service type, preferred date/time, and contact info
+- Offer consultation for new customers
+- Ask about hair type or specific styling needs
+` : businessType === 'medical' ? `
+Medical Practice Instructions:
+- For appointments, ask for: reason for visit, preferred doctor, urgency level
+- Be professional and reassuring
+- Collect patient information carefully
+` : ''}
 
-    const messages = [
-      { role: 'system', content: systemPrompt },
-      { role: 'user', content: userMessage }
-    ];
+Important Guidelines:
+- Always match your responses to the business type (${businessType})
+- Be warm, professional, and helpful
+- Ask clarifying questions to gather complete information
+- If unsure about availability, offer to check and call back
 
-    return await this.generateResponse(messages);
+Respond naturally to the customer's request. Keep responses to 1-2 sentences when possible.`;
+
+      const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+      ];
+
+      console.log('Sending request to OpenRouter...');
+      const response = await this.generateResponse(messages);
+      console.log('OpenRouter response received:', response);
+      return response;
+      
+    } catch (error) {
+      console.error('Error in generateSmartResponse:', error);
+      return this.generateFallbackResponse([{ content: userMessage }]);
+    }
   }
 
   private formatBusinessHours(hours: any): string {

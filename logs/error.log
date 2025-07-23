@@ -1,0 +1,2 @@
+{"clientId":"test-client","error":"Unexpected token 'i', \"{\"type\": invalid js\"... is not valid JSON","level":"error","message":"Error handling WebSocket message","service":"ai-receptionist-backend","timestamp":"2025-07-22 14:44:12"}
+{"clientId":"test-client","error":"Unexpected token 'i', \"{\"type\": invalid js\"... is not valid JSON","level":"error","message":"Error handling WebSocket message","service":"ai-receptionist-backend","timestamp":"2025-07-22 20:18:44"}
