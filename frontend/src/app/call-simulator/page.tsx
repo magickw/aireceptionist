@@ -26,6 +26,9 @@ import DialogActions from '@mui/material/DialogActions';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Alert from '@mui/material/Alert';
+import Switch from '@mui/material/Switch';
+import FormControlLabel from '@mui/material/FormControlLabel';
+import Tooltip from '@mui/material/Tooltip';
 import PhoneIcon from '@mui/icons-material/Phone';
 import PhoneDisabledIcon from '@mui/icons-material/PhoneDisabled';
 import SendIcon from '@mui/icons-material/Send';
@@ -38,8 +41,10 @@ import MicOffIcon from '@mui/icons-material/MicOff';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import EventIcon from '@mui/icons-material/Event';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
+import PsychologyIcon from '@mui/icons-material/Psychology';
 import { ConversationMessage, CallSession, ConversationContext } from '@/types/ai';
 import AIConversationEngine from '@/services/aiConversationEngine';
+import ContextAwareAI from '@/services/contextAwareAI';
 import axios from 'axios';
 
 interface TabPanelProps {
@@ -62,8 +67,10 @@ export default function CallSimulator() {
   const [currentCall, setCurrentCall] = useState<CallSession | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [businessContext, setBusinessContext] = useState<any>(null);
+  const [businessContext, setBusinessContext] = useState<Record<string, unknown> | null>(null);
   const [aiEngine, setAiEngine] = useState<AIConversationEngine | null>(null);
+  const [contextAwareEngine, setContextAwareEngine] = useState<ContextAwareAI | null>(null);
+  const [useContextAware, setUseContextAware] = useState(false);
   const [completedActions, setCompletedActions] = useState<any[]>([]);
   const [callSummaryOpen, setCallSummaryOpen] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -272,6 +279,7 @@ export default function CallSimulator() {
           
           setBusinessContext(context);
           setAiEngine(new AIConversationEngine(context));
+          setContextAwareEngine(new ContextAwareAI(context));
         }
       } catch (error) {
         console.error('Error fetching business context:', error);
@@ -300,6 +308,7 @@ export default function CallSimulator() {
         console.log('🏢 Using fallback restaurant context:', fallbackContext);
         setBusinessContext(fallbackContext);
         setAiEngine(new AIConversationEngine(fallbackContext));
+        setContextAwareEngine(new ContextAwareAI(fallbackContext));
       }
     };
 
@@ -339,21 +348,82 @@ export default function CallSimulator() {
 
     setCurrentCall(newCall);
     setCompletedActions([]);
+    
+    // Log which AI engine is being used
+    if (useContextAware) {
+      console.log('🧠 Starting call with context-aware AI engine');
+      const engineMessage: ConversationMessage = {
+        id: `msg-${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        sender: 'ai',
+        content: 'Using Context-Aware AI Engine',
+        type: 'system',
+      };
+      
+      setCurrentCall(prevCall => {
+        if (!prevCall) return prevCall;
+        return {
+          ...prevCall,
+          messages: [...prevCall.messages, engineMessage],
+        };
+      });
+    } else {
+      console.log('🤖 Starting call with standard AI engine');
+      const engineMessage: ConversationMessage = {
+        id: `msg-${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        sender: 'ai',
+        content: 'Using Standard AI Engine',
+        type: 'system',
+      };
+      
+      setCurrentCall(prevCall => {
+        if (!prevCall) return prevCall;
+        return {
+          ...prevCall,
+          messages: [...prevCall.messages, engineMessage],
+        };
+      });
+    }
 
-    // AI greeting
+    // AI greeting - add message directly to the call object to avoid timing issues
     setTimeout(() => {
-      addAIMessage("Hello! Thank you for calling. I'm your AI assistant. How can I help you today?");
+      const greetingMessage: ConversationMessage = {
+        id: `msg-${Date.now()}-${Math.random()}`,
+        timestamp: new Date(),
+        sender: 'ai',
+        content: "Hello! Thank you for calling. I'm your AI assistant. How can I help you today?",
+        type: 'text',
+      };
+      
+      setCurrentCall(prevCall => {
+        if (!prevCall) return prevCall;
+        return {
+          ...prevCall,
+          messages: [...prevCall.messages, greetingMessage],
+        };
+      });
     }, 1000);
   };
 
   const endCall = () => {
-    if (!currentCall || !aiEngine) return;
+    if (!currentCall) return;
+    if (!aiEngine && !contextAwareEngine) return;
+
+    let summary;
+    if (useContextAware && contextAwareEngine) {
+      console.log('🧠 Using context-aware AI engine for summary');
+      summary = contextAwareEngine.generateCallSummary(currentCall.messages, currentCall.context);
+    } else if (aiEngine) {
+      console.log('🤖 Using standard AI engine for summary');
+      summary = aiEngine.generateCallSummary(currentCall.messages, currentCall.context);
+    }
 
     const updatedCall = {
       ...currentCall,
       status: 'ended' as const,
       endTime: new Date(),
-      summary: aiEngine.generateCallSummary(currentCall.messages, currentCall.context),
+      summary: summary,
     };
 
     setCurrentCall(updatedCall);
@@ -394,12 +464,25 @@ export default function CallSimulator() {
     addMessage(content, 'ai', type);
   };
 
+  interface AIResponse {
+    message?: string;
+    intent?: string;
+    actions?: AIAction[];
+    entities?: {
+      name?: string;
+      phone?: string;
+      email?: string;
+      [key: string]: unknown;
+    };
+  }
+
   const sendMessage = async () => {
-    if (!messageInput.trim() || !currentCall || !aiEngine) {
+    if (!messageInput.trim() || !currentCall || (!aiEngine && !contextAwareEngine)) {
       console.log('❌ Cannot send message - missing requirements:', {
         messageInput: messageInput.trim(),
         currentCall: !!currentCall,
-        aiEngine: !!aiEngine
+        aiEngine: !!aiEngine,
+        contextAwareEngine: !!contextAwareEngine
       });
       return;
     }
@@ -421,7 +504,18 @@ export default function CallSimulator() {
       console.log('🤖 Starting AI processing...');
       await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate processing time
 
-      const aiResponse = await aiEngine.processMessage(messageCopy, currentCall.context);
+      // Use the appropriate AI engine based on useContextAware state
+      let aiResponse: AIResponse;
+      if (useContextAware && contextAwareEngine) {
+        console.log('🧠 Using context-aware AI engine');
+        aiResponse = await contextAwareEngine.processMessage(messageCopy, currentCall.context, currentCall.messages);
+      } else if (aiEngine) {
+        console.log('🤖 Using standard AI engine');
+        aiResponse = await aiEngine.processMessage(messageCopy, currentCall.context, currentCall.messages);
+      } else {
+        throw new Error('No AI engine available');
+      }
+      
       console.log('🤖 AI response received:', aiResponse);
       
       // Add AI response
@@ -445,16 +539,18 @@ export default function CallSimulator() {
       setCurrentCall(prevCall => {
         if (!prevCall) return prevCall;
         
+        const updatedIntent = aiResponse.intent as ConversationContext['intent'] || prevCall.context.intent;
+        
         return {
           ...prevCall,
           context: {
             ...prevCall.context,
-            intent: aiResponse.intent || prevCall.context.intent,
+            intent: updatedIntent,
             customerInfo: {
               ...prevCall.context.customerInfo,
-              ...(aiResponse.entities?.name && { name: aiResponse.entities.name }),
-              ...(aiResponse.entities?.phone && { phone: aiResponse.entities.phone }),
-              ...(aiResponse.entities?.email && { email: aiResponse.entities.email }),
+              ...(aiResponse.entities?.name && typeof aiResponse.entities.name === 'string' && { name: aiResponse.entities.name }),
+              ...(aiResponse.entities?.phone && typeof aiResponse.entities.phone === 'string' && { phone: aiResponse.entities.phone }),
+              ...(aiResponse.entities?.email && typeof aiResponse.entities.email === 'string' && { email: aiResponse.entities.email }),
             }
           }
         };
@@ -469,21 +565,38 @@ export default function CallSimulator() {
     }
   };
 
-  const executeAction = async (action: any) => {
+  interface AIAction {
+    type: 'create_booking' | 'create_order' | 'transfer_call' | 'request_info' | 'provide_info';
+    data?: Record<string, unknown>;
+  }
+
+  const executeAction = async (action: AIAction) => {
     switch (action.type) {
       case 'create_booking':
-        await createBooking(action.data);
+        if (action.data) {
+          await createBooking(action.data);
+        }
         break;
       case 'create_order':
-        await createOrder(action.data);
+        if (action.data) {
+          await createOrder(action.data);
+        }
         break;
       case 'transfer_call':
         addAIMessage("I'm transferring you to a specialist who can better assist you.", 'system');
         break;
+      case 'request_info':
+      case 'provide_info':
+        // Handle other action types
+        console.log(`Handling ${action.type} action:`, action.data);
+        break;
+      default:
+        console.warn(`Unhandled action type: ${action.type}`);
+        break;
     }
   };
 
-  const createBooking = async (bookingData: any) => {
+  const createBooking = async (bookingData: {service?: string, date?: string, time?: string, [key: string]: unknown}) => {
     try {
       // Mock API call
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -496,14 +609,14 @@ export default function CallSimulator() {
       };
 
       setCompletedActions(prev => [...prev, { type: 'booking', data: booking }]);
-      addAIMessage(`✅ Perfect! I've successfully booked your ${bookingData.service} appointment for ${bookingData.date} at ${bookingData.time}. You'll receive a confirmation shortly.`, 'action');
+      addAIMessage(`✅ Perfect! I've successfully booked your ${bookingData.service || 'requested'} appointment for ${bookingData.date || 'the requested date'} at ${bookingData.time || 'the requested time'}. You'll receive a confirmation shortly.`, 'action');
       
     } catch (error) {
       addAIMessage("I'm sorry, there was an issue creating your booking. Let me connect you with someone who can help.");
     }
   };
 
-  const createOrder = async (orderData: any) => {
+  const createOrder = async (orderData: {total?: number, items?: Array<Record<string, unknown>>, [key: string]: unknown}) => {
     try {
       // Mock API call
       await new Promise(resolve => setTimeout(resolve, 1000));
@@ -516,7 +629,7 @@ export default function CallSimulator() {
       };
 
       setCompletedActions(prev => [...prev, { type: 'order', data: order }]);
-      addAIMessage(`✅ Great! Your order has been placed. Total: $${orderData.total?.toFixed(2) || '0.00'}. We'll have it ready for you soon!`, 'action');
+      addAIMessage(`✅ Great! Your order has been placed. Total: $${orderData.total !== undefined ? orderData.total.toFixed(2) : '0.00'}. We'll have it ready for you soon!`, 'action');
       
     } catch (error) {
       addAIMessage("I'm sorry, there was an issue placing your order. Let me connect you with someone who can help.");
@@ -537,31 +650,33 @@ export default function CallSimulator() {
     sendMessage();
   };
 
-  const useTestScenario = (scenario: any) => {
+  // Function to handle test scenarios
+  const handleTestScenario = (scenario: {starter?: string, script?: string}) => {
     if (!currentCall) {
       startCall();
       setTimeout(() => {
-        setMessageInput(scenario.starter || scenario.script);
+        setMessageInput(scenario.starter || scenario.script || '');
       }, 1500);
     } else {
-      setMessageInput(scenario.starter || scenario.script);
+      setMessageInput(scenario.starter || scenario.script || '');
     }
   };
 
-  const useQuickScenario = (scenario: any) => {
-    console.log('🎯 Using quick scenario:', scenario.title);
+  // Function to handle quick scenarios
+  const handleQuickScenario = (scenario: {title?: string, script?: string}) => {
+    console.log('🎯 Using quick scenario:', scenario.title || 'Unnamed scenario');
     
     try {
       if (!currentCall) {
         console.log('🎯 Starting new call for scenario');
         startCall();
         setTimeout(() => {
-          console.log('🎯 Setting message input after call start:', scenario.script);
-          setMessageInput(scenario.script);
+          console.log('🎯 Setting message input after call start:', scenario.script || '');
+          setMessageInput(scenario.script || '');
         }, 1500);
       } else {
-        console.log('🎯 Setting message input for existing call:', scenario.script);
-        setMessageInput(scenario.script);
+        console.log('🎯 Setting message input for existing call:', scenario.script || '');
+        setMessageInput(scenario.script || '');
       }
     } catch (error) {
       console.error('❌ Error in useQuickScenario:', error);
@@ -639,6 +754,15 @@ export default function CallSimulator() {
                         size="small"
                       />
                     )}
+                    {currentCall && (
+                      <Chip
+                        icon={useContextAware ? <PsychologyIcon /> : <SmartToyIcon />}
+                        label={useContextAware ? "Context-Aware AI" : "Standard AI"}
+                        color={useContextAware ? "primary" : "default"}
+                        size="small"
+                        sx={{ ml: 1 }}
+                      />
+                    )}
                   </Box>
                 }
                 subheader={
@@ -684,7 +808,13 @@ export default function CallSimulator() {
               
               {/* Messages */}
               <CardContent sx={{ flexGrow: 1, display: 'flex', flexDirection: 'column', p: 0 }}>
-                <Box sx={{ flexGrow: 1, overflow: 'auto', p: 2 }}>
+                <Box sx={{ 
+                  flexGrow: 1, 
+                  overflow: 'auto', 
+                  p: 2,
+                  height: 0, // Force flex child to respect parent height
+                  overflowY: 'auto' // Ensure vertical scrolling
+                }}>
                   {!currentCall ? (
                     <Box sx={{ textAlign: 'center', py: 8 }}>
                       <Typography variant="h6" color="text.secondary" gutterBottom>
@@ -793,7 +923,7 @@ export default function CallSimulator() {
                       <Button
                         variant="outlined"
                         fullWidth
-                        onClick={() => useQuickScenario(scenario)}
+                        onClick={() => handleQuickScenario(scenario)}
                         sx={{
                           height: 80,
                           display: 'flex',
@@ -837,23 +967,51 @@ export default function CallSimulator() {
                 <Card>
                   <CardHeader title="Call Context" />
                   <CardContent>
-                    {currentCall ? (
-                      <Box>
-                        <Typography variant="subtitle2" gutterBottom>Customer Info:</Typography>
-                        <Box sx={{ mb: 2 }}>
+                <Paper elevation={1} sx={{ p: 2, mb: 2, bgcolor: '#f5f5f5' }}>
+                  <Typography variant="subtitle2" gutterBottom>AI Engine Selection</Typography>
+                  <Tooltip title="Context-aware AI uses more advanced reasoning to understand customer intent and context">
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={useContextAware}
+                          onChange={(e) => setUseContextAware(e.target.checked)}
+                          color="primary"
+                        />
+                      }
+                      label={
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                          <PsychologyIcon fontSize="small" color={useContextAware ? "primary" : "disabled"} />
                           <Typography variant="body2">
-                            Name: {currentCall.context.customerInfo.name || 'Not provided'}
-                          </Typography>
-                          <Typography variant="body2">
-                            Phone: {currentCall.context.customerInfo.phone || 'Not provided'}
-                          </Typography>
-                          <Typography variant="body2">
-                            Email: {currentCall.context.customerInfo.email || 'Not provided'}
+                            {useContextAware ? "Context-Aware AI (Enhanced)" : "Standard AI"}
                           </Typography>
                         </Box>
+                      }
+                    />
+                  </Tooltip>
+                  <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
+                    {useContextAware 
+                      ? "Using advanced context tracking for better understanding of customer needs."
+                      : "Using standard intent recognition and entity extraction."}
+                  </Typography>
+                </Paper>
+                
+                {currentCall ? (
+                  <Box>
+                    <Typography variant="subtitle2" gutterBottom>Customer Info:</Typography>
+                    <Box sx={{ mb: 2 }}>
+                      <Typography variant="body2">
+                             Name: {currentCall.context.customerInfo.name || "Not provided"}
+                           </Typography>
+                           <Typography variant="body2">
+                             Phone: {currentCall.context.customerInfo.phone || "Not provided"}
+                           </Typography>
+                           <Typography variant="body2">
+                             Email: {currentCall.context.customerInfo.email || "Not provided"}
+                           </Typography>
+                    </Box>
 
-                        <Typography variant="subtitle2" gutterBottom>Intent:</Typography>
-                        <Chip label={currentCall.context.intent} color="primary" size="small" sx={{ mb: 2 }} />
+                    <Typography variant="subtitle2" gutterBottom>Intent:</Typography>
+                    <Chip label={currentCall.context.intent} color="primary" size="small" sx={{ mb: 2 }} />
 
                         {currentCall.context.bookingInfo && (
                           <Box sx={{ mb: 2 }}>
@@ -942,7 +1100,7 @@ export default function CallSimulator() {
                           <Button
                             variant="outlined"
                             size="small"
-                            onClick={() => useTestScenario(scenario)}
+                            onClick={() => handleTestScenario(scenario)}
                           >
                             Test
                           </Button>
@@ -983,7 +1141,15 @@ export default function CallSimulator() {
         }}
       >
         <DialogTitle sx={{ fontSize: { xs: '1.125rem', sm: '1.25rem' } }}>
-          Call Summary
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <Typography variant="h6">Call Summary</Typography>
+            <Chip 
+              icon={useContextAware ? <PsychologyIcon /> : <SmartToyIcon />}
+              label={useContextAware ? "Generated by Context-Aware AI" : "Generated by Standard AI"}
+              color={useContextAware ? "primary" : "default"}
+              size="small"
+            />
+          </Box>
         </DialogTitle>
         <DialogContent>
           {currentCall?.summary && (

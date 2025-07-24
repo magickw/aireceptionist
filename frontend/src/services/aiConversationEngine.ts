@@ -79,9 +79,10 @@ class AIConversationEngine {
     this.openRouterService = new OpenRouterService();
   }
 
-  public async processMessage(message: string, context: ConversationContext): Promise<AIResponse> {
+  public async processMessage(message: string, context: ConversationContext, conversationHistory?: ConversationMessage[]): Promise<AIResponse> {
     console.log('🔥 AI Engine - Processing message:', message);
     console.log('🔥 AI Engine - Current context:', context);
+    console.log('🔥 AI Engine - Conversation history:', conversationHistory);
     
     const intent = this.detectIntent(message);
     const entities = this.extractEntities(message);
@@ -100,7 +101,12 @@ class AIConversationEngine {
       if (this.useAdvancedAI) {
         // Use OpenRouter for more natural responses
         console.log('🔥 AI Engine - Using advanced AI for response generation');
-        response = await this.openRouterService.generateSmartResponse(message, context.businessContext || this.businessContext);
+        response = await this.openRouterService.generateSmartResponse(
+          message, 
+          context.businessContext || this.businessContext,
+          conversationHistory || [],
+          context
+        );
         console.log('🔥 AI Engine - OpenRouter response:', response);
       } else {
         console.log('🔥 AI Engine - Using rule-based response generation');
