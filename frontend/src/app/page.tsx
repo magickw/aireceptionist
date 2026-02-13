@@ -64,8 +64,9 @@ export default function Dashboard() {
   useEffect(() => {
     const fetchDashboardData = async () => {
       try {
+        const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL || '';
         // Fetch business data first
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${backendUrl}/api/businesses`);
         if (businessResponse.data.length > 0) {
           const businessId = businessResponse.data[0].id;
           
