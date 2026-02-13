@@ -1,4 +1,5 @@
 'use client';
+console.log('--- RENDERING HOME PAGE ---');
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Container from '@mui/material/Container';
