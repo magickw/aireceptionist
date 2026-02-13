@@ -7,7 +7,8 @@ services:
     env: python
     buildCommand: "pip install -r backend/requirements.txt"
     startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
-    pythonVersion: 3.11
+    runtime: python
+    plan: free
     envVars:
       - key: DATABASE_URL
         fromDatabase:
@@ -21,6 +22,8 @@ services:
         sync: false
       - key: AWS_REGION
         value: us-east-1
+      - key: PYTHON_VERSION
+        value: "3.11"
 
 databases:
   - name: aireceptionist-db
