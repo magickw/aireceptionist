@@ -1,4 +1,14 @@
 {
-  "framework": "nextjs",
-  "rootDirectory": "frontend"
+  "installCommand": "npm install",
+  "buildCommand": "npm run build:frontend",
+  "outputDirectory": "frontend/.next",
+  "rewrites": [
+    { "source": "/api/(.*)", "destination": "/backend/index.js" },
+    { "source": "/(.*)", "destination": "/" }
+  ],
+  "env": {
+    "NODE_ENV": "production",
+    "PORT": "3001",
+    "FRONTEND_URL": "${FRONTEND_URL}"
+  }
 }
