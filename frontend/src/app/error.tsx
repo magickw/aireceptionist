@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
-import { Box, Typography, Button, Container } from '@mui/material';
+import React, { useEffect } from 'react';
 
 export default function Error({
   error,
@@ -15,32 +14,33 @@ export default function Error({
   }, [error]);
 
   return (
-    <Container maxWidth="md">
-      <Box
-        sx={{
-          display: 'flex',
-          flexDirection: 'column',
-          alignItems: 'center',
-          justifyContent: 'center',
-          minHeight: '60vh',
-          textAlign: 'center',
-          gap: 2
+    <div style={{ 
+      display: 'flex', 
+      flexDirection: 'column', 
+      alignItems: 'center', 
+      justifyContent: 'center', 
+      minHeight: '60vh',
+      textAlign: 'center',
+      fontFamily: 'sans-serif'
+    }}>
+      <h1 style={{ fontSize: '2rem', color: '#d32f2f', marginBottom: '1rem' }}>Something went wrong!</h1>
+      <p style={{ color: '#666', marginBottom: '2rem' }}>
+        We apologize for the inconvenience. An unexpected error has occurred.
+      </p>
+      <button
+        onClick={() => reset()}
+        style={{
+          backgroundColor: '#1976d2',
+          color: 'white',
+          padding: '10px 20px',
+          borderRadius: '4px',
+          border: 'none',
+          cursor: 'pointer',
+          fontWeight: 'bold'
         }}
       >
-        <Typography variant="h3" color="error" gutterBottom>
-          Something went wrong!
-        </Typography>
-        <Typography variant="body1" color="text.secondary" paragraph>
-          We apologize for the inconvenience. An unexpected error has occurred.
-        </Typography>
-        <Button
-          variant="contained"
-          onClick={() => reset()}
-          sx={{ mt: 2 }}
-        >
-          Try again
-        </Button>
-      </Box>
-    </Container>
+        Try again
+      </button>
+    </div>
   );
 }

@@ -10,11 +10,11 @@
    Skipping validation of types
    Skipping linting
    Collecting page data ...
-   Generating static pages (0/14) ...
-   Generating static pages (3/14) 
-   Generating static pages (6/14) 
-   Generating static pages (10/14) 
- ✓ Generating static pages (14/14)
+   Generating static pages (0/12) ...
+   Generating static pages (3/12) 
+   Generating static pages (6/12) 
+   Generating static pages (9/12) 
+ ✓ Generating static pages (12/12)
    Finalizing page optimization ...
    Collecting build traces ...
 
@@ -23,11 +23,11 @@ Route (app)                              Size     First Load JS
 ├ ƒ /_not-found                          139 B          87.5 kB
 ├ ƒ /ai-training                         4.7 kB          209 kB
 ├ ƒ /analytics                           8.34 kB         194 kB
-├ ƒ /appointments                        744 B           144 kB
+├ ƒ /appointments                        743 B           144 kB
 ├ ƒ /business-setup                      9.28 kB         194 kB
 ├ ƒ /call-logs                           865 B           144 kB
 ├ ƒ /call-management                     7.99 kB         198 kB
-├ ƒ /call-simulator                      16.1 kB         190 kB
+├ ƒ /call-simulator                      15.7 kB         190 kB
 ├ ƒ /customers                           4.58 kB         197 kB
 ├ ƒ /integrations                        12.4 kB         205 kB
 └ ƒ /settings                            3.94 kB         174 kB
