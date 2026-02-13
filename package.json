@@ -1,1 +1,18 @@
-{"name": "ai-receptionist-pro", "version": "2.0.0", "description": "AI-powered business phone management platform with WebSocket, Authentication, and Comprehensive Logging", "private": true, "scripts": {"dev": "concurrently \"cd frontend && npm run dev\" \"cd backend && uvicorn app.main:app --reload\"", "build": "cd frontend && npm run build && cp -r .next ../.next && cp -r public ../public", "start": "concurrently \"cd frontend && npm run start\" \"cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000\"", "install:all": "cd frontend && npm install && cd backend && pip install -r requirements.txt"}, "dependencies": {"next": "14.2.21", "react": "^18.3.1", "react-dom": "^18.3.1"}, "keywords": ["ai", "receptionist", "voice", "websocket", "authentication", "twilio", "openrouter"], "author": "AI Receptionist Team", "license": "MIT", "devDependencies": {"concurrently": "^8.2.2"}, "engines": {"node": ">=16.0.0"}}
+{
+  "name": "ai-receptionist-pro",
+  "version": "2.0.0",
+  "description": "AI-powered business phone management platform",
+  "private": true,
+  "scripts": {
+    "dev": "concurrently \"cd frontend && npm run dev\" \"cd backend && uvicorn app.main:app --reload\"",
+    "build": "cd frontend && npm run build",
+    "start": "concurrently \"cd frontend && npm run start\" \"cd backend && uvicorn app.main:app --host 0.0.0.0 --port 8000\"",
+    "install:all": "cd frontend && npm install && cd backend && pip install -r requirements.txt"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

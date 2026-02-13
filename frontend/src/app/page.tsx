@@ -1,5 +1,5 @@
 'use client';
-console.log('--- RENDERING HOME PAGE ---');
+
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import Container from '@mui/material/Container';
@@ -16,11 +16,8 @@ import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemAvatar from '@mui/material/ListItemAvatar';
 import PhoneIcon from '@mui/icons-material/Phone';
-import TrendingUpIcon from '@mui/icons-material/TrendingUp';
-import PeopleIcon from '@mui/icons-material/People';
-import EventIcon from '@mui/icons-material/Event';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
 import CallIcon from '@mui/icons-material/Call';
+import SmartToyIcon from '@mui/icons-material/SmartToy';
 import axios from 'axios';
 
 interface DashboardMetrics {
@@ -72,15 +69,15 @@ export default function Dashboard() {
           const businessId = businessResponse.data[0].id;
           
           // Fetch analytics data
-          const analyticsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/analytics/business/${businessId}`);
+          const analyticsResponse = await axios.get(`${backendUrl}/api/analytics/business/${businessId}`);
           const analyticsData = analyticsResponse.data;
           
           // Fetch call logs for recent activity
-          const callLogsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/call-logs/business/${businessId}`);
+          const callLogsResponse = await axios.get(`${backendUrl}/api/call-logs/business/${businessId}`);
           const callLogs = callLogsResponse.data;
           
           // Fetch appointments
-          const appointmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/appointments/business/${businessId}`);
+          const appointmentsResponse = await axios.get(`${backendUrl}/api/appointments/business/${businessId}`);
           const appointments = appointmentsResponse.data;
           
           // Process metrics
@@ -147,21 +144,6 @@ export default function Dashboard() {
     const interval = setInterval(fetchDashboardData, 30000);
     return () => clearInterval(interval);
   }, []);
-
-  const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'success';
-      case 'ringing': return 'warning';
-      case 'on-hold': return 'info';
-      default: return 'default';
-    }
-  };
 
   if (isLoading) {
     return (
@@ -323,4 +305,3 @@ export default function Dashboard() {
     </Container>
   );
 }
-

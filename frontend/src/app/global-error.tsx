@@ -2,7 +2,7 @@
 
 import React from 'react';
 
-export default function Error({
+export default function GlobalError({
   error,
   reset,
 }: {
@@ -10,10 +10,7 @@ export default function Error({
   reset: () => void;
 }) {
   return (
-    <html>
-      <head>
-        <title>Error</title>
-      </head>
+    <html lang="en">
       <body style={{ 
         display: 'flex', 
         flexDirection: 'column', 
@@ -23,7 +20,7 @@ export default function Error({
         margin: 0,
         fontFamily: 'sans-serif'
       }}>
-        <h1 style={{ color: '#ef4444' }}>Something went wrong!</h1>
+        <h1 style={{ color: '#ef4444' }}>A Critical Error Occurred</h1>
         <button onClick={() => reset()}>Try again</button>
       </body>
     </html>
