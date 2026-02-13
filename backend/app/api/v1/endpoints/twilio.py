@@ -21,7 +21,7 @@ async def incoming_call(request: Request):
     
     # Construct the WebSocket URL
     # In production, this should use wss:// and the correct domain
-    ws_url = f"wss://{host}/api/v1/twilio/ws"
+    ws_url = f"wss://{host}/api/twilio/ws"
     
     twiml_response = f"""<?xml version="1.0" encoding="UTF-8"?>
 <Response>

@@ -43,6 +43,7 @@ import EventIcon from '@mui/icons-material/Event';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import AgentThoughts from '@/components/AgentThoughts';
+import AutomationProgress from '@/components/AutomationProgress';
 import { ConversationMessage, CallSession, ConversationContext } from '@/types/ai';
 
 interface Thought {
@@ -72,6 +73,17 @@ export default function CallSimulator() {
   const [messageInput, setMessageInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
   const [thoughts, setThoughts] = useState<Thought[]>([]);
+  const [reasoningData, setReasoningData] = useState<{
+    intent: string;
+    confidence: number;
+    entities: Record<string, any>;
+    selected_action: string;
+    action_reasoning: string;
+    sentiment: string;
+    escalation_risk: number;
+    reasoning_chain: any[];
+  } | null>(null);
+  const [automationWorkflow, setAutomationWorkflow] = useState<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -212,7 +224,7 @@ export default function CallSimulator() {
 
   useEffect(() => {
     // Connect to Python Backend WebSocket
-    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/api/v1/voice/ws';
+    const wsUrl = `${process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000'}/api/voice/ws`;
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
@@ -225,14 +237,60 @@ export default function CallSimulator() {
           message: data.message,
           timestamp: new Date()
         }]);
+      } else if (data.type === 'reasoning_chain') {
+        // Update reasoning data for visualization
+        setReasoningData(prev => ({
+          ...prev,
+          reasoning_chain: data.data || []
+        }));
+      } else if (data.type === 'reasoning_complete') {
+        // Store complete reasoning data
+        setReasoningData({
+          intent: data.data.intent,
+          confidence: data.data.confidence,
+          entities: {},
+          selected_action: data.data.selected_action,
+          action_reasoning: '',
+          sentiment: data.data.sentiment,
+          escalation_risk: data.data.escalation_risk,
+          reasoning_chain: reasoningData?.reasoning_chain || []
+        });
       } else if (data.type === 'agent_response') {
         setIsProcessing(false);
         addAIMessage(data.text);
         
-        if (data.audio) {
-          const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
-          audio.play();
+        if (data.reasoning) {
+          // Update with full reasoning data from response
+          setReasoningData(data.reasoning);
+          
+          // Check if action requires automation
+          if (data.reasoning.selected_action === 'CREATE_APPOINTMENT') {
+            // Trigger automation workflow
+            triggerAutomationWorkflow(data.reasoning);
+          }
         }
+        
+        if (data.reasoning) {
+          // Update with full reasoning data from response
+          setReasoningData(data.reasoning);
+        }
+        
+        // Audio will be sent separately as 'audio' event
+      } else if (data.type === 'audio') {
+        // Play audio from Nova Sonic
+        // PCM16 format needs to be converted to playable format
+        if (data.audio) {
+          playPcm16Audio(data.audio, data.sample_rate || 16000);
+        }
+      } else if (data.type === 'audio_config') {
+        // Store audio configuration
+        console.log('Audio config received:', data.config);
+      } else if (data.type === 'latency_metrics') {
+        // Display latency metrics
+        console.log('Latency metrics:', data.metrics);
+      } else if (data.type === 'transcript') {
+        // Customer transcript from audio input
+        console.log('Transcript:', data.text);
       }
     };
 
@@ -399,11 +457,42 @@ export default function CallSimulator() {
     }
   };
 
-  const handleKeyPress = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      event.stopPropagation();
-      sendMessage();
+  const playPcm16Audio = (base64Audio: string, sampleRate: number) => {
+    try {
+      // Decode base64 to binary
+      const audioData = atob(base64Audio);
+      const arrayBuffer = new ArrayBuffer(audioData.length);
+      const view = new DataView(arrayBuffer);
+      
+      for (let i = 0; i < audioData.length; i++) {
+        view.setUint8(i, audioData.charCodeAt(i));
+      }
+      
+      // Convert PCM16 to Float32 for Web Audio API
+      const samples = new Int16Array(arrayBuffer);
+      const float32Buffer = new Float32Array(samples.length);
+      
+      for (let i = 0; i < samples.length; i++) {
+        // Convert 16-bit PCM to float (-1.0 to 1.0)
+        float32Buffer[i] = samples[i] / 32768.0;
+      }
+      
+      // Create audio context and play
+      const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)({ sampleRate });
+      const audioBuffer = audioContext.createBuffer(1, float32Buffer.length, sampleRate);
+      audioBuffer.getChannelData(0).set(float32Buffer);
+      
+      const source = audioContext.createBufferSource();
+      source.buffer = audioBuffer;
+      source.connect(audioContext.destination);
+      source.start(0);
+      
+      // Cleanup after playing
+      source.onended = () => {
+        audioContext.close();
+      };
+    } catch (error) {
+      console.error('Error playing PCM16 audio:', error);
     }
   };
 
@@ -452,6 +541,73 @@ export default function CallSimulator() {
     const minutes = Math.floor(duration / 60);
     const seconds = duration % 60;
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  };
+
+  const triggerAutomationWorkflow = async (reasoning: any) => {
+    try {
+      // Create automation workflow based on reasoning
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/automation/create-calendly-workflow`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          customer_name: reasoning.entities?.customer_name || 'Customer',
+          customer_phone: currentCall?.customer_phone || '+1 (555) 123-4567',
+          customer_email: 'customer@example.com',
+          service: reasoning.entities?.service || 'Consultation',
+          date: reasoning.entities?.date || 'Tomorrow',
+          time: reasoning.entities?.time || '10:00 AM',
+          calendly_url: 'https://calendly.com/example'
+        })
+      });
+      
+      const result = await response.json();
+      
+      if (result.success) {
+        setAutomationWorkflow(result.workflow);
+        
+        // Execute workflow via WebSocket
+        const ws = new WebSocket(`${process.env.NEXT_PUBLIC_WS_URL}/api/automation/ws/${result.workflow.workflow_id}`);
+        
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'workflow_started') {
+            addAIMessage(`🤖 Nova Act is now executing: ${data.name}`, 'action');
+          } else if (data.type === 'step_completed') {
+            addAIMessage(`✓ ${data.description}`, 'action');
+            setAutomationWorkflow(prev => ({
+              ...prev,
+              current_step: data.step_id,
+              progress_percent: data.progress_percent
+            }));
+          } else if (data.type === 'workflow_completed') {
+            addAIMessage(`✅ Automation complete! Booked ${result.workflow.metadata?.service} for ${result.workflow.metadata?.customer_name}`, 'action');
+            setAutomationWorkflow(prev => ({
+              ...prev,
+              status: 'completed',
+              progress_percent: 100
+            }));
+          } else if (data.type === 'workflow_failed') {
+            addAIMessage(`❌ Automation failed: ${data.error}`, 'action');
+            setAutomationWorkflow(prev => ({
+              ...prev,
+              status: 'failed'
+            }));
+          }
+        };
+        
+        // Send workflow execution command
+        ws.onopen = () => {
+          ws.send(JSON.stringify({
+            type: 'execute',
+            workflow: result.workflow
+          }));
+        };
+      }
+    } catch (error) {
+      console.error('Error triggering automation:', error);
+      addAIMessage('Failed to start automation workflow', 'action');
+    }
   };
 
   return (
@@ -733,9 +889,14 @@ export default function CallSimulator() {
                     avatar={<PsychologyIcon sx={{ color: '#60a5fa' }} />}
                   />
                   <CardContent sx={{ p: 0 }}>
-                    <AgentThoughts thoughts={thoughts} />
+                    <AgentThoughts thoughts={thoughts} reasoningData={reasoningData} />
                   </CardContent>
                 </Card>
+              </Grid>
+
+              {/* Automation Progress Panel */}
+              <Grid item xs={12}>
+                <AutomationProgress workflow={automationWorkflow} compact={false} />
               </Grid>
 
               {/* Call Info & Metadata */}

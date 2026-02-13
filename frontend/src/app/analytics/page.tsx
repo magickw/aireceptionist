@@ -25,6 +25,7 @@ import LinearProgress from '@mui/material/LinearProgress';
 import Tabs from '@mui/material/Tabs';
 import Tab from '@mui/material/Tab';
 import Button from '@mui/material/Button';
+import Alert from '@mui/material/Alert';
 import CallIcon from '@mui/icons-material/Call';
 import EventIcon from '@mui/icons-material/Event';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
@@ -241,6 +242,7 @@ export default function AnalyticsPage() {
         <Tab label="Overview" />
         <Tab label="Call Analytics" />
         <Tab label="Revenue" />
+        <Tab label="Customer Intelligence" />
         <Tab label="Real-time" />
       </Tabs>
 
@@ -423,6 +425,88 @@ export default function AnalyticsPage() {
       </TabPanel>
 
       <TabPanel value={tabValue} index={3}>
+        {/* Customer Intelligence Tab */}
+        <Grid container spacing={3}>
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardHeader
+                avatar={<Avatar sx={{ bgcolor: 'warning.main' }}><PsychologyIcon /></Avatar>}
+                title="VIP Customers"
+                subheader="High-value customers requiring special attention"
+              />
+              <CardContent>
+                <Alert severity="info" sx={{ mb: 2 }}>
+                  Powered by Nova Multimodal Embeddings for customer intelligence
+                </Alert>
+                <Box sx={{ display: 'flex', gap: 1, mb: 2 }}>
+                  <Chip label="PLATINUM" color="warning" variant="outlined" size="small" />
+                  <Chip label="GOLD" color="warning" variant="outlined" size="small" />
+                  <Chip label="SILVER" color="warning" variant="outlined" size="small" />
+                  <Chip label="BRONZE" color="warning" variant="outlined" size="small" />
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  VIP customers are identified based on satisfaction score, appointment frequency, and engagement level.
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardHeader
+                avatar={<Avatar sx={{ bgcolor: 'error.main' }}><TrendingUpIcon /></Avatar>}
+                title="Churn Risk Analysis"
+                subheader="Customers at risk of leaving"
+              />
+              <CardContent>
+                <Box sx={{ mb: 2 }}>
+                  <Typography variant="subtitle2" gutterBottom>Risk Levels</Typography>
+                  <Box sx={{ display: 'flex', gap: 1 }}>
+                    <Chip label="HIGH" color="error" size="small" />
+                    <Chip label="MEDIUM" color="warning" size="small" />
+                    <Chip label="LOW" color="success" size="small" />
+                  </Box>
+                </Box>
+                <Typography variant="body2" color="text.secondary">
+                  Churn risk is calculated using sentiment analysis, complaint frequency, interaction patterns, and cancellation rates.
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardHeader
+                avatar={<Avatar sx={{ bgcolor: 'info.main' }}><AnalyticsIcon /></Avatar>}
+                title="Complaint Patterns"
+                subheader="Common issues detected"
+              />
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Nova AI analyzes customer interactions to detect recurring complaint patterns and provides actionable recommendations for improvement.
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+
+          <Grid item xs={12} md={6}>
+            <Card>
+              <CardHeader
+                avatar={<Avatar sx={{ bgcolor: 'success.main' }}><EventIcon /></Avatar>}
+                title="Semantic Search"
+                subheader="Search customer history naturally"
+              />
+              <CardContent>
+                <Typography variant="body2" color="text.secondary">
+                  Use natural language to search across all customer interactions. Nova embeddings understand context and meaning beyond keywords.
+                </Typography>
+              </CardContent>
+            </Card>
+          </Grid>
+        </Grid>
+      </TabPanel>
+
+      <TabPanel value={tabValue} index={4}>
         {/* Real-time Tab */}
         <Grid container spacing={3} sx={{ mb: 4 }}>
           <Grid item xs={12} sm={6} md={3}>

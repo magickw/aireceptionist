@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 from app.core import security
 from app.core.config import settings
 from app.db.session import SessionLocal
-from app.models.models import User
+from app.models.models import User, Business
 from app.schemas.user import TokenPayload
 
 reusable_oauth2 = OAuth2PasswordBearer(
@@ -46,3 +46,19 @@ def get_current_active_user(
     if current_user.status != "active":
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
+
+def get_current_business_id(
+    current_user: User = Depends(get_current_active_user),
+    db: Session = Depends(get_db)
+) -> int:
+    """
+    Get the business ID for the current user.
+    For simplicity, returns the first business associated with the user.
+    """
+    business = db.query(Business).filter(Business.user_id == current_user.id).first()
+    if not business:
+        raise HTTPException(
+            status_code=404,
+            detail="No business found for this user"
+        )
+    return business.id

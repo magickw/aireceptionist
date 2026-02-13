@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice
+from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, automation
 from app.core.config import settings
 
 app = FastAPI(
@@ -25,6 +25,9 @@ app.include_router(analytics.router, prefix=f"{settings.API_V1_STR}/analytics", 
 app.include_router(integrations.router, prefix=f"{settings.API_V1_STR}/integrations", tags=["integrations"])
 app.include_router(twilio.router, prefix=f"{settings.API_V1_STR}/twilio", tags=["twilio"])
 app.include_router(voice.router, prefix=f"{settings.API_V1_STR}/voice", tags=["voice"])
+app.include_router(automation.router, prefix=f"{settings.API_V1_STR}/automation", tags=["automation"])
+app.include_router(customer_intelligence.router, prefix=f"{settings.API_V1_STR}/customer-intelligence", tags=["customer-intelligence"])
+app.include_router(automation.router, prefix=f"{settings.API_V1_STR}/automation", tags=["automation"])
 
 
 @app.get("/health")

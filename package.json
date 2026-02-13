@@ -4,16 +4,15 @@
   "description": "AI-powered business phone management platform with WebSocket, Authentication, and Comprehensive Logging",
   "private": true,
   "workspaces": [
-    "frontend",
-    "backend"
+    "frontend"
   ],
   "scripts": {
-    "dev": "echo \"Please run 'cd frontend && npm run dev' and 'cd backend && npm run dev' in separate terminals\"",
-    "dev:frontend": "cd frontend && npm run dev",
-    "dev:backend": "cd backend && npm run dev",
+    "dev": "echo \"Please run 'cd frontend && npm run dev' and 'uvicorn app.main:app --reload' in backend directory in separate terminals\"",
+    "dev:frontend": "npm run dev --workspace=frontend",
+    "dev:backend": "cd backend && uvicorn app.main:app --reload",
     "build": "npm run build:frontend",
-    "build:frontend": "cd frontend && npm run build",
-    "build:backend": "cd backend && npm install && npm run build",
+    "build:frontend": "npm run build --workspace=frontend",
+    "build:backend": "echo \"Backend is Python, no npm build step required.\"",
     "start": "echo \"Please run 'cd frontend && npm run start' and 'cd backend && npm run start' in separate terminals\"",
     "start:frontend": "cd frontend && npm run start",
     "start:backend": "cd backend && npm run start",

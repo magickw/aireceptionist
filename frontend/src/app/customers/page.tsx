@@ -53,6 +53,10 @@ interface Customer {
   status: 'active' | 'inactive' | 'vip';
   appointmentHistory: Appointment[];
   callHistory: CallRecord[];
+  churnRiskScore?: number;
+  churnRiskLevel?: 'low' | 'medium' | 'high';
+  vipTier?: 'PLATINUM' | 'GOLD' | 'SILVER' | 'BRONZE';
+  engagementScore?: number;
 }
 
 interface Appointment {
@@ -298,13 +302,30 @@ export default function CustomerDatabase() {
                       </ListItemAvatar>
                       <ListItemText
                         primary={
-                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
                             <Typography variant="subtitle1">{customer.name}</Typography>
                             <Chip
                               label={customer.status.toUpperCase()}
                               color={getStatusColor(customer.status) as any}
                               size="small"
                             />
+                            {customer.vipTier && (
+                              <Chip
+                                label={customer.vipTier}
+                                size="small"
+                                color="warning"
+                                variant="outlined"
+                                sx={{ fontWeight: 'bold' }}
+                              />
+                            )}
+                            {customer.churnRiskLevel && (
+                              <Chip
+                                label={`Risk: ${customer.churnRiskLevel.toUpperCase()}`}
+                                size="small"
+                                color={customer.churnRiskLevel === 'high' ? 'error' : customer.churnRiskLevel === 'medium' ? 'warning' : 'success'}
+                                variant="outlined"
+                              />
+                            )}
                           </Box>
                         }
                         secondary={
