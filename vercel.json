@@ -1,1 +1,1 @@
-{"buildCommand": "npm run build", "outputDirectory": ".next", "framework": null, "installCommand": "npm install"}
+{"buildCommand": "npm run build", "devCommand": "npm run dev", "outputDirectory": ".next", "installCommand": "npm install", "framework": "nextjs"}
