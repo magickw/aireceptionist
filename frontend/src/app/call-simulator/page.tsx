@@ -72,6 +72,8 @@ export default function CallSimulator() {
   const [currentCall, setCurrentCall] = useState<CallSession | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
+  const [useContextAware, setUseContextAware] = useState(true);
+  const [completedActions, setCompletedActions] = useState<any[]>([]);
   const [thoughts, setThoughts] = useState<Thought[]>([]);
   const [reasoningData, setReasoningData] = useState<{
     intent: string;
@@ -501,6 +503,13 @@ export default function CallSimulator() {
     event.preventDefault();
     event.stopPropagation();
     sendMessage();
+  };
+
+  const handleKeyPress = (event: React.KeyboardEvent) => {
+    if (event.key === 'Enter' && !event.shiftKey) {
+      event.preventDefault();
+      sendMessage();
+    }
   };
 
   // Function to handle test scenarios

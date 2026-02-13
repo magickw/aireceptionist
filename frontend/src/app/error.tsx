@@ -1,10 +1,7 @@
 'use client';
 
 import { useEffect } from 'react';
-import Box from '@mui/material/Box';
-import Typography from '@mui/material/Typography';
-import Button from '@mui/material/Button';
-import Container from '@mui/material/Container';
+import { Box, Typography, Button, Container } from '@mui/material';
 
 export default function Error({
   error,
@@ -18,7 +15,7 @@ export default function Error({
   }, [error]);
 
   return (
-    <Container maxWidth="sm">
+    <Container maxWidth="md">
       <Box
         sx={{
           display: 'flex',
@@ -27,14 +24,14 @@ export default function Error({
           justifyContent: 'center',
           minHeight: '60vh',
           textAlign: 'center',
-          gap: 3
+          gap: 2
         }}
       >
-        <Typography variant="h2" component="h1" gutterBottom>
+        <Typography variant="h3" color="error" gutterBottom>
           Something went wrong!
         </Typography>
-        <Typography variant="body1" color="text.secondary">
-          An unexpected error occurred. Our team has been notified.
+        <Typography variant="body1" color="text.secondary" paragraph>
+          We apologize for the inconvenience. An unexpected error has occurred.
         </Typography>
         <Button
           variant="contained"
