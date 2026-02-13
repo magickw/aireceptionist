@@ -7,6 +7,9 @@ export const metadata = {
   description: "Premium AI-powered business phone management platform",
 };
 
+// Force dynamic rendering to prevent static export
+export const dynamic = 'force-dynamic';
+
 export default function RootLayout({
   children,
 }: {

@@ -6,8 +6,6 @@ const nextConfig = {
   typescript: {
     ignoreBuildErrors: true,
   },
-  // Disable static export to allow dynamic rendering
-  output: undefined,
 };
 
 module.exports = nextConfig;
