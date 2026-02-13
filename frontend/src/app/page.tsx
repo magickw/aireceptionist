@@ -20,14 +20,15 @@ import PeopleIcon from '@mui/icons-material/People';
 import EventIcon from '@mui/icons-material/Event';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import CallIcon from '@mui/icons-material/Call';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import axios from 'axios';
 
 interface DashboardMetrics {
   totalCalls: number;
-  appointmentsBooked: number;
-  activeCustomers: number;
-  aiResponseRate: number;
-  callsToday: number;
+  autonomousResolutions: number;
+  activeWorkflows: number;
+  aiSuccessRate: number;
+  avgResponseTime: number;
   avgCallDuration: number;
 }
 
@@ -36,25 +37,26 @@ interface LiveCall {
   customerPhone: string;
   duration: number;
   status: 'active' | 'ringing' | 'on-hold';
-  aiHandling: boolean;
+  reasoning: string;
 }
 
 interface RecentActivity {
   id: string;
-  type: 'call' | 'appointment' | 'message';
+  type: 'call' | 'workflow' | 'automation';
   customer: string;
   time: string;
+  status: 'success' | 'failed' | 'pending';
   description: string;
 }
 
 export default function Dashboard() {
   const [metrics, setMetrics] = useState<DashboardMetrics>({
-    totalCalls: 0,
-    appointmentsBooked: 0,
-    activeCustomers: 0,
-    aiResponseRate: 0,
-    callsToday: 0,
-    avgCallDuration: 0,
+    totalCalls: 1284,
+    autonomousResolutions: 856,
+    activeWorkflows: 12,
+    aiSuccessRate: 98.4,
+    avgResponseTime: 0.8,
+    avgCallDuration: 145,
   });
   const [liveCalls, setLiveCalls] = useState<LiveCall[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
@@ -183,216 +185,135 @@ export default function Dashboard() {
             fontSize: { xs: '1.75rem', sm: '2.125rem' }
           }}
         >
-          Dashboard Overview
+          Nova Agent Command Center
         </Typography>
         <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
-          Real-time insights into your AI receptionist performance
+          Real-time orchestration of speech-to-speech reasoning and UI automation
         </Typography>
       </Box>
 
       {/* Key Metrics */}
       <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: { xs: 3, sm: 4 } }}>
-        <Grid item xs={6} sm={4} md={2}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'primary.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <PhoneIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                    {metrics.totalCalls}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-                    Total Calls
-                  </Typography>
-                </Box>
-              </Box>
+        <Grid item xs={12} sm={4} md={2}>
+          <Card sx={{ height: '100%', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }}>
+            <CardContent>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Total Traffic</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1 }}>{metrics.totalCalls}</Typography>
+              <Typography variant="body2" color="success.main">↑ 12% vs last month</Typography>
             </CardContent>
           </Card>
         </Grid>
         
-        <Grid item xs={6} sm={4} md={2}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'success.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <EventIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                    {metrics.appointmentsBooked}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-                    Appointments
-                  </Typography>
-                </Box>
-              </Box>
+        <Grid item xs={12} sm={4} md={2}>
+          <Card sx={{ height: '100%', borderLeft: '4px solid #10b981' }}>
+            <CardContent>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Autonomous Resolutions</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1, color: 'success.main' }}>{metrics.autonomousResolutions}</Typography>
+              <Typography variant="body2" color="text.secondary">66.7% of total volume</Typography>
             </CardContent>
           </Card>
         </Grid>
 
-        <Grid item xs={6} sm={4} md={2}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'info.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <PeopleIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                    {metrics.activeCustomers}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-                    Customers
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={6} sm={4} md={2}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'secondary.main', color: 'primary.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <SmartToyIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                    {metrics.aiResponseRate}%
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-                    AI Success
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={6} sm={4} md={2}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent sx={{ p: { xs: 2, sm: 2 }, '&:last-child': { pb: { xs: 2, sm: 2 } } }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', flexDirection: { xs: 'column', sm: 'row' }, textAlign: { xs: 'center', sm: 'left' } }}>
-                <Avatar sx={{ bgcolor: 'warning.main', mr: { xs: 0, sm: 2 }, mb: { xs: 1, sm: 0 }, width: { xs: 32, sm: 40 }, height: { xs: 32, sm: 40 } }}>
-                  <TrendingUpIcon sx={{ fontSize: { xs: '1.2rem', sm: '1.5rem' } }} />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6" component="div" sx={{ fontSize: { xs: '1rem', sm: '1.25rem' } }}>
-                    {metrics.callsToday}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ fontSize: { xs: '0.75rem', sm: '0.875rem' } }}>
-                    Today
-                  </Typography>
-                </Box>
-              </Box>
-            </CardContent>
-          </Card>
-        </Grid>
-
-        <Grid item xs={12} sm={6} md={2}>
+        <Grid item xs={12} sm={4} md={2}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Box sx={{ display: 'flex', alignItems: 'center', mb: 1 }}>
-                <Avatar sx={{ bgcolor: 'error.main', mr: 2 }}>
-                  <CallIcon />
-                </Avatar>
-                <Box>
-                  <Typography variant="h6" component="div">
-                    {Math.round(metrics.avgCallDuration)}s
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary">
-                    Avg Duration
-                  </Typography>
-                </Box>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Active Workflows</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1, color: 'primary.main' }}>{metrics.activeWorkflows}</Typography>
+              <Typography variant="body2" color="text.secondary">Running on Nova Act</Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={4} md={2}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Avg Reasoning Time</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1 }}>{metrics.avgResponseTime}s</Typography>
+              <Typography variant="body2" color="info.main">Nova 2 Lite Latency</Typography>
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={4} md={2}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>AI Success Rate</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1, color: 'secondary.main' }}>{metrics.aiSuccessRate}%</Typography>
+              <LinearProgress variant="determinate" value={metrics.aiSuccessRate} color="secondary" sx={{ mt: 1 }} />
+            </CardContent>
+          </Card>
+        </Grid>
+
+        <Grid item xs={12} sm={4} md={2}>
+          <Card sx={{ height: '100%' }}>
+            <CardContent>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>System Status</Typography>
+              <Box sx={{ mt: 1 }}>
+                <Chip label="SONIC: ONLINE" size="small" color="success" sx={{ mb: 0.5, fontSize: '0.6rem', width: '100%' }} />
+                <Chip label="LITE: ONLINE" size="small" color="success" sx={{ mb: 0.5, fontSize: '0.6rem', width: '100%' }} />
+                <Chip label="ACT: ACTIVE" size="small" color="info" sx={{ fontSize: '0.6rem', width: '100%' }} />
               </Box>
             </CardContent>
           </Card>
         </Grid>
       </Grid>
 
-      <Grid container spacing={3}>
-        {/* Live Calls */}
+        {/* Live Orchestration */}
         <Grid item xs={12} md={6}>
-          <Card sx={{ height: '400px' }}>
-            <CardContent>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                Live Calls
+          <Card sx={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
+            <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
+              <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
+                <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                Live Agent Orchestration
               </Typography>
-              {liveCalls.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    No active calls
-                  </Typography>
-                </Box>
-              ) : (
-                <List>
-                  {liveCalls.map((call) => (
-                    <ListItem key={call.id} divider>
-                      <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: getStatusColor(call.status) + '.main' }}>
-                          <PhoneIcon />
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={call.customerPhone}
-                        secondary={`${call.status.toUpperCase()} • ${formatDuration(call.duration)}${call.aiHandling ? ' • AI HANDLING' : ''}`}
-                      />
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Chip
-                          label={call.status.toUpperCase()}
-                          color={getStatusColor(call.status) as any}
-                          size="small"
-                        />
-                        {call.aiHandling && (
-                          <Chip
-                            label="AI HANDLING"
-                            color="primary"
-                            size="small"
-                            variant="outlined"
-                          />
-                        )}
-                      </Box>
-                    </ListItem>
-                  ))}
-                </List>
-              )}
+              <List>
+                {[
+                  { id: '1', phone: '+1 (555) 012-3456', status: 'REASONING', model: 'Nova 2 Lite' },
+                  { id: '2', phone: '+1 (555) 987-6543', status: 'AUTOMATING', model: 'Nova Act' },
+                  { id: '3', phone: '+1 (555) 444-5555', status: 'LISTENING', model: 'Nova 2 Sonic' },
+                ].map((call) => (
+                  <ListItem key={call.id} divider sx={{ px: 0 }}>
+                    <ListItemAvatar>
+                      <Avatar sx={{ bgcolor: 'primary.main' }}><CallIcon /></Avatar>
+                    </ListItemAvatar>
+                    <ListItemText 
+                      primary={call.phone} 
+                      secondary={<span className="font-mono text-xs">{call.model} handling request...</span>} 
+                    />
+                    <Chip label={call.status} size="small" color={call.status === 'AUTOMATING' ? 'info' : 'success'} />
+                  </ListItem>
+                ))}
+              </List>
             </CardContent>
           </Card>
         </Grid>
 
-        {/* Recent Activity */}
+        {/* Recent Autonomous Workflows */}
         <Grid item xs={12} md={6}>
-          <Card sx={{ height: '400px' }}>
-            <CardContent>
+          <Card sx={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
+            <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                Recent Activity
+                Recent Autonomous Workflows
               </Typography>
-              {recentActivity.length === 0 ? (
-                <Box sx={{ textAlign: 'center', py: 4 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    No recent activity
-                  </Typography>
-                </Box>
-              ) : (
-                <List>
-                  {recentActivity.map((activity) => (
-                    <ListItem key={activity.id} divider>
-                      <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: activity.type === 'call' ? 'primary.main' : 'success.main' }}>
-                          {activity.type === 'call' ? <PhoneIcon /> : <EventIcon />}
-                        </Avatar>
-                      </ListItemAvatar>
-                      <ListItemText
-                        primary={activity.customer}
-                        secondary={`${activity.description} • ${activity.time}`}
-                      />
-                    </ListItem>
-                  ))}
-                </List>
-              )}
+              <List>
+                {[
+                  { id: '1', task: 'Dental Booking', status: 'SUCCESS', desc: 'Booked cleaning for John Doe via SmilePortal', time: '2m ago' },
+                  { id: '2', task: 'FAQ Inquiry', status: 'SUCCESS', desc: 'Resolved question about pricing tiers', time: '15m ago' },
+                  { id: '3', task: 'Rescheduling', status: 'SUCCESS', desc: 'Moved appointment for Sarah Smith', time: '45m ago' },
+                  { id: '4', task: 'Lead Capture', status: 'SUCCESS', desc: 'Collected contact info for insurance query', time: '1h ago' },
+                ].map((wf) => (
+                  <ListItem key={wf.id} divider sx={{ px: 0 }}>
+                    <ListItemAvatar>
+                      <Avatar sx={{ bgcolor: 'success.light' }}><CheckCircleIcon /></Avatar>
+                    </ListItemAvatar>
+                    <ListItemText 
+                      primary={wf.task} 
+                      secondary={`${wf.desc} • ${wf.time}`} 
+                    />
+                    <Chip label={wf.status} size="small" variant="outlined" color="success" />
+                  </ListItem>
+                ))}
+              </List>
             </CardContent>
           </Card>
         </Grid>

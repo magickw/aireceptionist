@@ -18,14 +18,11 @@ import useMediaQuery from '@mui/material/useMediaQuery';
 import { useTheme } from '@mui/material/styles';
 
 const navigationItems = [
+  { label: 'Live Demo', href: '/call-simulator' },
+  { label: 'Workflows', href: '/call-management' },
   { label: 'Dashboard', href: '/' },
-  { label: 'Business', href: '/business-setup' },
-  { label: 'Calls', href: '/call-management' },
-  { label: 'AI Test', href: '/call-simulator' },
   { label: 'Integrations', href: '/integrations' },
-  { label: 'AI Training', href: '/ai-training' },
-  { label: 'Customers', href: '/customers' },
-  { label: 'Settings', href: '/settings' },
+  { label: 'Training', href: '/ai-training' },
 ];
 
 export default function Header() {
@@ -40,7 +37,7 @@ export default function Header() {
   const drawer = (
     <Box onClick={handleDrawerToggle} sx={{ textAlign: 'center' }}>
       <Typography variant="h6" sx={{ my: 2, fontWeight: 'bold', color: 'primary.main' }}>
-        AI Receptionist Pro
+        Nova Voice Agent
       </Typography>
       <Divider />
       <List>
@@ -87,7 +84,7 @@ export default function Header() {
               fontSize: { xs: '1rem', sm: '1.25rem' }
             }}
           >
-            AI Receptionist Pro
+            Nova Voice Agent
           </Typography>
           
           {/* Desktop Navigation */}

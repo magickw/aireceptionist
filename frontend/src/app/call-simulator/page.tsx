@@ -42,10 +42,14 @@ import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import EventIcon from '@mui/icons-material/Event';
 import ShoppingCartIcon from '@mui/icons-material/ShoppingCart';
 import PsychologyIcon from '@mui/icons-material/Psychology';
+import AgentThoughts from '@/components/AgentThoughts';
 import { ConversationMessage, CallSession, ConversationContext } from '@/types/ai';
-import AIConversationEngine from '@/services/aiConversationEngine';
-import ContextAwareAI from '@/services/contextAwareAI';
-import axios from 'axios';
+
+interface Thought {
+  step: string;
+  message: string;
+  timestamp: Date;
+}
 
 interface TabPanelProps {
   children?: React.ReactNode;
@@ -67,12 +71,9 @@ export default function CallSimulator() {
   const [currentCall, setCurrentCall] = useState<CallSession | null>(null);
   const [messageInput, setMessageInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [businessContext, setBusinessContext] = useState<Record<string, unknown> | null>(null);
-  const [aiEngine, setAiEngine] = useState<AIConversationEngine | null>(null);
-  const [contextAwareEngine, setContextAwareEngine] = useState<ContextAwareAI | null>(null);
-  const [useContextAware, setUseContextAware] = useState(false);
-  const [completedActions, setCompletedActions] = useState<any[]>([]);
-  const [callSummaryOpen, setCallSummaryOpen] = useState(false);
+  const [thoughts, setThoughts] = useState<Thought[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   const quickTestScenarios = [
@@ -210,109 +211,34 @@ export default function CallSimulator() {
   ];
 
   useEffect(() => {
-    const fetchBusinessContext = async () => {
-      try {
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
-        if (businessResponse.data.length > 0) {
-          const business = businessResponse.data[0];
-          
-          // Create business-specific context based on type
-          const getServicesForBusinessType = (businessType: string) => {
-            switch (businessType) {
-              case 'restaurant':
-                return [
-                  { id: '1', name: 'Table Reservation', description: 'Reserve a table for dining', duration: 120, price: 0, category: 'Dining' },
-                  { id: '2', name: 'Private Event', description: 'Book private dining space', duration: 240, price: 200, category: 'Events' },
-                  { id: '3', name: 'Catering Order', description: 'Order catering for events', duration: 60, price: 100, category: 'Catering' },
-                ];
-              case 'salon':
-                return [
-                  { id: '1', name: 'Haircut', description: 'Professional haircut and styling', duration: 45, price: 80, category: 'Hair' },
-                  { id: '2', name: 'Hair Coloring', description: 'Professional hair coloring service', duration: 120, price: 150, category: 'Hair' },
-                  { id: '3', name: 'Styling', description: 'Hair styling for special events', duration: 60, price: 100, category: 'Hair' },
-                ];
-              case 'medical':
-                return [
-                  { id: '1', name: 'General Consultation', description: 'General medical consultation', duration: 30, price: 150, category: 'Consultation' },
-                  { id: '2', name: 'Specialist Consultation', description: 'Specialist medical consultation', duration: 45, price: 250, category: 'Consultation' },
-                  { id: '3', name: 'Follow-up Visit', description: 'Follow-up medical visit', duration: 20, price: 100, category: 'Follow-up' },
-                ];
-              case 'spa':
-                return [
-                  { id: '1', name: 'Massage', description: 'Relaxing full body massage', duration: 60, price: 120, category: 'Wellness' },
-                  { id: '2', name: 'Facial', description: 'Rejuvenating facial treatment', duration: 90, price: 150, category: 'Skincare' },
-                  { id: '3', name: 'Body Treatment', description: 'Full body wellness treatment', duration: 120, price: 200, category: 'Wellness' },
-                ];
-              default:
-                return [
-                  { id: '1', name: 'Consultation', description: 'Initial consultation', duration: 30, price: 50, category: 'General' },
-                  { id: '2', name: 'Service Appointment', description: 'General service appointment', duration: 60, price: 100, category: 'General' },
-                ];
-            }
-          };
+    // Connect to Python Backend WebSocket
+    const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000/api/v1/voice/ws';
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
 
-          const getMenuForRestaurant = (businessType: string) => {
-            if (businessType === 'restaurant') {
-              return [
-                { id: '1', name: 'Caesar Salad', description: 'Fresh romaine lettuce with parmesan and croutons', price: 14.99, category: 'Salads', available: true },
-                { id: '2', name: 'Grilled Salmon', description: 'Fresh Atlantic salmon with herbs', price: 28.99, category: 'Main Course', available: true },
-                { id: '3', name: 'Pasta Carbonara', description: 'Classic Italian pasta with cream sauce and pancetta', price: 18.99, category: 'Pasta', available: true },
-                { id: '4', name: 'Ribeye Steak', description: 'Premium cut ribeye steak cooked to perfection', price: 35.99, category: 'Main Course', available: true },
-                { id: '5', name: 'Margherita Pizza', description: 'Classic pizza with fresh mozzarella and basil', price: 16.99, category: 'Pizza', available: true },
-                { id: '6', name: 'Chocolate Lava Cake', description: 'Decadent chocolate cake with molten center', price: 8.99, category: 'Desserts', available: true },
-              ];
-            }
-            return [];
-          };
-
-          // Determine business type from business data or default to restaurant for testing
-          const businessType = business.type || 'restaurant';
-          
-          const context = {
-            ...business,
-            type: businessType,
-            services: getServicesForBusinessType(businessType),
-            menu: getMenuForRestaurant(businessType),
-          };
-          
-          console.log('🏢 Business context created:', context);
-          
-          setBusinessContext(context);
-          setAiEngine(new AIConversationEngine(context));
-          setContextAwareEngine(new ContextAwareAI(context));
+    ws.onmessage = (event) => {
+      const data = JSON.parse(event.data);
+      
+      if (data.type === 'thought') {
+        setThoughts(prev => [...prev, {
+          step: data.step,
+          message: data.message,
+          timestamp: new Date()
+        }]);
+      } else if (data.type === 'agent_response') {
+        setIsProcessing(false);
+        addAIMessage(data.text);
+        
+        if (data.audio) {
+          const audio = new Audio(`data:audio/mp3;base64,${data.audio}`);
+          audio.play();
         }
-      } catch (error) {
-        console.error('Error fetching business context:', error);
-        // Fallback to restaurant context for testing
-        const fallbackContext = {
-          type: 'restaurant',
-          name: 'AI Receptionist Test Restaurant',
-          services: [
-            { id: '1', name: 'Table Reservation', description: 'Reserve a table for dining', duration: 120, price: 0, category: 'Dining' },
-            { id: '2', name: 'Private Event', description: 'Book private dining space', duration: 240, price: 200, category: 'Events' },
-          ],
-          menu: [
-            { id: '1', name: 'Caesar Salad', description: 'Fresh romaine lettuce with parmesan', price: 14.99, category: 'Salads', available: true },
-            { id: '2', name: 'Grilled Salmon', description: 'Fresh Atlantic salmon', price: 28.99, category: 'Main Course', available: true },
-          ],
-          operatingHours: {
-            0: { open: 11, close: 22, closed: false },
-            1: { open: 11, close: 22, closed: false },
-            2: { open: 11, close: 22, closed: false },
-            3: { open: 11, close: 22, closed: false },
-            4: { open: 11, close: 22, closed: false },
-            5: { open: 11, close: 23, closed: false },
-            6: { open: 11, close: 23, closed: false },
-          }
-        };
-        console.log('🏢 Using fallback restaurant context:', fallbackContext);
-        setBusinessContext(fallbackContext);
-        setAiEngine(new AIConversationEngine(fallbackContext));
-        setContextAwareEngine(new ContextAwareAI(fallbackContext));
       }
     };
 
-    fetchBusinessContext();
+    return () => {
+      ws.close();
+    };
   }, []);
 
   useEffect(() => {
@@ -338,231 +264,68 @@ export default function CallSimulator() {
         customerInfo: {},
         intent: 'unknown',
         businessContext: {
-          businessType: businessContext?.type || 'business',
-          services: businessContext?.services || [],
-          operatingHours: businessContext?.operatingHours || {},
-          menu: businessContext?.menu || [],
+          businessType: 'medical',
+          services: [],
+          operatingHours: {},
+          menu: [],
         },
       },
     };
 
     setCurrentCall(newCall);
-    setCompletedActions([]);
+    setThoughts([]);
     
-    // Log which AI engine is being used
-    if (useContextAware) {
-      console.log('🧠 Starting call with context-aware AI engine');
-      const engineMessage: ConversationMessage = {
-        id: `msg-${Date.now()}-${Math.random()}`,
-        timestamp: new Date(),
-        sender: 'ai',
-        content: 'Using Context-Aware AI Engine',
-        type: 'system',
-      };
-      
-      setCurrentCall(prevCall => {
-        if (!prevCall) return prevCall;
-        return {
-          ...prevCall,
-          messages: [...prevCall.messages, engineMessage],
-        };
-      });
-    } else {
-      console.log('🤖 Starting call with standard AI engine');
-      const engineMessage: ConversationMessage = {
-        id: `msg-${Date.now()}-${Math.random()}`,
-        timestamp: new Date(),
-        sender: 'ai',
-        content: 'Using Standard AI Engine',
-        type: 'system',
-      };
-      
-      setCurrentCall(prevCall => {
-        if (!prevCall) return prevCall;
-        return {
-          ...prevCall,
-          messages: [...prevCall.messages, engineMessage],
-        };
-      });
-    }
-
-    // AI greeting - add message directly to the call object to avoid timing issues
     setTimeout(() => {
-      const greetingMessage: ConversationMessage = {
-        id: `msg-${Date.now()}-${Math.random()}`,
-        timestamp: new Date(),
-        sender: 'ai',
-        content: "Hello! Thank you for calling. I'm your AI assistant. How can I help you today?",
-        type: 'text',
-      };
-      
-      setCurrentCall(prevCall => {
-        if (!prevCall) return prevCall;
-        return {
-          ...prevCall,
-          messages: [...prevCall.messages, greetingMessage],
-        };
-      });
-    }, 1000);
+      addAIMessage("Hello! Thank you for calling Smile Care Dental. I'm your AI assistant. How can I help you today?");
+    }, 500);
   };
 
   const endCall = () => {
     if (!currentCall) return;
-    if (!aiEngine && !contextAwareEngine) return;
-
-    let summary;
-    if (useContextAware && contextAwareEngine) {
-      console.log('🧠 Using context-aware AI engine for summary');
-      summary = contextAwareEngine.generateCallSummary(currentCall.messages, currentCall.context);
-    } else if (aiEngine) {
-      console.log('🤖 Using standard AI engine for summary');
-      summary = aiEngine.generateCallSummary(currentCall.messages, currentCall.context);
-    }
-
-    const updatedCall = {
+    setCurrentCall({
       ...currentCall,
       status: 'ended' as const,
       endTime: new Date(),
-      summary: summary,
-    };
-
-    setCurrentCall(updatedCall);
-    setCallSummaryOpen(true);
+    });
   };
 
   const addMessage = (content: string, sender: 'customer' | 'ai', type: 'text' | 'action' | 'system' = 'text') => {
-    if (!currentCall) {
-      console.error('❌ Cannot add message - no current call');
-      return;
-    }
+    const message: ConversationMessage = {
+      id: `msg-${Date.now()}-${Math.random()}`,
+      timestamp: new Date(),
+      sender,
+      content,
+      type,
+    };
 
-    try {
-      const message: ConversationMessage = {
-        id: `msg-${Date.now()}-${Math.random()}`,
-        timestamp: new Date(),
-        sender,
-        content,
-        type,
+    setCurrentCall(prevCall => {
+      if (!prevCall) return prevCall;
+      return {
+        ...prevCall,
+        messages: [...prevCall.messages, message],
       };
-
-      console.log('➕ Adding message:', message);
-
-      setCurrentCall(prevCall => {
-        if (!prevCall) return prevCall;
-        
-        return {
-          ...prevCall,
-          messages: [...prevCall.messages, message],
-        };
-      });
-    } catch (error) {
-      console.error('❌ Error adding message:', error);
-    }
+    });
   };
 
   const addAIMessage = (content: string, type: 'text' | 'action' | 'system' = 'text') => {
     addMessage(content, 'ai', type);
   };
 
-  interface AIResponse {
-    message?: string;
-    intent?: string;
-    actions?: AIAction[];
-    entities?: {
-      name?: string;
-      phone?: string;
-      email?: string;
-      [key: string]: unknown;
-    };
-  }
-
   const sendMessage = async () => {
-    if (!messageInput.trim() || !currentCall || (!aiEngine && !contextAwareEngine)) {
-      console.log('❌ Cannot send message - missing requirements:', {
-        messageInput: messageInput.trim(),
-        currentCall: !!currentCall,
-        aiEngine: !!aiEngine,
-        contextAwareEngine: !!contextAwareEngine
-      });
-      return;
-    }
+    if (!messageInput.trim() || !currentCall || !wsRef.current) return;
 
     const userMessage = messageInput.trim();
-    console.log('📤 Sending message:', userMessage);
-    
-    // Store the message first, then clear the input
-    const messageCopy = userMessage;
     setMessageInput('');
     setIsProcessing(true);
+    setThoughts([]); // Clear previous thoughts
 
-    try {
-      // Add user message to conversation
-      console.log('➕ Adding user message to conversation');
-      addMessage(messageCopy, 'customer');
+    addMessage(userMessage, 'customer');
 
-      // Process with AI
-      console.log('🤖 Starting AI processing...');
-      await new Promise(resolve => setTimeout(resolve, 1500)); // Simulate processing time
-
-      // Use the appropriate AI engine based on useContextAware state
-      let aiResponse: AIResponse;
-      if (useContextAware && contextAwareEngine) {
-        console.log('🧠 Using context-aware AI engine');
-        aiResponse = await contextAwareEngine.processMessage(messageCopy, currentCall.context, currentCall.messages);
-      } else if (aiEngine) {
-        console.log('🤖 Using standard AI engine');
-        aiResponse = await aiEngine.processMessage(messageCopy, currentCall.context, currentCall.messages);
-      } else {
-        throw new Error('No AI engine available');
-      }
-      
-      console.log('🤖 AI response received:', aiResponse);
-      
-      // Add AI response
-      if (aiResponse && aiResponse.message) {
-        console.log('➕ Adding AI response to conversation');
-        addAIMessage(aiResponse.message);
-      } else {
-        console.error('❌ No message in AI response:', aiResponse);
-        addAIMessage("I apologize, I didn't quite understand that. Could you please rephrase your request?");
-      }
-
-      // Execute actions
-      if (aiResponse.actions && Array.isArray(aiResponse.actions) && aiResponse.actions.length > 0) {
-        console.log('🎬 Executing actions:', aiResponse.actions);
-        for (const action of aiResponse.actions) {
-          await executeAction(action);
-        }
-      }
-
-      // Update call context with any changes
-      setCurrentCall(prevCall => {
-        if (!prevCall) return prevCall;
-        
-        const updatedIntent = aiResponse.intent as ConversationContext['intent'] || prevCall.context.intent;
-        
-        return {
-          ...prevCall,
-          context: {
-            ...prevCall.context,
-            intent: updatedIntent,
-            customerInfo: {
-              ...prevCall.context.customerInfo,
-              ...(aiResponse.entities?.name && typeof aiResponse.entities.name === 'string' && { name: aiResponse.entities.name }),
-              ...(aiResponse.entities?.phone && typeof aiResponse.entities.phone === 'string' && { phone: aiResponse.entities.phone }),
-              ...(aiResponse.entities?.email && typeof aiResponse.entities.email === 'string' && { email: aiResponse.entities.email }),
-            }
-          }
-        };
-      });
-
-    } catch (error) {
-      console.error('❌ Error processing message:', error);
-      addAIMessage("I apologize, I'm having trouble processing your request. Let me connect you with a human agent.");
-    } finally {
-      console.log('✅ Message processing complete');
-      setIsProcessing(false);
-    }
+    // Send to WebSocket
+    wsRef.current.send(JSON.stringify({
+      type: 'user_input',
+      text: userMessage
+    }));
   };
 
   interface AIAction {
@@ -959,118 +722,46 @@ export default function CallSimulator() {
             </Card>
           </Grid>
 
-          {/* Call Info & Actions */}
+          {/* Call Context & Agent Thinking */}
           <Grid item xs={12} lg={4}>
             <Grid container spacing={2}>
-              {/* Call Context */}
+              {/* Agent Thinking Panel */}
               <Grid item xs={12}>
-                <Card>
-                  <CardHeader title="Call Context" />
-                  <CardContent>
-                <Paper elevation={1} sx={{ p: 2, mb: 2, bgcolor: '#f5f5f5' }}>
-                  <Typography variant="subtitle2" gutterBottom>AI Engine Selection</Typography>
-                  <Tooltip title="Context-aware AI uses more advanced reasoning to understand customer intent and context">
-                    <FormControlLabel
-                      control={
-                        <Switch
-                          checked={useContextAware}
-                          onChange={(e) => setUseContextAware(e.target.checked)}
-                          color="primary"
-                        />
-                      }
-                      label={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-                          <PsychologyIcon fontSize="small" color={useContextAware ? "primary" : "disabled"} />
-                          <Typography variant="body2">
-                            {useContextAware ? "Context-Aware AI (Enhanced)" : "Standard AI"}
-                          </Typography>
-                        </Box>
-                      }
-                    />
-                  </Tooltip>
-                  <Typography variant="caption" display="block" sx={{ mt: 1, color: 'text.secondary' }}>
-                    {useContextAware 
-                      ? "Using advanced context tracking for better understanding of customer needs."
-                      : "Using standard intent recognition and entity extraction."}
-                  </Typography>
-                </Paper>
-                
-                {currentCall ? (
-                  <Box>
-                    <Typography variant="subtitle2" gutterBottom>Customer Info:</Typography>
-                    <Box sx={{ mb: 2 }}>
-                      <Typography variant="body2">
-                             Name: {currentCall.context.customerInfo.name || "Not provided"}
-                           </Typography>
-                           <Typography variant="body2">
-                             Phone: {currentCall.context.customerInfo.phone || "Not provided"}
-                           </Typography>
-                           <Typography variant="body2">
-                             Email: {currentCall.context.customerInfo.email || "Not provided"}
-                           </Typography>
-                    </Box>
-
-                    <Typography variant="subtitle2" gutterBottom>Intent:</Typography>
-                    <Chip label={currentCall.context.intent} color="primary" size="small" sx={{ mb: 2 }} />
-
-                        {currentCall.context.bookingInfo && (
-                          <Box sx={{ mb: 2 }}>
-                            <Typography variant="subtitle2" gutterBottom>Booking Info:</Typography>
-                            <Typography variant="body2">
-                              Service: {currentCall.context.bookingInfo.service || 'Not specified'}
-                            </Typography>
-                            <Typography variant="body2">
-                              Date: {currentCall.context.bookingInfo.date || 'Not specified'}
-                            </Typography>
-                            <Typography variant="body2">
-                              Time: {currentCall.context.bookingInfo.time || 'Not specified'}
-                            </Typography>
-                            <Chip
-                              label={currentCall.context.bookingInfo.completed ? 'Complete' : 'Incomplete'}
-                              color={currentCall.context.bookingInfo.completed ? 'success' : 'warning'}
-                              size="small"
-                              sx={{ mt: 1 }}
-                            />
-                          </Box>
-                        )}
-                      </Box>
-                    ) : (
-                      <Typography variant="body2" color="text.secondary">
-                        Start a call to see context information
-                      </Typography>
-                    )}
+                <Card sx={{ bgcolor: '#0f172a' }}>
+                  <CardHeader 
+                    title={<Typography color="white">Agent Reasoning (Live)</Typography>}
+                    avatar={<PsychologyIcon sx={{ color: '#60a5fa' }} />}
+                  />
+                  <CardContent sx={{ p: 0 }}>
+                    <AgentThoughts thoughts={thoughts} />
                   </CardContent>
                 </Card>
               </Grid>
 
-              {/* Completed Actions */}
+              {/* Call Info & Metadata */}
               <Grid item xs={12}>
                 <Card>
-                  <CardHeader title="Actions Completed" />
+                  <CardHeader title="Call Metadata" />
                   <CardContent>
-                    {completedActions.length === 0 ? (
-                      <Typography variant="body2" color="text.secondary">
-                        No actions completed yet
-                      </Typography>
+                    {currentCall ? (
+                      <Box>
+                        <Typography variant="subtitle2" gutterBottom>Session ID:</Typography>
+                        <Typography variant="body2" sx={{ mb: 2, fontMono: true }}>{currentCall.id}</Typography>
+                        
+                        <Typography variant="subtitle2" gutterBottom>Customer Phone:</Typography>
+                        <Typography variant="body2" sx={{ mb: 2 }}>{currentCall.customerPhone}</Typography>
+
+                        <Typography variant="subtitle2" gutterBottom>Model Pipeline:</Typography>
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                          <Chip label="Nova 2 Sonic" size="small" color="primary" />
+                          <Chip label="Nova 2 Lite" size="small" color="secondary" />
+                          <Chip label="Nova Act" size="small" variant="outlined" />
+                        </Box>
+                      </Box>
                     ) : (
-                      <List sx={{ p: 0 }}>
-                        {completedActions.map((action, index) => (
-                          <ListItem key={index} sx={{ p: 1 }}>
-                            <Avatar sx={{ mr: 2, bgcolor: 'success.main' }}>
-                              {action.type === 'booking' ? <EventIcon /> : <ShoppingCartIcon />}
-                            </Avatar>
-                            <ListItemText
-                              primary={
-                                action.type === 'booking' 
-                                  ? `Appointment Booked: ${action.data.service}`
-                                  : `Order Placed: $${action.data.total?.toFixed(2)}`
-                              }
-                              secondary={`Customer: ${action.data.customerName}`}
-                            />
-                            <CheckCircleIcon color="success" />
-                          </ListItem>
-                        ))}
-                      </List>
+                      <Typography variant="body2" color="text.secondary">
+                        Start a call to see session metadata
+                      </Typography>
                     )}
                   </CardContent>
                 </Card>
