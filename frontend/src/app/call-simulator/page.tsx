@@ -84,6 +84,7 @@ export default function CallSimulator() {
     reasoning_chain: any[];
   } | null>(null);
   const [automationWorkflow, setAutomationWorkflow] = useState<any>(null);
+  const [callSummaryOpen, setCallSummaryOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
