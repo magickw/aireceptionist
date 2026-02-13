@@ -1,0 +1,4 @@
+// Temporarily disable not-found.tsx due to Next.js 15 bug
+export default function NotFound() {
+  return <div>404 - Not Found</div>
+}

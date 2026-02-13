@@ -1,0 +1,6 @@
+// Temporarily disable error.tsx due to Next.js 15 bug
+'use client'
+
+export default function Error() {
+  return <div>Error</div>
+}
