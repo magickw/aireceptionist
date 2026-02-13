@@ -1,0 +1,30 @@
+# Render Configuration for Backend (Python/FastAPI)
+# This configures Render to deploy only the backend
+
+services:
+  - type: web
+    name: aireceptionist-backend
+    env: python
+    buildCommand: "pip install -r backend/requirements.txt"
+    startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: aireceptionist-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: AWS_ACCESS_KEY_ID
+        sync: false
+      - key: AWS_SECRET_ACCESS_KEY
+        sync: false
+      - key: AWS_REGION
+        value: us-east-1
+      - key: PYTHON_VERSION
+        value: 3.10
+
+databases:
+  - name: aireceptionist-db
+    databaseName: aireceptionist
+    user: aireceptionist
+    plan: free

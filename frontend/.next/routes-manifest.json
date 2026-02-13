@@ -69,16 +69,16 @@
       "namedRegex": "^/call\\-management(?:/)?$"
     },
     {
+      "page": "/call-simulator",
+      "regex": "^/call\\-simulator(?:/)?$",
+      "routeKeys": {},
+      "namedRegex": "^/call\\-simulator(?:/)?$"
+    },
+    {
       "page": "/customers",
       "regex": "^/customers(?:/)?$",
       "routeKeys": {},
       "namedRegex": "^/customers(?:/)?$"
-    },
-    {
-      "page": "/favicon.ico",
-      "regex": "^/favicon\\.ico(?:/)?$",
-      "routeKeys": {},
-      "namedRegex": "^/favicon\\.ico(?:/)?$"
     },
     {
       "page": "/integrations",
