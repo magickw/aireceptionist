@@ -1,1 +1,1 @@
-{"installCommand": "npm install", "buildCommand": "rm -rf .next && npm run build", "outputDirectory": ".next", "framework": null}
+{"installCommand": "npm install", "buildCommand": "bash build.sh", "outputDirectory": ".next", "framework": null}
