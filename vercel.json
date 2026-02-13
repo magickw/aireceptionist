@@ -1,1 +1,7 @@
-{"installCommand": "npm install", "buildCommand": "npm run build:frontend", "outputDirectory": "frontend/.next", "cleanBuild": true, "framework": null}
+{
+    "installCommand": "npm install",
+    "buildCommand": "npm run build",
+    "outputDirectory": "frontend/.next",
+    "cleanBuild": true,
+    "framework": null
+}
