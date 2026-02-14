@@ -13,7 +13,8 @@ export default function CallLogsPage() {
       try {
         const businessRes = await api.get('/businesses');
         if (businessRes.data.length > 0) {
-          const logsRes = await api.get(`/call-logs/business/${businessRes.data[0].id}`);
+          const businessId = businessRes.data[0].id;
+          const logsRes = await api.get(`/call-logs/?business_id=${businessId}`);
           setLogs(logsRes.data);
         }
       } catch (error) { console.error('Failed to fetch call logs', error); }

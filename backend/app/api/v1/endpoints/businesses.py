@@ -59,3 +59,27 @@ def read_business(
     if current_user.role != "admin" and business.user_id != current_user.id:
         raise HTTPException(status_code=400, detail="Not enough permissions")
     return business
+
+@router.put("/{id}", response_model=BusinessSchema)
+def update_business(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: int,
+    business_update: BusinessUpdate,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Update a business.
+    """
+    business = db.query(Business).filter(Business.id == id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    if current_user.role != "admin" and business.user_id != current_user.id:
+        raise HTTPException(status_code=400, detail="Not enough permissions")
+    
+    for field, value in business_update.model_dump(exclude_unset=True).items():
+        setattr(business, field, value)
+    
+    db.commit()
+    db.refresh(business)
+    return business

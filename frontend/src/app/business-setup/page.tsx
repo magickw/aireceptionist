@@ -5,7 +5,7 @@ import { Container, Typography, Box, TextField, Button, Card, CardContent, Linea
 import api from '@/services/api';
 
 export default function BusinessSetupPage() {
-  const [profile, setProfile] = useState({ name: '', industry: '' });
+  const [profile, setProfile] = useState<{id?: number; name: string; industry: string}>({ name: '', industry: '' });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -22,8 +22,8 @@ export default function BusinessSetupPage() {
   const handleSave = async () => {
     try {
       setLoading(true);
-      if (profile.name) { // Simple check if profile exists
-        await api.put(`/businesses/${(profile as any).id}`, profile);
+      if (profile.id) {  // Check for ID to determine if update or create
+        await api.put(`/businesses/${profile.id}`, profile);
       } else {
         await api.post('/businesses', profile);
       }
