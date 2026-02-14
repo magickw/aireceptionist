@@ -93,7 +93,7 @@ export default function Dashboard() {
           const analyticsData = analyticsResponse.data;
           
           // Fetch call logs for recent activity
-          const callLogsResponse = await api.get(`/call-logs/business/${businessId}`);
+          const callLogsResponse = await api.get(`/call-logs/?business_id=${businessId}`);
           const callLogs = callLogsResponse.data;
           
           // Fetch appointments
