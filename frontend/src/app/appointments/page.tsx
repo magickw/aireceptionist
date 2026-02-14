@@ -1,70 +1,46 @@
 'use client';
 import * as React from 'react';
-import Container from '@mui/material/Container';
-import Typography from '@mui/material/Typography';
-import Box from '@mui/material/Box';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemText from '@mui/material/ListItemText';
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-interface Appointment {
-  id: number;
-  business_id: number;
-  customer_name: string;
-  customer_phone: string;
-  appointment_time: string;
-  service_type: string;
-  status: string;
-  created_at: string;
-}
+import { Container, Typography, Box, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, LinearProgress } from '@mui/material';
+import api from '@/services/api';
 
 export default function AppointmentsPage() {
-  const [appointments, setAppointments] = useState<Appointment[]>([]);
-  const [businessId, setBusinessId] = useState<number | null>(null);
+  const [appointments, setAppointments] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchBusinessAndAppointments = async () => {
+    const fetchData = async () => {
       try {
-        // Fetch the first business (assuming for now, will be dynamic later)
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
-        if (businessResponse.data.length > 0) {
-          const fetchedBusinessId = businessResponse.data[0].id;
-          setBusinessId(fetchedBusinessId);
-
-          // Fetch appointments for that business
-          const appointmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/appointments/business/${fetchedBusinessId}`);
-          setAppointments(appointmentsResponse.data);
+        const businessRes = await api.get('/businesses');
+        if (businessRes.data.length > 0) {
+          const appointmentsRes = await api.get(`/appointments/business/${businessRes.data[0].id}`);
+          setAppointments(appointmentsRes.data);
         }
       } catch (error) {
-        console.error('Error fetching data:', error);
+        console.error('Failed to fetch appointments', error);
+      } finally {
+        setLoading(false);
       }
     };
-    fetchBusinessAndAppointments();
+    fetchData();
   }, []);
 
+  if (loading) return <Container sx={{p:4}}><LinearProgress /></Container>;
+
   return (
-    <Container maxWidth="md">
-      <Box sx={{ my: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Appointments
-        </Typography>
-        {appointments.length === 0 ? (
-          <Typography>No appointments found.</Typography>
-        ) : (
-          <List>
-            {appointments.map((appointment) => (
-              <ListItem key={appointment.id} divider>
-                <ListItemText
-                  primary={`Service: ${appointment.service_type} with ${appointment.customer_name} (${appointment.customer_phone})`}
-                  secondary={`Time: ${new Date(appointment.appointment_time).toLocaleString()} - Status: ${appointment.status}`}
-                />
-              </ListItem>
-            ))}
-          </List>
-        )}
-      </Box>
+    <Container maxWidth="lg" sx={{ mt: 4 }}>
+      <Typography variant="h4" gutterBottom>Appointments</Typography>
+      <TableContainer component={Paper}><Table><TableHead><TableRow><TableCell>Customer</TableCell><TableCell>Service</TableCell><TableCell>Date</TableCell><TableCell>Status</TableCell></TableRow></TableHead>
+      <TableBody>
+        {appointments.map((apt) => (
+          <TableRow key={apt.id}>
+            <TableCell>{apt.customer_name}</TableCell>
+            <TableCell>{apt.service_type}</TableCell>
+            <TableCell>{new Date(apt.appointment_time).toLocaleString()}</TableCell>
+            <TableCell>{apt.status}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody></Table></TableContainer>
     </Container>
   );
 }

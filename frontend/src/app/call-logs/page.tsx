@@ -1,82 +1,43 @@
 'use client';
 import * as React from 'react';
-import Container from '@mui/material/Container';
-import Typography from '@mui/material/Typography';
-import Box from '@mui/material/Box';
-import List from '@mui/material/List';
-import ListItem from '@mui/material/ListItem';
-import ListItemText from '@mui/material/ListItemText';
 import { useState, useEffect } from 'react';
-import axios from 'axios';
-
-interface CallLog {
-  id: number;
-  business_id: number;
-  customer_phone: string;
-  call_sid: string;
-  transcript: string;
-  created_at: string;
-  recording_url?: string; // Make it optional as it might not always be present
-}
+import { Container, Typography, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, LinearProgress } from '@mui/material';
+import api from '@/services/api';
 
 export default function CallLogsPage() {
-  const [callLogs, setCallLogs] = useState<CallLog[]>([]);
-  const [businessId, setBusinessId] = useState<number | null>(null);
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const fetchBusinessAndCallLogs = async () => {
+    const fetchData = async () => {
       try {
-        // Fetch the first business (assuming for now, will be dynamic later)
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
-        if (businessResponse.data.length > 0) {
-          const fetchedBusinessId = businessResponse.data[0].id;
-          setBusinessId(fetchedBusinessId);
-
-          // Fetch call logs for that business
-          const callLogsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/call-logs/business/${fetchedBusinessId}`);
-          setCallLogs(callLogsResponse.data);
+        const businessRes = await api.get('/businesses');
+        if (businessRes.data.length > 0) {
+          const logsRes = await api.get(`/call-logs/business/${businessRes.data[0].id}`);
+          setLogs(logsRes.data);
         }
-      } catch (error) {
-        console.error('Error fetching data:', error);
-      }
+      } catch (error) { console.error('Failed to fetch call logs', error); }
+      finally { setLoading(false); }
     };
-    fetchBusinessAndCallLogs();
+    fetchData();
   }, []);
 
+  if (loading) return <Container sx={{p:4}}><LinearProgress/></Container>;
+
   return (
-    <Container maxWidth="md">
-      <Box sx={{ my: 4 }}>
-        <Typography variant="h4" component="h1" gutterBottom>
-          Call Logs
-        </Typography>
-        {callLogs.length === 0 ? (
-          <Typography>No call logs found.</Typography>
-        ) : (
-          <List>
-            {callLogs.map((log) => (
-              <ListItem key={log.id} divider>
-                <ListItemText
-                  primary={`Call from: ${log.customer_phone} on ${new Date(log.created_at).toLocaleString()}`}
-                  secondary={
-                    <>
-                      <Typography component="span" variant="body2" color="text.primary">
-                        {log.transcript || 'No transcript available.'}
-                      </Typography>
-                      {log.recording_url && (
-                        <Box component="span" sx={{ display: 'block', mt: 1 }}>
-                          <a href={log.recording_url} target="_blank" rel="noopener noreferrer">
-                            Listen to Recording
-                          </a>
-                        </Box>
-                      )}
-                    </>
-                  }
-                />
-              </ListItem>
-            ))}
-          </List>
-        )}
-      </Box>
+    <Container maxWidth="lg" sx={{ mt: 4 }}>
+      <Typography variant="h4" gutterBottom>Call Logs</Typography>
+      <TableContainer component={Paper}><Table><TableHead><TableRow><TableCell>Customer</TableCell><TableCell>Duration</TableCell><TableCell>Date</TableCell><TableCell>Summary</TableCell></TableRow></TableHead>
+      <TableBody>
+        {logs.map((log) => (
+          <TableRow key={log.id}>
+            <TableCell>{log.customer_phone}</TableCell>
+            <TableCell>{log.duration_seconds}s</TableCell>
+            <TableCell>{new Date(log.started_at).toLocaleString()}</TableCell>
+            <TableCell>{log.summary}</TableCell>
+          </TableRow>
+        ))}
+      </TableBody></Table></TableContainer>
     </Container>
   );
 }
