@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, seed, ai_training
+from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training
 from app.core.config import settings
 
 app = FastAPI(
@@ -42,7 +42,6 @@ app.include_router(sentiment.router, prefix=f"{settings.API_V1_STR}/sentiment", 
 app.include_router(churn.router, prefix=f"{settings.API_V1_STR}/churn", tags=["churn"])
 app.include_router(voice_greetings.router, prefix=f"{settings.API_V1_STR}/voice-greetings", tags=["voice-greetings"])
 app.include_router(call_routing.router, prefix=f"{settings.API_V1_STR}/call-routing", tags=["call-routing"])
-app.include_router(seed.router, prefix=f"{settings.API_V1_STR}/seed", tags=["seed"])
 app.include_router(ai_training.router, prefix=f"{settings.API_V1_STR}/ai-training", tags=["ai-training"])
 
 

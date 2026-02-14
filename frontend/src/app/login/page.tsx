@@ -1,9 +1,10 @@
 'use client';
 import * as React from 'react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Container, Box, Typography, TextField, Button, Card, CardContent, Alert, CircularProgress } from '@mui/material';
 import api from '@/services/api';
+import { useAuth } from '@/context/AuthContext';
 
 export default function LoginPage() {
   const [email, setEmail] = useState('');
@@ -11,6 +12,13 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+  const { login, isAuthenticated } = useAuth();
+
+  useEffect(() => {
+    if (isAuthenticated) {
+      router.push('/');
+    }
+  }, [isAuthenticated, router]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,9 +29,7 @@ export default function LoginPage() {
       const response = await api.post('/auth/login', { email, password });
       console.log('Login response:', response.data);
       if (response.data.access_token) {
-        localStorage.setItem('token', response.data.access_token);
-        console.log('Token saved, redirecting...');
-        router.push('/');
+        login(response.data.access_token);
       }
     } catch (err: any) {
       console.error('Login error:', err);

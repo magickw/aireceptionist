@@ -9,7 +9,8 @@ import asyncio
 import base64
 from app.services.nova_reasoning import nova_reasoning
 from app.services.nova_sonic import nova_sonic, AudioBuffer, LatencyTracker
-from app.api.deps import get_current_business_id
+from app.api.deps import get_current_business_id, get_current_active_user
+from app.models.models import User
 
 router = APIRouter()
 
@@ -404,7 +405,9 @@ async def test_audio(
 
 
 @router.get("/audio-config")
-async def get_audio_config():
+async def get_audio_config(
+    current_user: User = Depends(get_current_active_user)
+):
     """
     Get audio configuration for the client.
     """

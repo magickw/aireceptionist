@@ -2,7 +2,6 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import axios from 'axios';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
 import Box from '@mui/material/Box';
@@ -25,6 +24,7 @@ import SmartToyIcon from '@mui/icons-material/SmartToy';
 import CallIcon from '@mui/icons-material/Call';
 import LoginIcon from '@mui/icons-material/Login';
 import api from '@/services/api';
+import { useAuth } from '@/context/AuthContext';
 
 // Use api instance which already has interceptors configured
 
@@ -58,6 +58,7 @@ interface RecentActivity {
 
 export default function Dashboard() {
   const router = useRouter();
+  const { isAuthenticated } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalCalls: 1284,
     autonomousResolutions: 856,
@@ -69,17 +70,9 @@ export default function Dashboard() {
   const [liveCalls, setLiveCalls] = useState<LiveCall[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
-    // Check authentication first
-    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-    if (!token) {
-      setIsAuthenticated(false);
-      setIsLoading(false);
-      return;
-    }
-    setIsAuthenticated(true);
+    if (!isAuthenticated) return;
 
     const fetchDashboardData = async () => {
       try {
@@ -153,13 +146,6 @@ export default function Dashboard() {
         
       } catch (error: any) {
         console.error('Error fetching dashboard data:', error);
-        // If unauthorized, clear token and redirect to login
-        if (error.response?.status === 401 || error.response?.status === 403) {
-          localStorage.removeItem('token');
-          setIsAuthenticated(false);
-          router.push('/login');
-          return;
-        }
       } finally {
         setIsLoading(false);
       }
@@ -170,7 +156,7 @@ export default function Dashboard() {
     // Set up real-time updates (every 30 seconds)
     const interval = setInterval(fetchDashboardData, 30000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isAuthenticated]);
 
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
@@ -187,7 +173,7 @@ export default function Dashboard() {
     }
   };
 
-  if (isLoading) {
+  if (isLoading && isAuthenticated) {
     return (
       <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
         <Box sx={{ width: '100%' }}>
@@ -197,34 +183,11 @@ export default function Dashboard() {
     );
   }
 
-  // Show login prompt for unauthenticated users
-  if (!isAuthenticated) {
     return (
-      <Container maxWidth="sm" sx={{ mt: 8, mb: 4, textAlign: 'center' }}>
-        <Card sx={{ p: 4 }}>
-          <CardContent>
-            <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
-              AI Receptionist Pro
-            </Typography>
-            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
-              Please log in to access the dashboard
-            </Typography>
-            <Button 
-              variant="contained" 
-              size="large" 
-              startIcon={<LoginIcon />}
-              onClick={() => router.push('/login')}
-            >
-              Login
-            </Button>
-          </CardContent>
-        </Card>
-      </Container>
-    );
-  }
 
-  return (
-    <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
+      <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
+
+  
       <Box sx={{ mb: { xs: 2, sm: 4 } }}>
         <Typography 
           variant="h4" 
