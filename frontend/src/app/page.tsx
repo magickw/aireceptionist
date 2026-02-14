@@ -1,6 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import axios from 'axios';
 import Container from '@mui/material/Container';
 import Typography from '@mui/material/Typography';
@@ -15,12 +16,14 @@ import List from '@mui/material/List';
 import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemAvatar from '@mui/material/ListItemAvatar';
+import Button from '@mui/material/Button';
 import PhoneIcon from '@mui/icons-material/Phone';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import PeopleIcon from '@mui/icons-material/People';
 import EventIcon from '@mui/icons-material/Event';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import CallIcon from '@mui/icons-material/Call';
+import LoginIcon from '@mui/icons-material/Login';
 import api from '@/services/api';
 
 // Configure axios globals
@@ -63,6 +66,7 @@ interface RecentActivity {
 }
 
 export default function Dashboard() {
+  const router = useRouter();
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalCalls: 1284,
     autonomousResolutions: 856,
@@ -74,8 +78,18 @@ export default function Dashboard() {
   const [liveCalls, setLiveCalls] = useState<LiveCall[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   useEffect(() => {
+    // Check authentication first
+    const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
+    if (!token) {
+      setIsAuthenticated(false);
+      setIsLoading(false);
+      return;
+    }
+    setIsAuthenticated(true);
+
     const fetchDashboardData = async () => {
       try {
         // Fetch business data first
@@ -181,6 +195,32 @@ export default function Dashboard() {
         <Box sx={{ width: '100%' }}>
           <LinearProgress />
         </Box>
+      </Container>
+    );
+  }
+
+  // Show login prompt for unauthenticated users
+  if (!isAuthenticated) {
+    return (
+      <Container maxWidth="sm" sx={{ mt: 8, mb: 4, textAlign: 'center' }}>
+        <Card sx={{ p: 4 }}>
+          <CardContent>
+            <Typography variant="h4" gutterBottom sx={{ fontWeight: 'bold', color: 'primary.main' }}>
+              AI Receptionist Pro
+            </Typography>
+            <Typography variant="body1" color="text.secondary" sx={{ mb: 3 }}>
+              Please log in to access the dashboard
+            </Typography>
+            <Button 
+              variant="contained" 
+              size="large" 
+              startIcon={<LoginIcon />}
+              onClick={() => router.push('/login')}
+            >
+              Login
+            </Button>
+          </CardContent>
+        </Card>
       </Container>
     );
   }
