@@ -19,7 +19,7 @@ This project uses a **separate deployment strategy**:
 5. **Select the branch**: `main`
 6. **Render will detect the `render.yaml` file** and configure automatically
 7. **Review settings**:
-   - Name: `aireceptionist-backend`
+   - Name: `receptium`
    - Region: Oregon (or closest to you)
    - Branch: `main`
    - Runtime: Python 3.10
@@ -33,7 +33,7 @@ This project uses a **separate deployment strategy**:
 2. Click "New +" → "Web Service"
 3. Connect your GitHub repository
 4. Configure:
-   - **Name**: `aireceptionist-backend`
+   - **Name**: `receptium`
    - **Environment**: `Python`
    - **Region**: Oregon
    - **Branch**: `main`
@@ -122,8 +122,8 @@ vercel
    - **Output Directory**: `.next`
    - **Install Command**: `npm install`
 5. Add Environment Variables:
-   - `NEXT_PUBLIC_BACKEND_URL`: Your Render backend URL (e.g., `https://aireceptionist-backend.onrender.com`)
-   - `NEXT_PUBLIC_WS_URL`: Your WebSocket URL (e.g., `wss://aireceptionist-backend.onrender.com/api/v1/voice/ws`)
+   - `NEXT_PUBLIC_BACKEND_URL`: Your Render backend URL (e.g., `https://receptium.onrender.com`)
+   - `NEXT_PUBLIC_WS_URL`: Your WebSocket URL (e.g., `wss://receptium.onrender.com/api/v1/voice/ws`)
 6. Click "Deploy"
 
 ### Update CORS in Backend
@@ -165,7 +165,7 @@ If you have custom domains:
 
 ### Test Backend
 ```bash
-curl https://aireceptionist-backend.onrender.com/health
+curl https://receptium.onrender.com/health
 ```
 
 Should return:
@@ -178,7 +178,7 @@ Open your Vercel URL in browser: `https://your-vercel-app.vercel.app`
 
 ### Test WebSocket Connection
 Open browser console and check:
-- WebSocket connection should connect to `wss://aireceptionist-backend.onrender.com/api/v1/voice/ws`
+- WebSocket connection should connect to `wss://receptium.onrender.com/api/v1/voice/ws`
 - No CORS errors
 
 ---
@@ -210,7 +210,7 @@ allow_origins=["https://your-vercel-app.vercel.app"]
 
 **Solution**: Ensure frontend uses:
 ```javascript
-const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'wss://aireceptionist-backend.onrender.com/api/v1/voice/ws';
+const wsUrl = process.env.NEXT_PUBLIC_WS_URL || 'wss://receptium.onrender.com/api/v1/voice/ws';
 ```
 
 ### Issue: Database Connection Failed
