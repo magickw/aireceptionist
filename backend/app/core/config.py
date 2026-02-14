@@ -3,7 +3,7 @@ from typing import Optional
 
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Receptionist Pro"
-    API_V1_STR: str = "/api"
+    API_V1_STR: str = "/api/v1"
     
     DATABASE_URL: str
     
