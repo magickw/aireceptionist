@@ -5,7 +5,7 @@ services:
   - type: web
     name: aireceptionist-backend
     env: python
-    buildCommand: "pip install -r backend/requirements.txt"
+    buildCommand: "cd backend && pip install -r requirements.txt && alembic upgrade head"
     startCommand: "cd backend && uvicorn app.main:app --host 0.0.0.0 --port $PORT"
     runtime: python
     plan: free
