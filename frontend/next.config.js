@@ -1,7 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
-  transpilePackages: ['@mui/material', '@mui/icons-material', '@mui/system'],
+  trailingSlash: true,
+  reactStrictMode: false,
   eslint: {
     ignoreDuringBuilds: true,
   },
