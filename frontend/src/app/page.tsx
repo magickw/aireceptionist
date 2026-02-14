@@ -160,8 +160,15 @@ export default function Dashboard() {
           },
         ]);
         
-      } catch (error) {
+      } catch (error: any) {
         console.error('Error fetching dashboard data:', error);
+        // If unauthorized, clear token and redirect to login
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          localStorage.removeItem('token');
+          setIsAuthenticated(false);
+          router.push('/login');
+          return;
+        }
       } finally {
         setIsLoading(false);
       }

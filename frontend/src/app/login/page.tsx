@@ -17,14 +17,18 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
+      console.log('Attempting login with:', email);
       const response = await api.post('/auth/login', { email, password });
+      console.log('Login response:', response.data);
       if (response.data.access_token) {
         localStorage.setItem('token', response.data.access_token);
+        console.log('Token saved, redirecting...');
         router.push('/');
       }
     } catch (err: any) {
       console.error('Login error:', err);
-      setError(err.response?.data?.detail || 'Invalid email or password');
+      const errorMessage = err.response?.data?.detail || err.message || 'Invalid email or password';
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

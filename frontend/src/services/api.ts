@@ -15,6 +15,18 @@ if (typeof window !== 'undefined') {
     }
     return config;
   });
+  
+  // Handle 401 responses globally - redirect to login if token is invalid
+  api.interceptors.response.use(
+    (response) => response,
+    (error) => {
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        localStorage.removeItem('token');
+        window.location.href = '/login';
+      }
+      return Promise.reject(error);
+    }
+  );
 }
 
 export const getWebSocketUrl = () => {
