@@ -29,7 +29,7 @@ export default function LoginPage() {
       const response = await api.post('/auth/login', { email, password });
       console.log('Login response:', response.data);
       if (response.data.access_token) {
-        login(response.data.access_token);
+        await login(response.data.access_token);
       }
     } catch (err: any) {
       console.error('Login error:', err);
