@@ -104,14 +104,14 @@ export default function CustomerDatabase() {
     const fetchCustomers = async () => {
       try {
         // Fetch call logs to build customer database
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
         if (businessResponse.data.length > 0) {
           const businessId = businessResponse.data[0].id;
           
-          const callLogsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/call-logs/business/${businessId}`);
+          const callLogsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/call-logs/business/${businessId}`);
           const callLogs = callLogsResponse.data;
           
-          const appointmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/appointments/business/${businessId}`);
+          const appointmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/appointments/business/${businessId}`);
           const appointments = appointmentsResponse.data;
           
           // Build customer profiles from call logs and appointments

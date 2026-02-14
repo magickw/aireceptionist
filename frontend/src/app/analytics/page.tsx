@@ -146,7 +146,7 @@ export default function AnalyticsPage() {
   useEffect(() => {
     const fetchBusinessId = async () => {
       try {
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
         if (businessResponse.data.length > 0) {
           setBusinessId(businessResponse.data[0].id);
         }
@@ -164,9 +164,9 @@ export default function AnalyticsPage() {
       try {
         setLoading(true);
         const [analyticsResponse, revenueResponse, realtimeResponse] = await Promise.all([
-          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/analytics/business/${businessId}?timeframe=${timeframe}`),
-          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/analytics/business/${businessId}/revenue?timeframe=${timeframe}`),
-          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/analytics/business/${businessId}/realtime`)
+          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/analytics/business/${businessId}?timeframe=${timeframe}`),
+          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/analytics/business/${businessId}/revenue?timeframe=${timeframe}`),
+          axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/analytics/business/${businessId}/realtime`)
         ]);
         
         setAnalyticsData(analyticsResponse.data);

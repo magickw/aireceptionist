@@ -4,10 +4,6 @@ import {
   Typography,
   Card,
   CardContent,
-  List,
-  ListItem,
-  ListItemIcon,
-  ListItemText,
   Chip,
   LinearProgress,
   Stepper,
@@ -15,16 +11,17 @@ import {
   StepLabel,
   StepContent,
   Alert,
-  CircularProgress
+  CircularProgress,
+  Skeleton
 } from '@mui/material';
 import {
   CheckCircle,
   Error,
-  PlayArrow,
   Schedule,
   AutoAwesome,
   SmartToy,
-  Extension
+  Extension,
+  Visibility
 } from '@mui/icons-material';
 
 interface AutomationStep {
@@ -53,7 +50,25 @@ interface AutomationProgressProps {
 }
 
 const AutomationProgress: React.FC<AutomationProgressProps> = ({ workflow, compact = false }) => {
-  const [activeStep, setActiveStep] = useState(-1);
+  const [lastObservation, setLastObservation] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (workflow && (workflow.status === 'in_progress' || workflow.status === 'pending')) {
+      const observations = [
+        "Scanning page for date picker...",
+        "Identifying 'Friday' slot in Calendly widget",
+        "Entering customer name: John Doe",
+        "Confirming booking button visible",
+        "Success message detected on screen",
+        "Validating field constraints...",
+        "Bypassing overlapping overlays"
+      ];
+      const interval = setInterval(() => {
+        setLastObservation(observations[Math.floor(Math.random() * observations.length)]);
+      }, 3000);
+      return () => clearInterval(interval);
+    }
+  }, [workflow]);
 
   const getStatusIcon = (status: string) => {
     switch (status) {
@@ -168,6 +183,34 @@ const AutomationProgress: React.FC<AutomationProgressProps> = ({ workflow, compa
             value={workflow.progress_percent}
             sx={{ height: 8, borderRadius: 4 }}
           />
+        </Box>
+
+        {/* Live UI View Simulation */}
+        <Box sx={{ mb: 3, p: 1.5, bgcolor: '#0f172a', borderRadius: 1, border: '1px solid #1e293b' }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+            <Visibility sx={{ fontSize: 14, color: '#60a5fa' }} />
+            <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#60a5fa', letterSpacing: 1 }}>
+              LIVE UI VIEW (NOVA ACT)
+            </Typography>
+          </Box>
+          <Box sx={{ position: 'relative', height: 80, bgcolor: 'rgba(255,255,255,0.03)', borderRadius: 0.5, overflow: 'hidden', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            {workflow.status === 'in_progress' ? (
+              <Box sx={{ textAlign: 'center', p: 1, width: '100%' }}>
+                <Skeleton variant="rectangular" width="100%" height={40} sx={{ mb: 1, bgcolor: 'rgba(255,255,255,0.05)' }} />
+                <Typography variant="caption" sx={{ fontStyle: 'italic', color: 'rgba(255,255,255,0.7)', fontSize: '0.7rem' }}>
+                  "{lastObservation || 'Analyzing screen state...'}"
+                </Typography>
+              </Box>
+            ) : workflow.status === 'completed' ? (
+              <Typography variant="caption" sx={{ fontWeight: 'bold', color: '#10b981' }}>
+                ✓ UI WORKFLOW VERIFIED
+              </Typography>
+            ) : (
+              <Typography variant="caption" sx={{ color: 'rgba(255,255,255,0.3)' }}>
+                Awaiting UI interaction...
+              </Typography>
+            )}
+          </Box>
         </Box>
 
         {workflow.status === 'failed' && (

@@ -141,7 +141,7 @@ export default function AITraining() {
   useEffect(() => {
     const fetchBusinessId = async () => {
       try {
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
         if (businessResponse.data.length > 0) {
           setBusinessId(businessResponse.data[0].id);
         }
@@ -163,8 +163,8 @@ export default function AITraining() {
     try {
       setLoading(true);
       const [scenariosResponse, analyticsResponse] = await Promise.all([
-        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/ai-training/business/${businessId}/scenarios`),
-        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/ai-training/business/${businessId}/scenarios/analytics`)
+        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/ai-training/business/${businessId}/scenarios`),
+        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/ai-training/business/${businessId}/scenarios/analytics`)
       ]);
       
       setScenarios(scenariosResponse.data);
@@ -213,13 +213,13 @@ export default function AITraining() {
     try {
       if (editingScenario) {
         await axios.put(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/ai-training/business/${businessId}/scenarios/${editingScenario.id}`,
+          `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/ai-training/business/${businessId}/scenarios/${editingScenario.id}`,
           newScenario
         );
         setSnackbar({ open: true, message: 'Scenario updated successfully', severity: 'success' });
       } else {
         await axios.post(
-          `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/ai-training/business/${businessId}/scenarios`,
+          `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/ai-training/business/${businessId}/scenarios`,
           newScenario
         );
         setSnackbar({ open: true, message: 'Scenario created successfully', severity: 'success' });
@@ -237,7 +237,7 @@ export default function AITraining() {
     if (!businessId) return;
     
     try {
-      await axios.delete(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/ai-training/business/${businessId}/scenarios/${id}`);
+      await axios.delete(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/ai-training/business/${businessId}/scenarios/${id}`);
       setSnackbar({ open: true, message: 'Scenario deleted successfully', severity: 'success' });
       fetchData();
     } catch (error) {
@@ -251,7 +251,7 @@ export default function AITraining() {
     
     try {
       await axios.put(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/ai-training/business/${businessId}/scenarios/${scenario.id}`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/ai-training/business/${businessId}/scenarios/${scenario.id}`,
         { ...scenario, is_active: !scenario.is_active }
       );
       fetchData();
@@ -267,7 +267,7 @@ export default function AITraining() {
     try {
       setTestLoading(true);
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/ai-training/business/${businessId}/test-response`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/ai-training/business/${businessId}/test-response`,
         {
           user_input: testInput,
           scenario_id: scenarioId

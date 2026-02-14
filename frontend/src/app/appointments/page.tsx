@@ -28,13 +28,13 @@ export default function AppointmentsPage() {
     const fetchBusinessAndAppointments = async () => {
       try {
         // Fetch the first business (assuming for now, will be dynamic later)
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
         if (businessResponse.data.length > 0) {
           const fetchedBusinessId = businessResponse.data[0].id;
           setBusinessId(fetchedBusinessId);
 
           // Fetch appointments for that business
-          const appointmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/appointments/business/${fetchedBusinessId}`);
+          const appointmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/appointments/business/${fetchedBusinessId}`);
           setAppointments(appointmentsResponse.data);
         }
       } catch (error) {

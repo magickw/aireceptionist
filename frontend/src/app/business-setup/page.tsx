@@ -118,7 +118,7 @@ export default function BusinessSetup() {
   useEffect(() => {
     const fetchBusinessData = async () => {
       try {
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
         if (businessResponse.data.length > 0) {
           const business = businessResponse.data[0];
           const settings = business.settings || {};
@@ -190,14 +190,14 @@ export default function BusinessSetup() {
       };
 
       if (profile.id) {
-        await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses/${profile.id}`, {
+        await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses/${profile.id}`, {
           name: profile.name,
           type: profile.type,
           settings: businessSettings,
           operating_hours: profile.operatingHours,
         });
       } else {
-        const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`, {
+        const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`, {
           name: profile.name,
           type: profile.type,
           settings: businessSettings,

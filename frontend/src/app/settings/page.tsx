@@ -35,7 +35,7 @@ export default function SettingsPage() {
     // For now, we'll assume a default business ID (e.g., 1) or fetch the first one.
     const fetchBusiness = async () => {
       try {
-        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const response = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
         if (response.data.length > 0) {
           const business = response.data[0];
           setBusinessId(business.id);
@@ -63,7 +63,7 @@ export default function SettingsPage() {
     event.preventDefault();
     try {
       if (businessId) {
-        await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses/${businessId}`, {
+        await axios.put(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses/${businessId}`, {
           name: businessName,
           type: businessType,
           settings: {},
@@ -71,7 +71,7 @@ export default function SettingsPage() {
         });
         alert('Business settings updated successfully!');
       } else {
-        const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`, {
+        const response = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`, {
           name: businessName,
           type: businessType,
           settings: {},

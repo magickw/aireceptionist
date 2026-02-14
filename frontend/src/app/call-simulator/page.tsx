@@ -74,6 +74,7 @@ export default function CallSimulator() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [useContextAware, setUseContextAware] = useState(true);
   const [completedActions, setCompletedActions] = useState<any[]>([]);
+  const [thoughts, setThoughts] = useState<Thought[]>([]);
   const [reasoningData, setReasoningData] = useState<{
     intent: string;
     confidence: number;
@@ -85,6 +86,7 @@ export default function CallSimulator() {
     reasoning_chain: any[];
   } | null>(null);
   const [automationWorkflow, setAutomationWorkflow] = useState<any>(null);
+  const [latencyMetrics, setLatencyMetrics] = useState<any>(null);
   const [callSummaryOpen, setCallSummaryOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -289,6 +291,7 @@ export default function CallSimulator() {
         console.log('Audio config received:', data.config);
       } else if (data.type === 'latency_metrics') {
         // Display latency metrics
+        setLatencyMetrics(data.metrics);
         console.log('Latency metrics:', data.metrics);
       } else if (data.type === 'transcript') {
         // Customer transcript from audio input
@@ -548,7 +551,7 @@ export default function CallSimulator() {
   const triggerAutomationWorkflow = async (reasoning: any) => {
     try {
       // Create automation workflow based on reasoning
-      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/automation/create-calendly-workflow`, {
+      const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/automation/create-calendly-workflow`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -915,11 +918,27 @@ export default function CallSimulator() {
                         <Typography variant="body2" sx={{ mb: 2 }}>{currentCall.customerPhone}</Typography>
 
                         <Typography variant="subtitle2" gutterBottom>Model Pipeline:</Typography>
-                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                        <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap', mb: 2 }}>
                           <Chip label="Nova 2 Sonic" size="small" color="primary" />
                           <Chip label="Nova 2 Lite" size="small" color="secondary" />
                           <Chip label="Nova Act" size="small" variant="outlined" />
                         </Box>
+
+                        {latencyMetrics && (
+                          <Box sx={{ mt: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
+                            <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Nova Performance</Typography>
+                            <Grid container spacing={1} sx={{ mt: 0.5 }}>
+                              <Grid item xs={6}>
+                                <Typography variant="caption" display="block">Reasoning (Lite)</Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{latencyMetrics.reasoning_ms}ms</Typography>
+                              </Grid>
+                              <Grid item xs={6}>
+                                <Typography variant="caption" display="block">Speech (Sonic)</Typography>
+                                <Typography variant="body2" sx={{ fontWeight: 'bold' }}>{latencyMetrics.speech_ms}ms</Typography>
+                              </Grid>
+                            </Grid>
+                          </Box>
+                        )}
                       </Box>
                     ) : (
                       <Typography variant="body2" color="text.secondary">

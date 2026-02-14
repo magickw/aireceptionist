@@ -65,20 +65,20 @@ export default function Dashboard() {
     const fetchDashboardData = async () => {
       try {
         // Fetch business data first
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com" || "https://receptium.onrender.com"}/api/businesses`);
         if (businessResponse.data.length > 0) {
           const businessId = businessResponse.data[0].id;
           
           // Fetch analytics data
-          const analyticsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/analytics/business/${businessId}`);
+          const analyticsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com" || "https://receptium.onrender.com"}/api/analytics/business/${businessId}`);
           const analyticsData = analyticsResponse.data;
           
           // Fetch call logs for recent activity
-          const callLogsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/call-logs/business/${businessId}`);
+          const callLogsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com" || "https://receptium.onrender.com"}/api/call-logs/business/${businessId}`);
           const callLogs = callLogsResponse.data;
           
           // Fetch appointments
-          const appointmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/appointments/business/${businessId}`);
+          const appointmentsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com" || "https://receptium.onrender.com"}/api/appointments/business/${businessId}`);
           const appointments = appointmentsResponse.data;
           
           // Process metrics

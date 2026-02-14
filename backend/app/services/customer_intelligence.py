@@ -32,7 +32,7 @@ class CustomerIntelligenceService:
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
         # Using Titan Multimodal Embeddings for text analysis
-        self.embedding_model = "amazon.titan-embed-text-v1"
+        self.embedding_model = "amazon.nova-embed-text-v1:0"
         
     async def generate_embedding(self, text: str) -> List[float]:
         """

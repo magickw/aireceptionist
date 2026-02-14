@@ -109,12 +109,12 @@ export default function CallManagement() {
   useEffect(() => {
     const fetchCallData = async () => {
       try {
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
         if (businessResponse.data.length > 0) {
           const businessId = businessResponse.data[0].id;
           
           // Fetch call logs
-          const callLogsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/call-logs/business/${businessId}`);
+          const callLogsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/call-logs/business/${businessId}`);
           const logs = callLogsResponse.data.map((log: any) => ({
             ...log,
             status: 'completed',
@@ -125,7 +125,7 @@ export default function CallManagement() {
           setCallLogs(logs);
           
           // Fetch analytics
-          const analyticsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/analytics/business/${businessId}`);
+          const analyticsResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/analytics/business/${businessId}`);
           const analyticsData = analyticsResponse.data;
           
           setAnalytics({

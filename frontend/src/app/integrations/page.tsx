@@ -137,7 +137,7 @@ export default function Integrations() {
   useEffect(() => {
     const fetchBusinessId = async () => {
       try {
-        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/businesses`);
+        const businessResponse = await axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/businesses`);
         if (businessResponse.data.length > 0) {
           setBusinessId(businessResponse.data[0].id);
         }
@@ -159,8 +159,8 @@ export default function Integrations() {
     try {
       setIsLoading(true);
       const [typesResponse, userIntegrationsResponse] = await Promise.all([
-        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/types`),
-        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}`)
+        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/integrations/types`),
+        axios.get(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/integrations/business/${businessId}`)
       ]);
 
       setIntegrationTypes(typesResponse.data);
@@ -221,7 +221,7 @@ export default function Integrations() {
     if (integration.authType === 'oauth2') {
       // Start OAuth flow
       try {
-        const oauthResponse = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/oauth/url`, {
+        const oauthResponse = await axios.post(`${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/integrations/oauth/url`, {
           integration_id: integration.id,
           business_id: businessId,
           redirect_uri: `${window.location.origin}/integrations/oauth-callback`
@@ -254,7 +254,7 @@ export default function Integrations() {
       };
 
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/integrations/business/${businessId}`,
         payload
       );
 
@@ -284,7 +284,7 @@ export default function Integrations() {
       setTestingConnection(integration.id);
       
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}/test/${integration.id}`,
+        `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/integrations/business/${businessId}/test/${integration.id}`,
         {
           credentials: integration.config,
           configuration: integration.config
@@ -326,7 +326,7 @@ export default function Integrations() {
       const userIntegration = userIntegrations.find(ui => ui.id === integration.id);
       
       const response = await axios.post(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}/sync/${userIntegration?.id || integration.id}`
+        `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/integrations/business/${businessId}/sync/${userIntegration?.id || integration.id}`
       );
 
       if (response.data.success) {
@@ -364,7 +364,7 @@ export default function Integrations() {
       if (!userIntegration) return;
 
       await axios.delete(
-        `${process.env.NEXT_PUBLIC_BACKEND_URL}/api/integrations/business/${businessId}/integration/${userIntegration.id}`
+        `${process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com"}/api/integrations/business/${businessId}/integration/${userIntegration.id}`
       );
 
       setSnackbar({ 
