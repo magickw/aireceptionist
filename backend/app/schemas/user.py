@@ -1,5 +1,6 @@
 from typing import Optional
-from pydantic import BaseModel, EmailStr
+from datetime import datetime
+from pydantic import BaseModel, EmailStr, field_serializer
 
 class UserBase(BaseModel):
     email: EmailStr
@@ -15,7 +16,13 @@ class UserUpdate(UserBase):
 class UserInDBBase(UserBase):
     id: int
     status: str
-    created_at: Optional[str] = None # Using str for simplicity, or datetime
+    created_at: Optional[datetime] = None
+    
+    @field_serializer('created_at')
+    def serialize_datetime(self, value: Optional[datetime]) -> Optional[str]:
+        if value is None:
+            return None
+        return value.isoformat()
 
     class Config:
         from_attributes = True
