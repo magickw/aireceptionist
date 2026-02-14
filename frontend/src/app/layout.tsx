@@ -1,29 +1,15 @@
-export const dynamic = 'force-dynamic';
-import React from "react";
-import "./globals.css";
-import Header from "@/components/Header";
-import ThemeProviderWrapper from "@/theme/ThemeProvider";
+import React from 'react';
+import './globals.css';
 
 export const metadata = {
-  title: "AI Receptionist Pro",
-  description: "Premium AI-powered business phone management platform",
+  title: 'AI Receptionist Pro',
+  description: 'Minimal Layout',
 };
 
-export default function RootLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <html lang="en">
-      <body>
-        <ThemeProviderWrapper>
-          <Header />
-          <main>
-            {children}
-          </main>
-        </ThemeProviderWrapper>
-      </body>
+      <body>{children}</body>
     </html>
   );
 }
