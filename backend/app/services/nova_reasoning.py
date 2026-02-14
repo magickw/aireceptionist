@@ -104,6 +104,16 @@ class NovaReasoningEngine:
         Build comprehensive system prompt with all context.
         """
         
+        # Build knowledge base context if available
+        kb_section = ""
+        if knowledge_context:
+            kb_section = f"""
+## Knowledge Base Context:
+{knowledge_context}
+
+**Use this knowledge base information to answer customer questions accurately.**
+"""
+        
         prompt = f"""
 You are Nova 2 Lite, the reasoning core of an autonomous business operations agent.
 
@@ -127,8 +137,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
 - Satisfaction Score: {customer_context.get('satisfaction_score', 0)}/5.0
 - Preferred Services: {', '.join(customer_context.get('preferred_services', []))}
 - Previous Complaints: {customer_context.get('complaint_count', 0)}
-
-{f"## Knowledge Base Context:\n{knowledge_context}\n\n**Use this knowledge base information to answer customer questions accurately.**" if knowledge_context else ""}
+{kb_section}
 
 ## Response Format (strict JSON):
 {{

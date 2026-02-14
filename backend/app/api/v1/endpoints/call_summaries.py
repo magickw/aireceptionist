@@ -9,6 +9,7 @@ Provides endpoints for:
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from typing import List, Dict, Any, Optional
+from sqlalchemy.orm import Session
 import boto3
 import json
 
@@ -188,7 +189,7 @@ async def summarize_call(
 async def get_call_summary(
     call_session_id: str,
     business_id: int = Depends(deps.get_current_business_id),
-    db = Depends(deps.get_db)
+    db: Session = Depends(deps.get_db)
 ):
     """
     Get an existing call summary from the database.
