@@ -20,7 +20,7 @@ import PeopleIcon from '@mui/icons-material/People';
 import EventIcon from '@mui/icons-material/Event';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import CallIcon from '@mui/icons-material/Call';
-import axios from 'axios';
+import api from '@/services/api';
 
 // Configure axios globals
 if (typeof window !== 'undefined') {
@@ -78,12 +78,12 @@ export default function Dashboard() {
     const fetchDashboardData = async () => {
       try {
         // Fetch business data first
-        const businessResponse = await axios.get(`${BACKEND_URL}/api/businesses`);
+        const businessResponse = await api.get('/businesses');
         if (businessResponse.data.length > 0) {
           const businessId = businessResponse.data[0].id;
           
           // Fetch analytics data
-          const analyticsResponse = await axios.get(`${BACKEND_URL}/api/analytics/business/${businessId}`);
+          const analyticsResponse = await api.get(`/analytics/business/${businessId}`);
           const analyticsData = analyticsResponse.data;
           
           // Fetch call logs for recent activity
@@ -91,7 +91,7 @@ export default function Dashboard() {
           const callLogs = callLogsResponse.data;
           
           // Fetch appointments
-          const appointmentsResponse = await axios.get(`${BACKEND_URL}/api/appointments/business/${businessId}`);
+          const appointmentsResponse = await api.get(`/appointments/business/${businessId}`);
           const appointments = appointmentsResponse.data;
           
           // Process metrics

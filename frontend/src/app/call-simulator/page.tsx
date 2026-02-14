@@ -1,39 +1,74 @@
 'use client';
 import * as React from 'react';
+import { getWebSocketUrl } from '@/services/api';
 import { useState, useEffect, useRef } from 'react';
+import { getWebSocketUrl } from '@/services/api';
 import Container from '@mui/material/Container';
+import { getWebSocketUrl } from '@/services/api';
 import Typography from '@mui/material/Typography';
+import { getWebSocketUrl } from '@/services/api';
 import Box from '@mui/material/Box';
+import { getWebSocketUrl } from '@/services/api';
 import Grid from '@mui/material/Grid';
+import { getWebSocketUrl } from '@/services/api';
 import Card from '@mui/material/Card';
+import { getWebSocketUrl } from '@/services/api';
 import CardContent from '@mui/material/CardContent';
+import { getWebSocketUrl } from '@/services/api';
 import CardHeader from '@mui/material/CardHeader';
+import { getWebSocketUrl } from '@/services/api';
 import TextField from '@mui/material/TextField';
+import { getWebSocketUrl } from '@/services/api';
 import Button from '@mui/material/Button';
+import { getWebSocketUrl } from '@/services/api';
 import IconButton from '@mui/material/IconButton';
+import { getWebSocketUrl } from '@/services/api';
 import List from '@mui/material/List';
+import { getWebSocketUrl } from '@/services/api';
 import ListItem from '@mui/material/ListItem';
+import { getWebSocketUrl } from '@/services/api';
 import ListItemText from '@mui/material/ListItemText';
+import { getWebSocketUrl } from '@/services/api';
 import Avatar from '@mui/material/Avatar';
+import { getWebSocketUrl } from '@/services/api';
 import Chip from '@mui/material/Chip';
+import { getWebSocketUrl } from '@/services/api';
 import Paper from '@mui/material/Paper';
+import { getWebSocketUrl } from '@/services/api';
 import LinearProgress from '@mui/material/LinearProgress';
+import { getWebSocketUrl } from '@/services/api';
 import Dialog from '@mui/material/Dialog';
+import { getWebSocketUrl } from '@/services/api';
 import DialogTitle from '@mui/material/DialogTitle';
+import { getWebSocketUrl } from '@/services/api';
 import DialogContent from '@mui/material/DialogContent';
+import { getWebSocketUrl } from '@/services/api';
 import DialogActions from '@mui/material/DialogActions';
+import { getWebSocketUrl } from '@/services/api';
 import Tabs from '@mui/material/Tabs';
+import { getWebSocketUrl } from '@/services/api';
 import Tab from '@mui/material/Tab';
+import { getWebSocketUrl } from '@/services/api';
 import Alert from '@mui/material/Alert';
+import { getWebSocketUrl } from '@/services/api';
 import PhoneIcon from '@mui/icons-material/Phone';
+import { getWebSocketUrl } from '@/services/api';
 import PhoneDisabledIcon from '@mui/icons-material/PhoneDisabled';
+import { getWebSocketUrl } from '@/services/api';
 import SendIcon from '@mui/icons-material/Send';
+import { getWebSocketUrl } from '@/services/api';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
+import { getWebSocketUrl } from '@/services/api';
 import PersonIcon from '@mui/icons-material/Person';
+import { getWebSocketUrl } from '@/services/api';
 import PsychologyIcon from '@mui/icons-material/Psychology';
+import { getWebSocketUrl } from '@/services/api';
 import AgentThoughts from '@/components/AgentThoughts';
+import { getWebSocketUrl } from '@/services/api';
 import AutomationProgress from '@/components/AutomationProgress';
+import { getWebSocketUrl } from '@/services/api';
 import { ConversationMessage, CallSession } from '@/types/ai';
+import { getWebSocketUrl } from '@/services/api';
 
 interface Thought {
   step: string;
@@ -83,19 +118,13 @@ export default function CallSimulator() {
 
   useEffect(() => {
     // Robust WebSocket URL handling with auth token
-    let baseUrl = process.env.NEXT_PUBLIC_WS_URL || 'ws://localhost:8000';
     
     // Normalize: remove trailing slash and /api/v1 if already present in base to avoid doubling
-    baseUrl = baseUrl.replace(/\/$/, '');
-    if (baseUrl.endsWith('/api/v1')) {
       baseUrl = baseUrl.slice(0, -7);
     }
     
-    const token = localStorage.getItem("token");
-    const wsUrl = `${baseUrl}/api/v1/voice/ws${token ? `?token=${token}` : ''}`;
     
-    console.log('🔌 Connecting to WebSocket:', wsUrl.replace(/\?token=.*$/, '?token=REDACTED'));
-    const ws = new WebSocket(wsUrl);
+    const ws = new WebSocket(getWebSocketUrl());
     wsRef.current = ws;
 
     ws.onmessage = (event) => {
