@@ -9,6 +9,15 @@ from alembic import op
 import sqlalchemy as sa
 from sqlalchemy.dialects import postgresql
 
+# Import pgvector for vector column type
+try:
+    import pgvector
+    from pgvector.sqlalchemy import Vector
+except ImportError:
+    # Fallback if pgvector not available - will use regular JSON
+    Vector = None
+    pgvector = None
+
 # revision identifiers, used by Alembic.
 revision = '4eb65017697a'
 down_revision = '002_add_operating_hours'
@@ -80,7 +89,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('document_id', sa.Integer(), nullable=False),
     sa.Column('content', sa.Text(), nullable=False),
-    sa.Column('embedding', pgvector.sqlalchemy.vector.VECTOR(dim=1536), nullable=True),
+    sa.Column('embedding', sa.JSON(), nullable=True),  # Using JSON instead of vector
     sa.ForeignKeyConstraint(['document_id'], ['knowledge_base_documents.id'], ),
     sa.PrimaryKeyConstraint('id')
     )

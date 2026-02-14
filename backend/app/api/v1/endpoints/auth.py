@@ -43,19 +43,14 @@ def create_user(
 
 @router.post("/login", response_model=Token)
 def login_access_token(
+    user_login: UserLogin,
     db: Session = Depends(deps.get_db),
-    form_data: UserLogin = None, # Allow JSON body
 ) -> Any:
     """
     OAuth2 compatible token login, get an access token for future requests
     """
-    # Note: We support standard OAuth2 form data OR JSON body for flexibility
-    # Implementing JSON body support for cleaner frontend integration
-    if not form_data:
-         raise HTTPException(status_code=400, detail="Missing credentials")
-         
-    user = db.query(User).filter(User.email == form_data.email).first()
-    if not user or not security.verify_password(form_data.password, user.password):
+    user = db.query(User).filter(User.email == user_login.email).first()
+    if not user or not security.verify_password(user_login.password, user.password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")
     elif user.status != "active":
         raise HTTPException(status_code=400, detail="Inactive user")
