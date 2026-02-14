@@ -135,4 +135,19 @@ export const callRoutingApi = {
   evaluate: (callContext: any) => api.post('/call-routing/evaluate', callContext),
 };
 
+// AI Training API
+export const aiTrainingApi = {
+  getCategories: () => api.get('/ai-training/categories'),
+  list: (params?: { category?: string; is_active?: boolean }) => api.get('/ai-training/', { params }),
+  get: (id: number) => api.get(`/ai-training/${id}`),
+  create: (data: { title: string; user_input: string; expected_response: string; description?: string; category?: string }) => 
+    api.post('/ai-training', data),
+  update: (id: number, data: { title?: string; user_input?: string; expected_response?: string; description?: string; category?: string; is_active?: boolean }) => 
+    api.put(`/ai-training/${id}`, data),
+  delete: (id: number) => api.delete(`/ai-training/${id}`),
+  test: (id: number) => api.post(`/ai-training/test/${id}`),
+  testAll: () => api.post('/ai-training/test-all'),
+  getStats: () => api.get('/ai-training/statistics'),
+};
+
 export default api;

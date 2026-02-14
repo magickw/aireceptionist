@@ -1,0 +1,256 @@
+"""
+AI Training API Endpoints
+"""
+
+from typing import List, Optional
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
+
+from app.api import deps
+from app.models.models import User, Business
+from app.services.ai_training_service import ai_training_service
+
+router = APIRouter()
+
+
+# Pydantic schemas
+class TrainingScenarioCreate(BaseModel):
+    title: str
+    user_input: str
+    expected_response: str
+    description: Optional[str] = None
+    category: Optional[str] = "general_inquiry"
+
+
+class TrainingScenarioUpdate(BaseModel):
+    title: Optional[str] = None
+    user_input: Optional[str] = None
+    expected_response: Optional[str] = None
+    description: Optional[str] = None
+    category: Optional[str] = None
+    is_active: Optional[bool] = None
+
+
+class TrainingScenarioResponse(BaseModel):
+    id: int
+    title: str
+    description: Optional[str]
+    category: str
+    user_input: str
+    expected_response: str
+    is_active: bool
+    success_rate: Optional[float]
+    last_tested: Optional[str]
+    created_at: str
+    
+    class Config:
+        from_attributes = True
+
+
+# Endpoints
+@router.get("/")
+async def list_scenarios(
+    category: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> List[TrainingScenarioResponse]:
+    """List all training scenarios for the user's business"""
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    scenarios = await ai_training_service.list_scenarios(
+        db, business_id, category, is_active
+    )
+    
+    return [
+        TrainingScenarioResponse(
+            id=s.id,
+            title=s.title,
+            description=s.description,
+            category=s.category,
+            user_input=s.user_input,
+            expected_response=s.expected_response,
+            is_active=s.is_active,
+            success_rate=float(s.success_rate) if s.success_rate else None,
+            last_tested=s.last_tested.isoformat() if s.last_tested else None,
+            created_at=s.created_at.isoformat() if s.created_at else ""
+        )
+        for s in scenarios
+    ]
+
+
+@router.post("/")
+async def create_scenario(
+    scenario: TrainingScenarioCreate,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> TrainingScenarioResponse:
+    """Create a new training scenario"""
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    
+    new_scenario = await ai_training_service.create_scenario(
+        db=db,
+        business_id=business_id,
+        title=scenario.title,
+        user_input=scenario.user_input,
+        expected_response=scenario.expected_response,
+        description=scenario.description,
+        category=scenario.category
+    )
+    
+    return TrainingScenarioResponse(
+        id=new_scenario.id,
+        title=new_scenario.title,
+        description=new_scenario.description,
+        category=new_scenario.category,
+        user_input=new_scenario.user_input,
+        expected_response=new_scenario.expected_response,
+        is_active=new_scenario.is_active,
+        success_rate=None,
+        last_tested=None,
+        created_at=new_scenario.created_at.isoformat() if new_scenario.created_at else ""
+    )
+
+
+@router.get("/statistics")
+async def get_statistics(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Get training statistics"""
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    return await ai_training_service.get_statistics(db, business_id)
+
+
+@router.post("/test/{scenario_id}")
+async def test_scenario(
+    scenario_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Test a single training scenario"""
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    
+    # Get business context for the AI
+    business = db.query(Business).filter(Business.id == business_id).first()
+    
+    business_context = {
+        "name": business.name if business else "Demo Business",
+        "hours": "9 AM to 5 PM",
+        "services": ["consultation", "support"]
+    }
+    
+    return await ai_training_service.test_scenario(
+        db, scenario_id, business_id, business_context
+    )
+
+
+@router.post("/test-all")
+async def test_all_scenarios(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Test all active training scenarios"""
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    
+    # Get business context
+    business = db.query(Business).filter(Business.id == business_id).first()
+    
+    business_context = {
+        "name": business.name if business else "Demo Business",
+        "hours": "9 AM to 5 PM",
+        "services": ["consultation", "support"]
+    }
+    
+    return await ai_training_service.test_all_scenarios(
+        db, business_id, business_context
+    )
+
+
+@router.get("/categories")
+async def get_categories():
+    """Get available training categories"""
+    return {"categories": ai_training_service.CATEGORIES}
+
+
+@router.get("/{scenario_id}")
+async def get_scenario(
+    scenario_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> TrainingScenarioResponse:
+    """Get a specific training scenario"""
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    scenario = await ai_training_service.get_scenario(db, scenario_id, business_id)
+    
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    
+    return TrainingScenarioResponse(
+        id=scenario.id,
+        title=scenario.title,
+        description=scenario.description,
+        category=scenario.category,
+        user_input=scenario.user_input,
+        expected_response=scenario.expected_response,
+        is_active=scenario.is_active,
+        success_rate=float(scenario.success_rate) if scenario.success_rate else None,
+        last_tested=scenario.last_tested.isoformat() if scenario.last_tested else None,
+        created_at=scenario.created_at.isoformat() if scenario.created_at else ""
+    )
+
+
+@router.put("/{scenario_id}")
+async def update_scenario(
+    scenario_id: int,
+    scenario_update: TrainingScenarioUpdate,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> TrainingScenarioResponse:
+    """Update a training scenario"""
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    
+    scenario = await ai_training_service.update_scenario(
+        db, scenario_id, business_id, **scenario_update.dict(exclude_unset=True)
+    )
+    
+    if not scenario:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    
+    return TrainingScenarioResponse(
+        id=scenario.id,
+        title=scenario.title,
+        description=scenario.description,
+        category=scenario.category,
+        user_input=scenario.user_input,
+        expected_response=scenario.expected_response,
+        is_active=scenario.is_active,
+        success_rate=float(scenario.success_rate) if scenario.success_rate else None,
+        last_tested=scenario.last_tested.isoformat() if scenario.last_tested else None,
+        created_at=scenario.created_at.isoformat() if scenario.created_at else ""
+    )
+
+
+@router.delete("/{scenario_id}")
+async def delete_scenario(
+    scenario_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Delete a training scenario"""
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    
+    success = await ai_training_service.delete_scenario(db, scenario_id, business_id)
+    
+    if not success:
+        raise HTTPException(status_code=404, detail="Scenario not found")
+    
+    return {"message": "Scenario deleted successfully"}
