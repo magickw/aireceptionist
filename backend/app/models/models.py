@@ -57,12 +57,18 @@ class CallSession(Base):
     id = Column(String(100), primary_key=True)
     business_id = Column(Integer, ForeignKey("businesses.id"))
     customer_phone = Column(String(20))
-    status = Column(String(20), default="active") # active, ended, transferred
+    customer_name = Column(String(255))
+    status = Column(String(20), default="active") # active, ended, transferred, voicemail
     started_at = Column(DateTime, server_default=func.now())
     ended_at = Column(DateTime)
     duration_seconds = Column(Integer)
     ai_confidence = Column(DECIMAL(3, 2))
     summary = Column(Text)
+    sentiment = Column(String(20)) # positive, neutral, negative
+    language = Column(String(10), default="en") # en, es, fr, de, etc.
+    recording_url = Column(Text) # URL to stored recording
+    recording_duration = Column(Integer) # Duration in seconds
+    voicemail_detected = Column(Boolean, default=False)
     created_at = Column(DateTime, server_default=func.now())
 
     business = relationship("Business", back_populates="call_sessions")
@@ -195,3 +201,57 @@ class DocumentChunk(Base):
     embedding = Column(Vector(1536)) # Assuming Nova embedding size is 1536
 
     document = relationship("KnowledgeBaseDocument", back_populates="chunks")
+
+
+class Webhook(Base):
+    """Webhooks for real-time event notifications"""
+    __tablename__ = "webhooks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    url = Column(Text, nullable=False)
+    events = Column(JSON, nullable=False) # List of events: call.completed, appointment.created, etc.
+    secret = Column(String(255)) # Secret for signature verification
+    status = Column(String(20), default="active") # active, paused, failed
+    last_triggered_at = Column(DateTime)
+    failure_count = Column(Integer, default=0)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    business = relationship("Business")
+
+
+class CalendarIntegration(Base):
+    """Calendar integrations for appointment sync"""
+    __tablename__ = "calendar_integrations"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    provider = Column(String(50), nullable=False) # google, outlook, calendly
+    access_token = Column(Text)
+    refresh_token = Column(Text)
+    token_expires_at = Column(DateTime)
+    calendar_id = Column(String(255))
+    status = Column(String(20), default="active") # active, expired, revoked
+    last_sync_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    business = relationship("Business")
+
+
+class SMSTemplate(Base):
+    """SMS notification templates"""
+    __tablename__ = "sms_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    name = Column(String(255), nullable=False)
+    event_type = Column(String(50), nullable=False) # appointment.reminder, call.summary, etc.
+    content = Column(Text, nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    business = relationship("Business")
