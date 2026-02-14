@@ -88,4 +88,39 @@ export const reportsApi = {
   exportCSV: (startDate?: string, endDate?: string) => api.get('/reports/export', { params: { start_date: startDate, end_date: endDate } }),
 };
 
+// Sentiment API
+export const sentimentApi = {
+  analyze: (text: string) => api.post('/sentiment/analyze', { text }),
+  analyzeCall: (callId: number) => api.post(`/sentiment/analyze-call/${callId}`),
+  getBusiness: (days: number = 30) => api.get(`/sentiment/business?days=${days}`),
+  analyzeRealtime: (text: string) => api.post('/sentiment/realtime', { text }),
+};
+
+// Churn API
+export const churnApi = {
+  calculate: (customerPhone: string) => api.post('/churn/calculate', { customer_phone: customerPhone }),
+  getAtRisk: (minScore: number = 40) => api.get(`/churn/at-risk?min_score=${minScore}`),
+  getStats: () => api.get('/churn/stats'),
+};
+
+// Voice Greetings API
+export const voiceGreetingsApi = {
+  getTypes: () => api.get('/voice-greetings/types'),
+  list: () => api.get('/voice-greetings'),
+  create: (data: { name: string; greeting_type: string; text: string; language?: string }) => api.post('/voice-greetings', data),
+  update: (greetingType: string, data: { is_active?: boolean; text?: string }) => api.put(`/voice-greetings/${greetingType}`, data),
+  delete: (greetingType: string) => api.delete(`/voice-greetings/${greetingType}`),
+  getPreview: (greetingType: string) => api.get(`/voice-greetings/preview/${greetingType}`),
+};
+
+// Call Routing API
+export const callRoutingApi = {
+  getOptions: () => api.get('/call-routing/options'),
+  list: () => api.get('/call-routing'),
+  create: (data: { name: string; conditions: any; action: string; action_value: string; priority?: number }) => api.post('/call-routing', data),
+  update: (ruleId: number, data: { is_active?: boolean; priority?: number }) => api.put(`/call-routing/${ruleId}`, data),
+  delete: (ruleId: number) => api.delete(`/call-routing/${ruleId}`),
+  evaluate: (callContext: any) => api.post('/call-routing/evaluate', callContext),
+};
+
 export default api;
