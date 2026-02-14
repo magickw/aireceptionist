@@ -1,6 +1,7 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  transpilePackages: ['@mui/material', '@mui/system', '@mui/icons-material', '@emotion/react', '@emotion/styled'],
+  output: 'standalone',
+  transpilePackages: ['@mui/material', '@mui/icons-material', '@mui/system'],
   eslint: {
     ignoreDuringBuilds: true,
   },
