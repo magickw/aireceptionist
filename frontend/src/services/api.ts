@@ -51,4 +51,41 @@ export const smsApi = {
   getStatus: () => api.get('/sms/status'),
 };
 
+// Forecasting API
+export const forecastingApi = {
+  getHistory: (days: number = 30) => api.get(`/forecasting/history?days=${days}`),
+  getPredictions: (daysAhead: number = 7) => api.get(`/forecasting/predict?days_ahead=${daysAhead}`),
+  getWeekly: () => api.get('/forecasting/weekly'),
+  getPeakHours: () => api.get('/forecasting/peak-hours'),
+};
+
+// Email API
+export const emailApi = {
+  getStatus: () => api.get('/email/status'),
+  send: (data: { to_email: string; subject: string; body: string; html?: boolean }) => api.post('/email/send', data),
+  sendCallNotification: (data: { to_email: string; customer_name: string; phone_number: string; call_summary: string }) =>
+    api.post('/email/call-notification', data),
+  sendAppointmentReminder: (data: { to_email: string; customer_name: string; appointment_time: string; business_name: string }) =>
+    api.post('/email/appointment-reminder', data),
+};
+
+// Chatbot API
+export const chatbotApi = {
+  start: (data: { customer_name?: string; customer_email?: string; customer_phone?: string }) => api.post('/chatbot/start', data),
+  sendMessage: (data: { session_id: number; message: string }) => api.post('/chatbot/message', data),
+  endSession: (sessionId: number) => api.post(`/chatbot/end/${sessionId}`),
+  getHistory: (limit: number = 50) => api.get(`/chatbot/history?limit=${limit}`),
+};
+
+// Reports API
+export const reportsApi = {
+  getMetrics: (startDate?: string, endDate?: string) => api.get('/reports/metrics', { params: { start_date: startDate, end_date: endDate } }),
+  getCustomerMetrics: (startDate?: string, endDate?: string) => api.get('/reports/customers', { params: { start_date: startDate, end_date: endDate } }),
+  getHourlyDistribution: (startDate?: string, endDate?: string) => api.get('/reports/hourly', { params: { start_date: startDate, end_date: endDate } }),
+  getWeeklySummary: (weeks: number = 4) => api.get(`/reports/weekly?weeks=${weeks}`),
+  generateReport: (reportType: string, startDate?: string, endDate?: string) => 
+    api.get('/reports/generate', { params: { report_type: reportType, start_date: startDate, end_date: endDate } }),
+  exportCSV: (startDate?: string, endDate?: string) => api.get('/reports/export', { params: { start_date: startDate, end_date: endDate } }),
+};
+
 export default api;
