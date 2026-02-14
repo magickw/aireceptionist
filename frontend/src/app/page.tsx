@@ -26,16 +26,7 @@ import CallIcon from '@mui/icons-material/Call';
 import LoginIcon from '@mui/icons-material/Login';
 import api from '@/services/api';
 
-// Configure axios globals
-if (typeof window !== 'undefined') {
-  axios.interceptors.request.use((config) => {
-    const token = localStorage.getItem("token");
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`;
-    }
-    return config;
-  });
-}
+// Use api instance which already has interceptors configured
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com";
 
@@ -102,7 +93,7 @@ export default function Dashboard() {
           const analyticsData = analyticsResponse.data;
           
           // Fetch call logs for recent activity
-          const callLogsResponse = await axios.get(`${BACKEND_URL}/api/call-logs/business/${businessId}`);
+          const callLogsResponse = await api.get(`/call-logs/business/${businessId}`);
           const callLogs = callLogsResponse.data;
           
           // Fetch appointments
