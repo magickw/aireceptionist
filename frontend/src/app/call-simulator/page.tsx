@@ -1,284 +1,107 @@
 'use client';
 import * as React from 'react';
-import { getWebSocketUrl } from '@/services/api';
 import { useState, useEffect, useRef } from 'react';
-import { getWebSocketUrl } from '@/services/api';
-import Container from '@mui/material/Container';
-import { getWebSocketUrl } from '@/services/api';
-import Typography from '@mui/material/Typography';
-import { getWebSocketUrl } from '@/services/api';
-import Box from '@mui/material/Box';
-import { getWebSocketUrl } from '@/services/api';
-import Grid from '@mui/material/Grid';
-import { getWebSocketUrl } from '@/services/api';
-import Card from '@mui/material/Card';
-import { getWebSocketUrl } from '@/services/api';
-import CardContent from '@mui/material/CardContent';
-import { getWebSocketUrl } from '@/services/api';
-import CardHeader from '@mui/material/CardHeader';
-import { getWebSocketUrl } from '@/services/api';
-import TextField from '@mui/material/TextField';
-import { getWebSocketUrl } from '@/services/api';
-import Button from '@mui/material/Button';
-import { getWebSocketUrl } from '@/services/api';
-import IconButton from '@mui/material/IconButton';
-import { getWebSocketUrl } from '@/services/api';
-import List from '@mui/material/List';
-import { getWebSocketUrl } from '@/services/api';
-import ListItem from '@mui/material/ListItem';
-import { getWebSocketUrl } from '@/services/api';
-import ListItemText from '@mui/material/ListItemText';
-import { getWebSocketUrl } from '@/services/api';
-import Avatar from '@mui/material/Avatar';
-import { getWebSocketUrl } from '@/services/api';
-import Chip from '@mui/material/Chip';
-import { getWebSocketUrl } from '@/services/api';
-import Paper from '@mui/material/Paper';
-import { getWebSocketUrl } from '@/services/api';
-import LinearProgress from '@mui/material/LinearProgress';
-import { getWebSocketUrl } from '@/services/api';
-import Dialog from '@mui/material/Dialog';
-import { getWebSocketUrl } from '@/services/api';
-import DialogTitle from '@mui/material/DialogTitle';
-import { getWebSocketUrl } from '@/services/api';
-import DialogContent from '@mui/material/DialogContent';
-import { getWebSocketUrl } from '@/services/api';
-import DialogActions from '@mui/material/DialogActions';
-import { getWebSocketUrl } from '@/services/api';
-import Tabs from '@mui/material/Tabs';
-import { getWebSocketUrl } from '@/services/api';
-import Tab from '@mui/material/Tab';
-import { getWebSocketUrl } from '@/services/api';
-import Alert from '@mui/material/Alert';
-import { getWebSocketUrl } from '@/services/api';
-import PhoneIcon from '@mui/icons-material/Phone';
-import { getWebSocketUrl } from '@/services/api';
-import PhoneDisabledIcon from '@mui/icons-material/PhoneDisabled';
-import { getWebSocketUrl } from '@/services/api';
+import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
-import { getWebSocketUrl } from '@/services/api';
-import SmartToyIcon from '@mui/icons-material/SmartToy';
-import { getWebSocketUrl } from '@/services/api';
-import PersonIcon from '@mui/icons-material/Person';
-import { getWebSocketUrl } from '@/services/api';
-import PsychologyIcon from '@mui/icons-material/Psychology';
-import { getWebSocketUrl } from '@/services/api';
 import AgentThoughts from '@/components/AgentThoughts';
-import { getWebSocketUrl } from '@/services/api';
-import AutomationProgress from '@/components/AutomationProgress';
-import { getWebSocketUrl } from '@/services/api';
-import { ConversationMessage, CallSession } from '@/types/ai';
-import { getWebSocketUrl } from '@/services/api';
-
-interface Thought {
-  step: string;
-  message: string;
-  timestamp: Date;
-}
-
-interface TabPanelProps {
-  children?: React.ReactNode;
-  index: number;
-  value: number;
-}
-
-function TabPanel(props: TabPanelProps) {
-  const { children, value, index, ...other } = props;
-  return (
-    <div role="tabpanel" hidden={value !== index} {...other}>
-      {value === index && <Box sx={{ py: 3 }}>{children}</Box>}
-    </div>
-  );
-}
+import { getWebSocketUrl } from '@/services/api'; // Use the centralized WS function
 
 export default function CallSimulator() {
-  const [tabValue, setTabValue] = useState(0);
-  const [currentCall, setCurrentCall] = useState<CallSession | null>(null);
+  const [currentCall, setCurrentCall] = useState<any>(null);
   const [messageInput, setMessageInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
-  const [useContextAware, setUseContextAware] = useState(true);
-  const [thoughts, setThoughts] = useState<Thought[]>([]);
+  const [thoughts, setThoughts] = useState<any[]>([]);
   const [reasoningData, setReasoningData] = useState<any>(null);
-  const [automationWorkflow, setAutomationWorkflow] = useState<any>(null);
-  const [latencyMetrics, setLatencyMetrics] = useState<any>(null);
-  const [callSummaryOpen, setCallSummaryOpen] = useState(false);
   const wsRef = useRef<WebSocket | null>(null);
-  const messagesEndRef = useRef<HTMLDivElement>(null);
-
-  const quickTestScenarios = [
-    { emoji: '🍽️', title: 'Book a table', script: "Hi, I'd like to make a reservation for dinner tonight. Table for 2 at 7 PM please." },
-    { emoji: '🛍️', title: 'Place an order', script: "I'd like to place an order for delivery. Can I get a Caesar salad and the grilled chicken?" },
-    { emoji: '❓', title: 'Ask about hours', script: "What are your business hours? Are you open on weekends?" }
-  ];
-
-  const testScenarios = [
-    { id: 'booking-basic', title: 'Basic Appointment Booking', description: 'Customer wants to book a simple appointment', starter: "Hi, I'd like to book an appointment for tomorrow.", category: 'Booking' },
-    { id: 'business-hours', title: 'Business Hours Inquiry', description: 'Customer asks about operating hours', starter: "What are your business hours?", category: 'Information' }
-  ];
 
   useEffect(() => {
-    // Robust WebSocket URL handling with auth token
-    
-    // Normalize: remove trailing slash and /api/v1 if already present in base to avoid doubling
-      baseUrl = baseUrl.slice(0, -7);
-    }
-    
-    
-    const ws = new WebSocket(getWebSocketUrl());
-    wsRef.current = ws;
+    // This effect runs only when the component mounts and is the single source of truth for the WebSocket connection.
+    const connect = () => {
+      console.log('🔌 Connecting to WebSocket:', getWebSocketUrl().replace(/\?token=.*$/, '?token=REDACTED'));
+      const ws = new WebSocket(getWebSocketUrl());
+      wsRef.current = ws;
 
-    ws.onmessage = (event) => {
-      try {
+      ws.onopen = () => console.log('🔌 WebSocket connection established');
+      ws.onclose = () => console.log('🔌 WebSocket connection closed');
+      ws.onerror = (err) => console.error('WebSocket error:', err);
+
+      ws.onmessage = (event) => {
         const data = JSON.parse(event.data);
         if (data.type === 'thought') {
           setThoughts(prev => [...prev, { step: data.step, message: data.message, timestamp: new Date() }]);
         } else if (data.type === 'agent_response') {
           setIsProcessing(false);
-          addAIMessage(data.text);
+          addMessage(data.text, 'ai');
           if (data.reasoning) setReasoningData(data.reasoning);
-        } else if (data.type === 'latency_metrics') {
-          setLatencyMetrics(data.metrics);
         }
-      } catch (err) {
-        console.error('WebSocket message parse error:', err);
-      }
+      };
     };
+    
+    // The previous implementation tried to connect on the server, which is not possible for WebSockets.
+    // This check ensures we only connect when running in the browser.
+    if (typeof window !== 'undefined') {
+        connect();
+    }
 
-    return () => ws.close();
+    return () => {
+      wsRef.current?.close();
+    };
   }, []);
 
-  const handleKeyPress = (event: React.KeyboardEvent) => {
-    if (event.key === 'Enter' && !event.shiftKey) {
-      event.preventDefault();
-      sendMessage();
-    }
+  const addMessage = (content: string, sender: 'customer' | 'ai') => {
+    const message = { id: Date.now(), sender, content };
+    setCurrentCall((prev: any) => ({ ...prev, messages: [...(prev?.messages || []), message] }));
   };
 
   const startCall = () => {
-    const session: CallSession = {
-      id: `call-${Date.now()}`,
-      customerPhone: '+1 (555) 123-4567',
-      status: 'active',
-      startTime: new Date(),
-      messages: [],
-      context: { customerInfo: {}, intent: 'unknown', businessContext: { businessType: 'general', services: [], operatingHours: {} } }
-    };
-    setCurrentCall(session);
-    setThoughts([]);
-    setTimeout(() => addAIMessage("Hello! I'm your AI receptionist. How can I help you today?"), 500);
+    setCurrentCall({ messages: [] });
+    setTimeout(() => addMessage("Hello! How can I help you today?", 'ai'), 500);
   };
-
-  const endCall = () => setCurrentCall(null);
-
-  const addAIMessage = (content: string) => {
-    const msg: ConversationMessage = { id: `ai-${Date.now()}`, timestamp: new Date(), sender: 'ai', content, type: 'text' };
-    setCurrentCall(prev => prev ? { ...prev, messages: [...prev.messages, msg] } : null);
-  };
-
+  
   const sendMessage = () => {
-    if (!messageInput.trim() || !wsRef.current) return;
-    const msg: ConversationMessage = { id: `u-${Date.now()}`, timestamp: new Date(), sender: 'customer', content: messageInput, type: 'text' };
-    setCurrentCall(prev => prev ? { ...prev, messages: [...prev.messages, msg] } : null);
+    if (!messageInput.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+        console.error("Cannot send message, WebSocket is not open.");
+        return;
+    };
+    addMessage(messageInput, 'customer');
     wsRef.current.send(JSON.stringify({ type: 'user_input', text: messageInput }));
     setMessageInput('');
     setIsProcessing(true);
   };
 
-  const handleQuickScenario = (s: any) => {
-    if (!currentCall) startCall();
-    setMessageInput(s.script);
-  };
-
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" sx={{ fontWeight: 'bold', mb: 4 }}>AI Call Simulator</Typography>
-      
-      <Tabs value={tabValue} onChange={(_, v) => setTabValue(v)} sx={{ mb: 3 }}>
-        <Tab label="Simulation" />
-        <Tab label="Scenarios" />
-      </Tabs>
-
-      <TabPanel value={tabValue} index={0}>
-        <Grid container spacing={3}>
-          <Grid item xs={12} lg={8}>
-            <Card sx={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
-              <CardHeader 
-                avatar={<Avatar sx={{ bgcolor: currentCall ? 'success.main' : 'grey.400' }}><PhoneIcon /></Avatar>}
-                title={currentCall ? `Call with ${currentCall.customerPhone}` : "Ready to Start"}
-                action={!currentCall ? <Button variant="contained" onClick={startCall}>Start Call</Button> : <Button variant="outlined" color="error" onClick={endCall}>End Call</Button>}
-              />
-              <CardContent sx={{ flexGrow: 1, overflow: 'auto', bgcolor: '#f8fafc', p: 0 }}>
-                {currentCall ? (
-                  <List sx={{ p: 2 }}>
-                    {currentCall.messages.map((m) => (
-                      <ListItem key={m.id} sx={{ flexDirection: 'column', alignItems: m.sender === 'customer' ? 'flex-end' : 'flex-start' }}>
-                        <Paper sx={{ p: 2, maxWidth: '80%', bgcolor: m.sender === 'customer' ? 'primary.main' : 'white', color: m.sender === 'customer' ? 'white' : 'text.primary' }}>
-                          <Typography variant="body2">{m.content}</Typography>
-                        </Paper>
-                      </ListItem>
-                    ))}
-                  </List>
-                ) : (
-                  <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Typography color="text.secondary">Start a call to begin simulation</Typography>
-                  </Box>
-                )}
-              </CardContent>
-              {currentCall && (
-                <Box sx={{ p: 2, borderTop: '1px solid #e2e8f0' }}>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
-                    <TextField 
-                      fullWidth 
-                      value={messageInput} 
-                      onChange={(e) => setMessageInput(e.target.value)} 
-                      placeholder="Type message..." 
-                      onKeyPress={handleKeyPress} 
-                    />
-                    <IconButton color="primary" onClick={sendMessage} disabled={!messageInput.trim()}><SendIcon /></IconButton>
-                  </Box>
-                </Box>
-              )}
-            </Card>
-          </Grid>
-
-          <Grid item xs={12} lg={4}>
-            <Card sx={{ bgcolor: '#0f172a', mb: 3 }}>
-              <CardHeader title={<Typography color="white">Agent Reasoning</Typography>} avatar={<PsychologyIcon sx={{ color: '#60a5fa' }} />} />
-              <CardContent sx={{ p: 0 }}><AgentThoughts thoughts={thoughts} reasoningData={reasoningData} /></CardContent>
-            </Card>
-            
-            {latencyMetrics && (
-              <Card sx={{ mb: 3 }}>
-                <CardContent>
-                  <Typography variant="overline">Nova Latency</Typography>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between', mt: 1 }}>
-                    <Typography variant="body2">Reasoning:</Typography>
-                    <Typography variant="body2" fontWeight="bold">{latencyMetrics.reasoning_ms}ms</Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', justifyContent: 'space-between' }}>
-                    <Typography variant="body2">Speech:</Typography>
-                    <Typography variant="body2" fontWeight="bold">{latencyMetrics.speech_ms}ms</Typography>
-                  </Box>
-                </CardContent>
-              </Card>
+      <Typography variant="h4" sx={{ mb: 4 }}>AI Call Simulator</Typography>
+      <Grid container spacing={3}>
+        <Grid item xs={12} lg={8}>
+          <Card sx={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
+            <CardHeader title={currentCall ? "Call in Progress" : "Ready to Start"} action={!currentCall && <Button onClick={startCall}>Start Call</Button>} />
+            <CardContent sx={{ flexGrow: 1, overflowY: 'auto' }}>
+              <List>
+                {currentCall?.messages.map((m: any) => (
+                  <ListItem key={m.id} sx={{ justifyContent: m.sender === 'ai' ? 'flex-start' : 'flex-end' }}>
+                    <Paper sx={{ p: 1.5, bgcolor: m.sender === 'ai' ? '#f1f5f9' : 'primary.main', color: m.sender === 'ai' ? 'inherit' : 'white' }}>{m.content}</Paper>
+                  </ListItem>
+                ))}
+              </List>
+            </CardContent>
+            {currentCall && (
+              <Box sx={{ p: 2, display: 'flex' }} component="form" onSubmit={(e) => { e.preventDefault(); sendMessage(); }}>
+                <TextField fullWidth value={messageInput} onChange={(e) => setMessageInput(e.target.value)} placeholder="Type message..." />
+                <IconButton type="submit"><SendIcon /></IconButton>
+              </Box>
             )}
-
-            <AutomationProgress workflow={automationWorkflow} />
-          </Grid>
+          </Card>
         </Grid>
-      </TabPanel>
-
-      <TabPanel value={tabValue} index={1}>
-        <Grid container spacing={2}>
-          {quickTestScenarios.map((s, i) => (
-            <Grid item xs={12} sm={4} key={i}>
-              <Button fullWidth variant="outlined" sx={{ height: 100 }} onClick={() => handleQuickScenario(s)}>
-                {s.emoji} {s.title}
-              </Button>
-            </Grid>
-          ))}
+        <Grid item xs={12} lg={4}>
+          <Card>
+            <CardHeader title="Agent Reasoning" />
+            <CardContent>
+                <AgentThoughts thoughts={thoughts} reasoningData={reasoningData} />
+            </CardContent>
+          </Card>
         </Grid>
-      </TabPanel>
+      </Grid>
     </Container>
   );
 }
