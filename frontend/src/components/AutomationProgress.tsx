@@ -31,6 +31,9 @@ interface AutomationStep {
   status: 'pending' | 'in_progress' | 'completed' | 'failed';
   result?: any;
   error?: string;
+  target?: string;
+  value?: string;
+  observation?: string;
 }
 
 interface AutomationWorkflow {
@@ -239,6 +242,11 @@ const AutomationProgress: React.FC<AutomationProgressProps> = ({ workflow, compa
                 <Typography variant="body2" fontWeight="medium">
                   {step.description}
                 </Typography>
+                {step.observation && (
+                  <Typography variant="caption" color="primary.main" sx={{ display: 'block', mt: 0.5 }}>
+                    {step.observation}
+                  </Typography>
+                )}
                 {step.action && (
                   <Chip
                     label={step.action}

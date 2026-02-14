@@ -176,11 +176,18 @@ class NovaActAutomation:
             for i, step in enumerate(workflow.steps):
                 workflow.current_step = i
                 
+                # Generate detailed step observation for UI
+                observation = self._generate_step_observation(step)
+                
                 yield {
                     "type": "step_started",
                     "workflow_id": workflow.workflow_id,
                     "step_id": step.step_id,
-                    "description": step.description
+                    "description": step.description,
+                    "action": step.action.value if hasattr(step.action, 'value') else str(step.action),
+                    "target": step.target,
+                    "value": step.value,
+                    "observation": observation
                 }
                 
                 # Execute the step
@@ -654,6 +661,54 @@ Output format (JSON):
                 "interaction_data": interaction_data
             }
         )
+    
+    def _generate_step_observation(self, step: AutomationStep) -> str:
+        """
+        Generate a human-readable observation for the current step.
+        
+        Args:
+            step: The automation step being executed
+            
+        Returns:
+            A descriptive observation string for UI display
+        """
+        action = step.action.value if hasattr(step.action, 'value') else str(step.action)
+        observations = []
+        
+        if action == "navigate":
+            observations.append(f"Navigating to {step.target}")
+        elif action == "click":
+            if step.selector:
+                observations.append(f"Clicking element: {step.selector}")
+            else:
+                observations.append(f"Clicking on {step.target}")
+        elif action == "type":
+            if step.value:
+                # Mask sensitive data
+                display_value = step.value
+                if any(sensitive in step.target.lower() for sensitive in ['password', 'secret', 'key', 'token']):
+                    display_value = "***"
+                elif len(step.value) > 4:
+                    display_value = step.value[:2] + "***" + step.value[-2:]
+                observations.append(f"Typing '{display_value}' into {step.target}")
+            else:
+                observations.append(f"Typing into {step.target}")
+        elif action == "wait":
+            observations.append(f"Waiting for {step.wait_ms}ms")
+        elif action == "screenshot":
+            observations.append("Capturing screenshot for verification")
+        elif action == "extract":
+            observations.append(f"Extracting data from {step.target}")
+        elif action == "verify":
+            observations.append(f"Verifying: {step.verification}")
+        else:
+            observations.append(f"Executing: {action}")
+        
+        # Add the step description as additional context
+        if step.description and step.description not in observations:
+            observations.append(f"({step.description})")
+        
+        return " ".join(observations)
     
     def get_workflow_status(self, workflow_id: str) -> Optional[Dict[str, Any]]:
         """Get the current status of a workflow"""

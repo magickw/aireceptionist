@@ -166,14 +166,32 @@ async def voice_websocket(
                     }
                 })
                 
-                # Send agent response
+                # Send agent response - streaming text chunks
                 agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
+                
+                # Stream the response in chunks
+                chunk_size = 20  # characters per chunk
+                for i in range(0, len(agent_response), chunk_size):
+                    chunk = agent_response[i:i + chunk_size]
+                    is_last = i + chunk_size >= len(agent_response)
+                    
+                    await manager.send_json(session_id, {
+                        "type": "text_chunk",
+                        "chunk": chunk,
+                        "is_last": is_last,
+                        "full_text": agent_response if is_last else None  # Send full text on last chunk
+                    })
+                    
+                    # Small delay to create streaming effect
+                    if not is_last:
+                        await asyncio.sleep(0.02)  # 20ms delay between chunks
                 
                 conversation_history.append({
                     "role": "ai",
                     "content": agent_response
                 })
                 
+                # Send full agent_response message for backwards compatibility
                 await manager.send_json(session_id, {
                     "type": "agent_response",
                     "text": agent_response,

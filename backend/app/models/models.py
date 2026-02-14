@@ -166,3 +166,32 @@ class Appointment(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     business = relationship("Business", back_populates="appointments")
+
+
+# Add pgvector to SQLAlchemy
+from pgvector.sqlalchemy import Vector
+
+class KnowledgeBaseDocument(Base):
+    __tablename__ = "knowledge_base_documents"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    file_name = Column(String(255), nullable=False)
+    file_type = Column(String(50), nullable=False)
+    status = Column(String(20), default="pending") # pending, indexing, complete, failed
+    error_message = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    business = relationship("Business") # Simplified relationship
+    chunks = relationship("DocumentChunk", back_populates="document", cascade="all, delete-orphan")
+
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id = Column(Integer, primary_key=True, index=True)
+    document_id = Column(Integer, ForeignKey("knowledge_base_documents.id"), nullable=False)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(1536)) # Assuming Nova embedding size is 1536
+
+    document = relationship("KnowledgeBaseDocument", back_populates="chunks")

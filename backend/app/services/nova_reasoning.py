@@ -7,6 +7,7 @@ import json
 from typing import Dict, List, Optional, Any
 from datetime import datetime
 from app.core.config import settings
+from app.services.knowledge_base import knowledge_base_service
 
 
 class NovaReasoningEngine:
@@ -41,7 +42,8 @@ class NovaReasoningEngine:
         self,
         conversation: str,
         business_context: Dict[str, Any],
-        customer_context: Dict[str, Any]
+        customer_context: Dict[str, Any],
+        db=None
     ) -> Dict[str, Any]:
         """
         Main reasoning method - analyzes conversation and determines best action.
@@ -50,12 +52,26 @@ class NovaReasoningEngine:
             conversation: Current conversation transcript
             business_context: Business information (type, services, hours, etc.)
             customer_context: Customer information (history, preferences, etc.)
+            db: Database session for knowledge base lookup
             
         Returns:
             Structured reasoning result with intent, entities, action, and metadata
         """
         
-        system_prompt = self._build_system_prompt(business_context, customer_context)
+        # Try to get relevant context from knowledge base
+        knowledge_context = ""
+        if db and business_context.get("business_id"):
+            try:
+                knowledge_context = await knowledge_base_service.get_relevant_context(
+                    query=conversation,
+                    business_id=business_context.get("business_id"),
+                    db=db,
+                    max_chars=1500
+                )
+            except Exception as e:
+                print(f"Knowledge base lookup failed: {e}")
+        
+        system_prompt = self._build_system_prompt(business_context, customer_context, knowledge_context)
         
         messages = [
             {"role": "user", "content": conversation}
@@ -81,7 +97,8 @@ class NovaReasoningEngine:
     def _build_system_prompt(
         self,
         business_context: Dict[str, Any],
-        customer_context: Dict[str, Any]
+        customer_context: Dict[str, Any],
+        knowledge_context: str = ""
     ) -> str:
         """
         Build comprehensive system prompt with all context.
@@ -110,6 +127,8 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
 - Satisfaction Score: {customer_context.get('satisfaction_score', 0)}/5.0
 - Preferred Services: {', '.join(customer_context.get('preferred_services', []))}
 - Previous Complaints: {customer_context.get('complaint_count', 0)}
+
+{f"## Knowledge Base Context:\n{knowledge_context}\n\n**Use this knowledge base information to answer customer questions accurately.**" if knowledge_context else ""}
 
 ## Response Format (strict JSON):
 {{
