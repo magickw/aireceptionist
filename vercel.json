@@ -1,11 +1,4 @@
 {
-  "version": 2,
-  "rootDirectory": "frontend",
-  "buildCommand": "npm run build",
-  "outputDirectory": ".next",
   "framework": "nextjs",
-  "installCommand": "npm install",
-  "env": {
-    "NEXT_TELEMETRY_DISABLED": "1"
-  }
+  "rootDirectory": "frontend"
 }
