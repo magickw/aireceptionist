@@ -415,3 +415,178 @@ async def get_audio_config(
         "config": nova_sonic.get_audio_config(),
         "model": "Nova 2 Sonic"
     }
+
+
+# HTTP Fallback endpoints for Vercel (no WebSocket support)
+from pydantic import BaseModel
+from datetime import datetime
+
+class HTTPSessionStore:
+    """Simple in-memory session store for HTTP fallback"""
+    def __init__(self):
+        self.sessions: Dict[str, dict] = {}
+    
+    def create_session(self, session_id: str, business_id: int, customer_phone: str = "", call_type: str = "simulator"):
+        self.sessions[session_id] = {
+            "business_id": business_id,
+            "customer_phone": customer_phone,
+            "call_type": call_type,
+            "conversation_history": [],
+            "events": [],
+            "created_at": datetime.utcnow(),
+            "active": True
+        }
+        return self.sessions[session_id]
+    
+    def get_session(self, session_id: str):
+        return self.sessions.get(session_id)
+    
+    def add_event(self, session_id: str, event: dict):
+        if session_id in self.sessions:
+            self.sessions[session_id]["events"].append(event)
+    
+    def end_session(self, session_id: str):
+        if session_id in self.sessions:
+            self.sessions[session_id]["active"] = False
+    
+    def get_and_clear_events(self, session_id: str):
+        if session_id in self.sessions:
+            events = self.sessions[session_id]["events"].copy()
+            self.sessions[session_id]["events"] = []
+            return events
+        return []
+
+session_store = HTTPSessionStore()
+
+
+class SessionCreate(BaseModel):
+    customer_phone: str = "+15551234567"
+    call_type: str = "simulator"
+
+
+class MessageInput(BaseModel):
+    text: str
+
+
+@router.post("/session")
+async def create_session(
+    session_data: SessionCreate,
+    business_id: int = Depends(get_current_business_id)
+):
+    """Create a new HTTP session for call simulator"""
+    import uuid
+    session_id = f"http_{business_id}_{uuid.uuid4().hex[:8]}"
+    session_store.create_session(session_id, business_id, session_data.customer_phone, session_data.call_type)
+    return {"session_id": session_id, "status": "active"}
+
+
+@router.get("/session/{session_id}/events")
+async def get_session_events(session_id: str):
+    """Poll for events (HTTP fallback for WebSocket)"""
+    session = session_store.get_session(session_id)
+    if not session:
+        return {"events": [], "status": "not_found"}
+    
+    events = session_store.get_and_clear_events(session_id)
+    return {
+        "events": events,
+        "status": "active" if session["active"] else "ended"
+    }
+
+
+@router.post("/session/{session_id}/message")
+async def send_http_message(
+    session_id: str,
+    message: MessageInput
+):
+    """Send a message via HTTP (HTTP fallback)"""
+    session = session_store.get_session(session_id)
+    if not session:
+        return {"error": "Session not found", "status": 404}
+    
+    business_id = session["business_id"]
+    
+    # Add to conversation history
+    session["conversation_history"].append({
+        "role": "customer",
+        "content": message.text
+    })
+    
+    # Add thought event
+    session_store.add_event(session_id, {
+        "type": "thought",
+        "step": "processing",
+        "message": "Analyzing conversation with Nova 2 Lite..."
+    })
+    
+    # Get business context
+    business_context = await _get_business_context(business_id)
+    
+    # Build customer context
+    customer_context = {
+        "name": "Customer",
+        "phone": session.get("customer_phone", "Unknown"),
+        "call_count": 0,
+        "last_contact": "Never",
+        "satisfaction_score": 0,
+        "preferred_services": [],
+        "complaint_count": 0
+    }
+    
+    # Get reasoning from Nova Lite
+    reasoning_result = await nova_reasoning.reason(
+        conversation=_format_conversation(session["conversation_history"]),
+        business_context=business_context,
+        customer_context=customer_context
+    )
+    
+    # Add reasoning chain event
+    session_store.add_event(session_id, {
+        "type": "reasoning_chain",
+        "data": reasoning_result.get("reasoning_chain", [])
+    })
+    
+    # Add reasoning complete event
+    session_store.add_event(session_id, {
+        "type": "reasoning_complete",
+        "data": {
+            "intent": reasoning_result.get("intent"),
+            "confidence": reasoning_result.get("confidence"),
+            "selected_action": reasoning_result.get("selected_action"),
+            "sentiment": reasoning_result.get("sentiment"),
+            "escalation_risk": reasoning_result.get("escalation_risk")
+        }
+    })
+    
+    # Get agent response
+    agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
+    
+    # Add text chunks (stream as single chunk for HTTP)
+    session_store.add_event(session_id, {
+        "type": "text_chunk",
+        "chunk": agent_response,
+        "is_last": True,
+        "full_text": agent_response
+    })
+    
+    # Add final response
+    session_store.add_event(session_id, {
+        "type": "agent_response",
+        "text": agent_response,
+        "reasoning": reasoning_result
+    })
+    
+    # Add to conversation history
+    session["conversation_history"].append({
+        "role": "ai",
+        "content": agent_response
+    })
+    
+    return {"status": "processed", "text": agent_response}
+
+
+@router.post("/session/{session_id}/end")
+async def end_http_session(session_id: str):
+    """End an HTTP session"""
+    session_store.end_session(session_id)
+    return {"status": "ended"}

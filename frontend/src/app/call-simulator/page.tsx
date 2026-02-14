@@ -1,11 +1,12 @@
 'use client';
 import * as React from 'react';
 import { useState, useEffect, useRef } from 'react';
-import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper } from '@mui/material';
+import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper, Alert, Chip } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import AgentThoughts from '@/components/AgentThoughts';
 import VoiceVisualizer from '@/components/VoiceVisualizer';
 import { getWebSocketUrl } from '@/services/api';
+import api from '@/services/api';
 
 export default function CallSimulator() {
   const [currentCall, setCurrentCall] = useState<any>(null);
@@ -15,62 +16,168 @@ export default function CallSimulator() {
   const [reasoningData, setReasoningData] = useState<any>(null);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [streamingText, setStreamingText] = useState('');
+  const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'http_fallback'>('connecting');
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const sessionIdRef = useRef<string>('');
+  const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
 
-  useEffect(() => {
-    const connect = () => {
-      console.log('🔌 Connecting to WebSocket:', getWebSocketUrl().replace(/\?token=.*$/, '?token=REDACTED'));
-      const ws = new WebSocket(getWebSocketUrl());
-      wsRef.current = ws;
+  // Create HTTP session
+  const createHttpSession = async () => {
+    try {
+      const response = await api.post('/voice/session', {
+        customer_phone: '+15551234567',
+        call_type: 'simulator'
+      });
+      sessionIdRef.current = response.data.session_id;
+      return response.data.session_id;
+    } catch (error) {
+      console.error('Failed to create HTTP session:', error);
+      return null;
+    }
+  };
 
-      ws.onopen = () => console.log('🔌 WebSocket connection established');
-      ws.onclose = () => console.log('🔌 WebSocket connection closed');
-      ws.onerror = (err) => console.error('WebSocket error:', err);
-
-      ws.onmessage = (event) => {
-        const data = JSON.parse(event.data);
-        
-        if (data.type === 'thought') {
-          setThoughts(prev => [...prev, { step: data.step, message: data.message, timestamp: new Date() }]);
-        } else if (data.type === 'text_chunk') {
-          // Handle streaming text chunks
-          setStreamingText(prev => prev + data.chunk);
+  // Poll for HTTP events
+  const pollHttpEvents = async () => {
+    if (!sessionIdRef.current) return;
+    
+    try {
+      const response = await api.get(`/voice/session/${sessionIdRef.current}/events`);
+      const events = response.data.events || [];
+      
+      for (const event of events) {
+        if (event.type === 'thought') {
+          setThoughts(prev => [...prev, { step: event.step, message: event.message, timestamp: new Date() }]);
+        } else if (event.type === 'text_chunk') {
+          setStreamingText(prev => prev + event.chunk);
           setIsSpeaking(true);
-          
-          // If this is the last chunk, finalize the message
-          if (data.is_last) {
+          if (event.is_last) {
             setIsProcessing(false);
             setIsSpeaking(false);
-            addMessage(data.full_text || streamingText + data.chunk, 'ai');
-            if (data.full_text) setStreamingText('');
+            addMessage(event.full_text || event.chunk, 'ai');
+            setStreamingText('');
           }
-        } else if (data.type === 'agent_response') {
-          // Handle complete response (backwards compatibility)
+        } else if (event.type === 'agent_response') {
           setIsProcessing(false);
           setIsSpeaking(false);
-          // Only add if not already added via streaming
-          const currentMessages = currentCall?.messages || [];
-          const lastMessage = currentMessages[currentMessages.length - 1];
-          if (!lastMessage || lastMessage.sender !== 'ai' || lastMessage.content !== data.text) {
-            addMessage(data.text, 'ai');
-          }
-          if (data.reasoning) setReasoningData(data.reasoning);
-          setStreamingText('');
+          addMessage(event.text, 'ai');
+          if (event.reasoning) setReasoningData(event.reasoning);
+        } else if (event.type === 'reasoning_chain' || event.type === 'reasoning_complete') {
+          // Handle reasoning data
+          if (event.data) setReasoningData(event.data);
         }
-      };
+      }
+    } catch (error) {
+      console.error('Poll error:', error);
+    }
+  };
+
+  // Send message via HTTP
+  const sendHttpMessage = async (text: string) => {
+    if (!sessionIdRef.current) return;
+    try {
+      await api.post(`/voice/session/${sessionIdRef.current}/message`, { text });
+    } catch (error) {
+      console.error('Failed to send HTTP message:', error);
+    }
+  };
+
+  // End HTTP session
+  const endHttpSession = async () => {
+    if (!sessionIdRef.current) return;
+    try {
+      await api.post(`/voice/session/${sessionIdRef.current}/end`);
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
+    } catch (error) {
+      console.error('Failed to end HTTP session:', error);
+    }
+  };
+
+  useEffect(() => {
+    const connect = async () => {
+      console.log('🔌 Connecting to WebSocket:', getWebSocketUrl().replace(/\?token=.*$/, '?token=REDACTED'));
+      
+      try {
+        const ws = new WebSocket(getWebSocketUrl());
+        wsRef.current = ws;
+
+        ws.onopen = () => {
+          console.log('🔌 WebSocket connection established');
+          setConnectionStatus('connected');
+        };
+        
+        ws.onclose = () => {
+          console.log('🔌 WebSocket connection closed');
+          setConnectionStatus('disconnected');
+        };
+        
+        ws.onerror = () => {
+          console.error('WebSocket error');
+          setConnectionStatus('disconnected');
+        };
+
+        ws.onmessage = (event) => {
+          const data = JSON.parse(event.data);
+          
+          if (data.type === 'thought') {
+            setThoughts(prev => [...prev, { step: data.step, message: data.message, timestamp: new Date() }]);
+          } else if (data.type === 'text_chunk') {
+            setStreamingText(prev => prev + data.chunk);
+            setIsSpeaking(true);
+            if (data.is_last) {
+              setIsProcessing(false);
+              setIsSpeaking(false);
+              addMessage(data.full_text || streamingText + data.chunk, 'ai');
+              if (data.full_text) setStreamingText('');
+            }
+          } else if (data.type === 'agent_response') {
+            setIsProcessing(false);
+            setIsSpeaking(false);
+            addMessage(data.text, 'ai');
+            if (data.reasoning) setReasoningData(data.reasoning);
+            setStreamingText('');
+          }
+        };
+        
+        // Fallback to HTTP if WebSocket fails within 5 seconds
+        setTimeout(() => {
+          if (connectionStatus === 'connecting') {
+            console.log('🔄 WebSocket timed out, switching to HTTP fallback');
+            ws.close();
+            setConnectionStatus('http_fallback');
+            createHttpSession().then(sessionId => {
+              if (sessionId) {
+                pollIntervalRef.current = setInterval(pollHttpEvents, 2000);
+              }
+            });
+          }
+        }, 5000);
+        
+      } catch (error) {
+        console.error('WebSocket failed, using HTTP fallback:', error);
+        setConnectionStatus('http_fallback');
+        createHttpSession().then(sessionId => {
+          if (sessionId) {
+            pollIntervalRef.current = setInterval(pollHttpEvents, 2000);
+          }
+        });
+      }
     };
     
     if (typeof window !== 'undefined') {
-        connect();
+      connect();
     }
 
     return () => {
       wsRef.current?.close();
+      if (pollIntervalRef.current) {
+        clearInterval(pollIntervalRef.current);
+      }
     };
   }, []);
 
-  // Auto-scroll to bottom when messages change
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentCall?.messages, streamingText]);
@@ -88,12 +195,19 @@ export default function CallSimulator() {
   };
   
   const sendMessage = () => {
-    if (!messageInput.trim() || !wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
-        console.error("Cannot send message, WebSocket is not open.");
-        return;
-    };
+    if (!messageInput.trim()) return;
+    
     addMessage(messageInput, 'customer');
-    wsRef.current.send(JSON.stringify({ type: 'user_input', text: messageInput }));
+    
+    if (connectionStatus === 'http_fallback') {
+      sendHttpMessage(messageInput);
+    } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'user_input', text: messageInput }));
+    } else {
+      console.warn("Connection not ready, message queued");
+      return;
+    }
+    
     setMessageInput('');
     setIsProcessing(true);
   };
@@ -103,7 +217,10 @@ export default function CallSimulator() {
     setThoughts([]);
     setStreamingText('');
     setIsSpeaking(false);
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
+    
+    if (connectionStatus === 'http_fallback') {
+      endHttpSession();
+    } else if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'end_call' }));
     }
   };
@@ -111,7 +228,14 @@ export default function CallSimulator() {
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Typography variant="h4">AI Call Simulator</Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+          <Typography variant="h4">AI Call Simulator</Typography>
+          <Chip 
+            label={connectionStatus === 'connected' ? 'WebSocket' : connectionStatus === 'http_fallback' ? 'HTTP Polling' : 'Connecting...'} 
+            color={connectionStatus === 'connected' ? 'success' : connectionStatus === 'http_fallback' ? 'warning' : 'default'}
+            size="small"
+          />
+        </Box>
         {currentCall && (
           <Button variant="outlined" color="error" onClick={endCall}>
             End Call
