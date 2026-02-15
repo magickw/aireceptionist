@@ -26,34 +26,34 @@ class ReportingService:
         # Total calls
         total_calls = db.query(func.count(CallSession.id)).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= start_date,
-            CallSession.start_time <= end_date
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date
         ).scalar()
         
         # Completed calls
         completed_calls = db.query(func.count(CallSession.id)).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= start_date,
-            CallSession.start_time <= end_date,
-            CallSession.status == "completed"
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date,
+            CallSession.status == "ended"
         ).scalar()
         
         # Missed calls
         missed_calls = db.query(func.count(CallSession.id)).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= start_date,
-            CallSession.start_time <= end_date,
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date,
             CallSession.status == "missed"
         ).scalar()
         
         # Average duration
         avg_duration = db.query(func.avg(
-            func.extract('epoch', CallSession.end_time) - func.extract('epoch', CallSession.start_time))
+            func.extract('epoch', CallSession.ended_at) - func.extract('epoch', CallSession.started_at))
         ).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= start_date,
-            CallSession.start_time <= end_date,
-            CallSession.end_time.isnot(None)
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date,
+            CallSession.ended_at.isnot(None)
         ).scalar()
         
         return {
@@ -79,21 +79,20 @@ class ReportingService:
             func.count(func.distinct(CallSession.customer_phone))
         ).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= start_date,
-            CallSession.start_time <= end_date,
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date,
             CallSession.customer_phone.isnot(None)
         ).scalar()
         
         # New vs returning
-        # This would require more complex queries in production
         returning_customers = db.query(func.count(CallSession.customer_phone)).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= start_date,
-            CallSession.start_time <= end_date,
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date,
             CallSession.customer_phone.in_(
                 db.query(CallSession.customer_phone).filter(
                     CallSession.business_id == business_id,
-                    CallSession.start_time < start_date
+                    CallSession.started_at < start_date
                 )
             )
         ).scalar() or 0
@@ -115,16 +114,16 @@ class ReportingService:
         from app.models.models import CallSession
         
         results = db.query(
-            func.extract('hour', CallSession.start_time).label('hour'),
+            func.extract('hour', CallSession.started_at).label('hour'),
             func.count(CallSession.id).label('count')
         ).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= start_date,
-            CallSession.start_time <= end_date
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date
         ).group_by(
-            func.extract('hour', CallSession.start_time)
+            func.extract('hour', CallSession.started_at)
         ).order_by(
-            func.extract('hour', CallSession.start_time)
+            func.extract('hour', CallSession.started_at)
         ).all()
         
         # Fill in missing hours
@@ -166,23 +165,24 @@ class ReportingService:
         
         calls = db.query(CallSession).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= start_date,
-            CallSession.start_time <= end_date
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date
         ).all()
         
         csv_lines = ["ID,Customer,Phone,Start Time,End Time,Status,Duration"]
         
         for call in calls:
             duration = ""
-            if call.start_time and call.end_time:
-                duration = str(int((call.end_time - call.start_time).total_seconds()))
+            if call.started_at and call.ended_at:
+                duration = str(int((call.ended_at - call.started_at).total_seconds()))
             
+            customer_name = call.customer_name or ''
             csv_lines.append(
                 f"{call.id},"
-                f"\"{call.customer_name or ''}\","
+                f'"{customer_name}",'
                 f"{call.customer_phone or ''},"
-                f"{call.start_time or ''},"
-                f"{call.end_time or ''},"
+                f"{call.started_at or ''},"
+                f"{call.ended_at or ''},"
                 f"{call.status or ''},"
                 f"{duration}"
             )

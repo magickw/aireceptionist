@@ -385,11 +385,13 @@ async def voice_websocket(
                         items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in ws_session["order_items"]])
                         agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}. Your order has been placed and will be ready shortly. Thank you!"
                         
+                        await _create_order_from_session(ws_session, session_id, db) # Persist immediately
+                        
                         # Store order info for later database persistence
                         ws_session["order_confirmed"] = True
                         ws_session["order_total"] = total
                     else:
-                        agent_response = f"I don't see any items in your order yet. Would you like to order something?"
+                        agent_response = f"I don't see any items in your order yet. Would you like to add anything?"
                 
                 elif selected_action == "SEND_DIRECTIONS":
                     address = business_context.get("address", "our location")
@@ -415,6 +417,15 @@ async def voice_websocket(
                             "risk": reasoning_result.get("escalation_risk")
                         }
                     })
+                
+                elif selected_action == "CREATE_ORDER":
+                    if ws_session["order_items"]:
+                        total_amount = sum(item.get("price", 0) * item.get("quantity", 1) for item in ws_session["order_items"])
+                        items_summary = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in ws_session["order_items"]])
+                        agent_response = f"Got it! I'm placing your order now for {items_summary}. Your total is ${total_amount:.2f}. Thank you!"
+                        await _create_order_from_session(ws_session, session_id, db)
+                    else:
+                        agent_response = "I don't have any items in your order. What would you like to get?"
                 
                 # Stream the response in chunks
                 chunk_size = 20  # characters per chunk
@@ -553,12 +564,16 @@ async def voice_websocket(
                 break
     
     except WebSocketDisconnect:
-        # Save session and any confirmed orders before disconnecting
+        # Get a new DB session for cleanup
+        db = next(get_db())
         summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
         _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
-        await _save_confirmed_order(ws_session, session_id)
+        await _save_confirmed_order(ws_session, session_id, db)
         manager.disconnect(session_id)
+        db.close()
     except Exception as e:
+        # Get a new DB session for cleanup
+        db = next(get_db())
         await manager.send_json(session_id, {
             "type": "error",
             "message": f"Error: {str(e)}"
@@ -566,20 +581,26 @@ async def voice_websocket(
         # Try to save session and order even on error
         summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
         _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
-        await _save_confirmed_order(ws_session, session_id)
+        await _save_confirmed_order(ws_session, session_id, db)
         manager.disconnect(session_id)
+        db.close()
 
 
-async def _save_confirmed_order(ws_session: Dict[str, Any], session_id: str) -> None:
+
+async def _save_confirmed_order(ws_session: Dict[str, Any], session_id: str, db: Session) -> None:
     """Save a confirmed order to the database."""
     if not ws_session.get("order_confirmed") or not ws_session.get("order_items"):
         return
     
+    await _create_order_from_session(ws_session, session_id, db)
+
+
+async def _create_order_from_session(ws_session: Dict[str, Any], session_id: str, db: Session) -> None:
+    """Helper function to create an order and its items from session data."""
+    if not ws_session.get("order_items"):
+        return
+    
     try:
-        from app.api.deps import get_db
-        gen = get_db()
-        db = next(gen)
-        
         business_id = ws_session.get("business_id")
         if not business_id:
             return
@@ -615,13 +636,10 @@ async def _save_confirmed_order(ws_session: Dict[str, Any], session_id: str) -> 
             db.add(order_item)
         
         db.commit()
+        print(f"Order {order.id} created successfully for business {business_id}")
+        ws_session["order_items"] = [] # Clear items after successful order
     except Exception as e:
-        print(f"Failed to save order: {e}")
-    finally:
-        try:
-            db.close()
-        except:
-            pass
+        print(f"Failed to create order from session: {e}")
 
 
 def _create_call_session(ws_session: Dict[str, Any], session_id: str) -> None:

@@ -1,266 +1,161 @@
-"""
-Order API endpoints for managing customer orders
-"""
-from typing import List, Optional
-from datetime import datetime
-from decimal import Decimal
-from fastapi import APIRouter, Depends, HTTPException
+from typing import Any, List
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from pydantic import BaseModel
 
 from app.api import deps
-from app.models.models import User, Business, Order, OrderItem, MenuItem
+from app.models.models import Order, OrderItem, User
+from app.schemas.order import OrderCreate, OrderUpdate, OrderResponse, OrderItemResponse
 
 router = APIRouter()
 
-
-# Pydantic schemas
-class OrderItemCreate(BaseModel):
-    menu_item_id: Optional[int] = None
-    item_name: str
-    quantity: int = 1
-    unit_price: float
-    notes: Optional[str] = None
-
-
-class OrderItemResponse(BaseModel):
-    id: int
-    menu_item_id: Optional[int]
-    item_name: str
-    quantity: int
-    unit_price: Decimal
-    notes: Optional[str]
-
-    class Config:
-        from_attributes = True
-
-
-class OrderCreate(BaseModel):
-    call_session_id: Optional[str] = None
-    customer_name: Optional[str] = None
-    customer_phone: Optional[str] = None
-    items: List[OrderItemCreate]
-    notes: Optional[str] = None
-
-
-class OrderUpdate(BaseModel):
-    status: Optional[str] = None
-    customer_name: Optional[str] = None
-    customer_phone: Optional[str] = None
-    notes: Optional[str] = None
-
-
-class OrderResponse(BaseModel):
-    id: int
-    business_id: int
-    call_session_id: Optional[str]
-    customer_name: Optional[str]
-    customer_phone: Optional[str]
-    status: str
-    total_amount: Decimal
-    notes: Optional[str]
-    confirmed_at: Optional[datetime]
-    completed_at: Optional[datetime]
-    created_at: datetime
-    items: List[OrderItemResponse]
-
-    class Config:
-        from_attributes = True
-
-
 @router.get("/", response_model=List[OrderResponse])
-def list_orders(
-    business_id: int,
-    status: Optional[str] = None,
-    limit: int = 50,
-    offset: int = 0,
+def read_orders(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
-) -> List[Order]:
-    """Get all orders for a business"""
-    query = db.query(Order).filter(Order.business_id == business_id)
+) -> Any:
+    """
+    Retrieve orders for the current user's business.
+    """
+    # Assuming a user can only see orders for their own business
+    # In a more complex scenario, you might filter by business_id based on user roles
+    if not current_user.businesses:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User does not own any businesses.",
+        )
     
-    if status:
-        query = query.filter(Order.status == status)
-    
-    return query.order_by(Order.created_at.desc()).offset(offset).limit(limit).all()
+    business_id = current_user.businesses[0].id # Get the first business owned by the user
 
+    orders = db.query(Order).filter(Order.business_id == business_id).all()
+    return orders
 
-@router.post("/", response_model=OrderResponse)
+@router.get("/{order_id}", response_model=OrderResponse)
+def read_order_by_id(
+    order_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get a specific order by ID for the current user's business.
+    """
+    if not current_user.businesses:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User does not own any businesses.",
+        )
+    business_id = current_user.businesses[0].id
+
+    order = db.query(Order).filter(Order.id == order_id, Order.business_id == business_id).first()
+    if not order:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return order
+
+@router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 def create_order(
-    order: OrderCreate,
-    business_id: int,
+    *,
     db: Session = Depends(deps.get_db),
+    order_in: OrderCreate,
     current_user: User = Depends(deps.get_current_active_user),
-) -> Order:
-    """Create a new order"""
-    # Verify business exists
-    business = db.query(Business).filter(Business.id == business_id).first()
-    if not business:
-        raise HTTPException(status_code=404, detail="Business not found")
-    
-    # Calculate total
-    total = Decimal("0.00")
-    for item in order.items:
-        total += Decimal(str(item.unit_price)) * item.quantity
-    
-    # Create order
+) -> Any:
+    """
+    Create a new order for the current user's business.
+    """
+    if not current_user.businesses:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User does not own any businesses.",
+        )
+    business_id = current_user.businesses[0].id
+
+    # Validate menu items and calculate total amount
+    total_amount = 0.0
+    order_items_list = []
+    for item_data in order_in.items:
+        # Here you would typically fetch the menu item from the DB
+        # to get its current price and ensure it exists.
+        # For simplicity, we'll use the price provided in the OrderCreate schema.
+        unit_price = item_data.unit_price if item_data.unit_price is not None else 0.0
+        total_amount += unit_price * item_data.quantity
+        order_items_list.append(OrderItem(
+            menu_item_id=item_data.menu_item_id,
+            item_name=item_data.item_name,
+            quantity=item_data.quantity,
+            unit_price=unit_price,
+            notes=item_data.notes
+        ))
+
     db_order = Order(
         business_id=business_id,
-        call_session_id=order.call_session_id,
-        customer_name=order.customer_name,
-        customer_phone=order.customer_phone,
-        status="pending",
-        total_amount=total,
-        notes=order.notes,
+        customer_name=order_in.customer_name,
+        customer_phone=order_in.customer_phone,
+        total_amount=total_amount,
+        status=order_in.status,
+        notes=order_in.notes,
+        call_session_id=order_in.call_session_id # Associate with call session if available
     )
     db.add(db_order)
-    db.flush()  # Get the order ID
-    
-    # Create order items
-    for item in order.items:
-        db_item = OrderItem(
-            order_id=db_order.id,
-            menu_item_id=item.menu_item_id,
-            item_name=item.item_name,
-            quantity=item.quantity,
-            unit_price=Decimal(str(item.unit_price)),
-            notes=item.notes,
-        )
-        db.add(db_item)
+    db.flush() # Flush to get db_order.id for order_items
+
+    for order_item in order_items_list:
+        order_item.order_id = db_order.id
+        db.add(order_item)
     
     db.commit()
     db.refresh(db_order)
     return db_order
 
-
-@router.get("/{order_id}", response_model=OrderResponse)
-def get_order(
-    order_id: int,
-    business_id: int,
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Order:
-    """Get a specific order"""
-    order = db.query(Order).filter(
-        Order.id == order_id,
-        Order.business_id == business_id
-    ).first()
-    
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    
-    return order
-
-
 @router.put("/{order_id}", response_model=OrderResponse)
 def update_order(
-    order_id: int,
-    order_update: OrderUpdate,
-    business_id: int,
+    *,
     db: Session = Depends(deps.get_db),
+    order_id: int,
+    order_in: OrderUpdate,
     current_user: User = Depends(deps.get_current_active_user),
-) -> Order:
-    """Update an order (status, customer info, notes)"""
-    order = db.query(Order).filter(
-        Order.id == order_id,
-        Order.business_id == business_id
-    ).first()
-    
+) -> Any:
+    """
+    Update an existing order.
+    """
+    if not current_user.businesses:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User does not own any businesses.",
+        )
+    business_id = current_user.businesses[0].id
+
+    order = db.query(Order).filter(Order.id == order_id, Order.business_id == business_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
-    update_data = order_update.model_dump(exclude_unset=True)
-    
-    # Handle status changes
-    if "status" in update_data:
-        new_status = update_data["status"]
-        if new_status == "confirmed" and order.status == "pending":
-            order.confirmed_at = datetime.utcnow()
-        elif new_status == "completed" and order.status in ["confirmed", "preparing", "ready"]:
-            order.completed_at = datetime.utcnow()
-    
-    for field, value in update_data.items():
-        setattr(order, field, value)
-    
+
+    update_data = order_in.model_dump(exclude_unset=True)
+    for field in update_data:
+        setattr(order, field, update_data[field])
+
+    db.add(order)
     db.commit()
     db.refresh(order)
     return order
-
-
-@router.post("/{order_id}/confirm", response_model=OrderResponse)
-def confirm_order(
-    order_id: int,
-    business_id: int,
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Order:
-    """Confirm a pending order"""
-    order = db.query(Order).filter(
-        Order.id == order_id,
-        Order.business_id == business_id
-    ).first()
-    
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    
-    if order.status != "pending":
-        raise HTTPException(status_code=400, detail=f"Cannot confirm order with status '{order.status}'")
-    
-    order.status = "confirmed"
-    order.confirmed_at = datetime.utcnow()
-    
-    db.commit()
-    db.refresh(order)
-    return order
-
-
-@router.post("/{order_id}/cancel", response_model=OrderResponse)
-def cancel_order(
-    order_id: int,
-    business_id: int,
-    db: Session = Depends(deps.get_db),
-    current_user: User = Depends(deps.get_current_active_user),
-) -> Order:
-    """Cancel an order"""
-    order = db.query(Order).filter(
-        Order.id == order_id,
-        Order.business_id == business_id
-    ).first()
-    
-    if not order:
-        raise HTTPException(status_code=404, detail="Order not found")
-    
-    if order.status in ["completed", "cancelled"]:
-        raise HTTPException(status_code=400, detail=f"Cannot cancel order with status '{order.status}'")
-    
-    order.status = "cancelled"
-    
-    db.commit()
-    db.refresh(order)
-    return order
-
 
 @router.delete("/{order_id}")
 def delete_order(
-    order_id: int,
-    business_id: int,
+    *,
     db: Session = Depends(deps.get_db),
+    order_id: int,
     current_user: User = Depends(deps.get_current_active_user),
-) -> dict:
-    """Delete an order (only if cancelled)"""
-    order = db.query(Order).filter(
-        Order.id == order_id,
-        Order.business_id == business_id
-    ).first()
-    
+) -> Any:
+    """
+    Delete an order.
+    """
+    if not current_user.businesses:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User does not own any businesses.",
+        )
+    business_id = current_user.businesses[0].id
+
+    order = db.query(Order).filter(Order.id == order_id, Order.business_id == business_id).first()
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
-    
-    if order.status != "cancelled":
-        raise HTTPException(status_code=400, detail="Can only delete cancelled orders")
-    
+
     db.delete(order)
     db.commit()
-    
-    return {"status": "deleted"}
+    return None

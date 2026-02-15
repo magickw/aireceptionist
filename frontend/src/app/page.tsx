@@ -26,10 +26,6 @@ import LoginIcon from '@mui/icons-material/Login';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 
-// Use api instance which already has interceptors configured
-
-const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "https://receptium.onrender.com";
-
 interface DashboardMetrics {
   totalCalls: number;
   autonomousResolutions: number;
@@ -56,20 +52,30 @@ interface RecentActivity {
   description: string;
 }
 
+interface WorkflowExecution {
+  id: string;
+  task: string;
+  status: string;
+  desc: string;
+  time: string;
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
   const [metrics, setMetrics] = useState<DashboardMetrics>({
-    totalCalls: 1284,
-    autonomousResolutions: 856,
-    activeWorkflows: 12,
-    aiSuccessRate: 98.4,
-    avgResponseTime: 0.8,
-    avgCallDuration: 145,
+    totalCalls: 0,
+    autonomousResolutions: 0,
+    activeWorkflows: 0,
+    aiSuccessRate: 0,
+    avgResponseTime: 0,
+    avgCallDuration: 0,
   });
   const [liveCalls, setLiveCalls] = useState<LiveCall[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
+  const [workflows, setWorkflows] = useState<WorkflowExecution[]>([]);
   const [isLoading, setIsLoading] = useState(true);
+  const [businessId, setBusinessId] = useState<number | null>(null);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -79,70 +85,98 @@ export default function Dashboard() {
         // Fetch business data first
         const businessResponse = await api.get('/businesses');
         if (businessResponse.data.length > 0) {
-          const businessId = businessResponse.data[0].id;
+          const bizId = businessResponse.data[0].id;
+          setBusinessId(bizId);
           
           // Fetch analytics data
-          const analyticsResponse = await api.get(`/analytics/business/${businessId}`);
+          const analyticsResponse = await api.get(`/analytics/business/${bizId}`);
           const analyticsData = analyticsResponse.data;
           
+          // Fetch realtime data including active calls
+          const realtimeResponse = await api.get(`/analytics/business/${bizId}/realtime`);
+          const realtimeData = realtimeResponse.data;
+          
           // Fetch call logs for recent activity
-          const callLogsResponse = await api.get(`/call-logs/?business_id=${businessId}`);
-          const callLogs = callLogsResponse.data;
+          const callLogsResponse = await api.get(`/call-logs/?business_id=${bizId}`);
+          const callLogs = callLogsResponse.data || [];
           
           // Fetch appointments
-          const appointmentsResponse = await api.get(`/appointments/business/${businessId}`);
-          const appointments = appointmentsResponse.data;
+          const appointmentsResponse = await api.get(`/appointments/business/${bizId}`);
+          const appointments = appointmentsResponse.data || [];
           
-          // Process metrics
+          // Fetch orders for workflow-like activity
+          const ordersResponse = await api.get(`/orders/?business_id=${bizId}`);
+          const orders = ordersResponse.data || [];
+          
+          // Process metrics from real data
+          const totalCalls = analyticsData.totalCalls || realtimeData.todayStats?.calls_today || 0;
+          const completedCalls = realtimeData.todayStats?.completed_calls || 0;
+          const successRate = totalCalls > 0 ? (completedCalls / totalCalls * 100) : 0;
+          
           setMetrics({
-            totalCalls: analyticsData.totalCalls || 1284,
-            autonomousResolutions: appointments.length || 856,
-            activeWorkflows: 12,
-            aiSuccessRate: 98.4,
-            avgResponseTime: 0.8,
-            avgCallDuration: analyticsData.avgCallDuration || 145,
+            totalCalls: totalCalls,
+            autonomousResolutions: appointments.length + orders.length,
+            activeWorkflows: realtimeData.activeCalls || 0,
+            aiSuccessRate: Math.round(analyticsData.successRate || successRate * 10) / 10,
+            avgResponseTime: 0.8, // Would need to track this separately
+            avgCallDuration: analyticsData.avgCallDuration || realtimeData.todayStats?.avg_duration_today || 0,
           });
           
-          // Process recent activity
+          // Process live calls from realtime data
+          const activeCalls: LiveCall[] = (realtimeData.recentCalls || [])
+            .filter((call: any) => call.status === 'active')
+            .map((call: any) => ({
+              id: call.id,
+              customerPhone: call.customer_phone || 'Unknown',
+              duration: call.duration_seconds || 0,
+              status: 'active',
+              reasoning: call.sentiment ? `Sentiment: ${call.sentiment}` : 'In progress',
+            }));
+          setLiveCalls(activeCalls);
+          
+          // Process recent activity from call logs
           const activities: RecentActivity[] = [
-            ...callLogs.slice(0, 3).map((log: any) => ({
+            ...callLogs.slice(0, 5).map((log: any) => ({
               id: log.id,
               type: 'call' as const,
-              customer: log.customer_phone,
-              time: new Date(log.created_at).toLocaleTimeString(),
-              status: 'success' as const,
-              description: 'Incoming call handled by AI',
+              customer: log.customer_phone || 'Unknown',
+              time: log.started_at || log.created_at,
+              status: log.status === 'ended' ? 'success' as const : 'pending' as const,
+              description: `Call ${log.status || 'completed'} - ${log.duration_seconds || 0}s`,
             })),
-            ...appointments.slice(0, 2).map((apt: any) => ({
-              id: apt.id,
+            ...appointments.slice(0, 3).map((apt: any) => ({
+              id: `apt-${apt.id}`,
               type: 'workflow' as const,
-              customer: apt.customer_name,
-              time: new Date(apt.created_at).toLocaleTimeString(),
+              customer: apt.customer_name || 'Unknown',
+              time: apt.created_at,
               status: 'success' as const,
-              description: `Appointment booked for ${apt.service_type}`,
+              description: `Appointment booked for ${apt.service_type || 'service'}`,
             })),
-          ].sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime()).slice(0, 5);
+          ];
           
-          setRecentActivity(activities);
+          // Sort by time and take top 5
+          activities.sort((a, b) => new Date(b.time).getTime() - new Date(a.time).getTime());
+          setRecentActivity(activities.slice(0, 5));
+          
+          // Process workflow-like activities from orders and appointments
+          const workflowList: WorkflowExecution[] = [
+            ...orders.slice(0, 3).map((order: any) => ({
+              id: `order-${order.id}`,
+              task: 'Order Placed',
+              status: order.status?.toUpperCase() || 'PENDING',
+              desc: `${order.customer_name || 'Customer'} ordered - Total: $${order.total_amount || 0}`,
+              time: formatTimeAgo(order.created_at),
+            })),
+            ...appointments.slice(0, 3).map((apt: any) => ({
+              id: `apt-${apt.id}`,
+              task: 'Appointment Booked',
+              status: apt.status?.toUpperCase() || 'SCHEDULED',
+              desc: `${apt.customer_name || 'Customer'} - ${apt.service_type || 'Service'}`,
+              time: formatTimeAgo(apt.created_at),
+            })),
+          ];
+          setWorkflows(workflowList.slice(0, 4));
         }
-        
-        // Mock live calls data
-        setLiveCalls([
-          {
-            id: '1',
-            customerPhone: '+1 (555) 123-4567',
-            duration: 127,
-            status: 'active',
-            reasoning: 'Booking cleaning for Friday',
-          },
-          {
-            id: '2',
-            customerPhone: '+1 (555) 987-6543',
-            duration: 45,
-            status: 'on-hold',
-            reasoning: 'Inquiry about hours',
-          },
-        ]);
         
       } catch (error: any) {
         console.error('Error fetching dashboard data:', error);
@@ -158,6 +192,21 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [isAuthenticated]);
 
+  const formatTimeAgo = (dateStr: string): string => {
+    if (!dateStr) return 'Unknown';
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMins / 60);
+    const diffDays = Math.floor(diffHours / 24);
+    
+    if (diffDays > 0) return `${diffDays}d ago`;
+    if (diffHours > 0) return `${diffHours}h ago`;
+    if (diffMins > 0) return `${diffMins}m ago`;
+    return 'Just now';
+  };
+
   const formatDuration = (seconds: number) => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
@@ -165,11 +214,23 @@ export default function Dashboard() {
   };
 
   const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'active': return 'success';
-      case 'ringing': return 'warning';
-      case 'on-hold': return 'info';
-      default: return 'default';
+    switch (status.toLowerCase()) {
+      case 'active':
+      case 'success':
+      case 'confirmed':
+      case 'completed':
+      case 'scheduled':
+        return 'success';
+      case 'pending':
+      case 'ringing':
+        return 'warning';
+      case 'on-hold':
+        return 'info';
+      case 'failed':
+      case 'cancelled':
+        return 'error';
+      default:
+        return 'default';
     }
   };
 
@@ -183,11 +244,8 @@ export default function Dashboard() {
     );
   }
 
-    return (
-
-      <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
-
-  
+  return (
+    <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
       <Box sx={{ mb: { xs: 2, sm: 4 } }}>
         <Typography 
           variant="h4" 
@@ -213,7 +271,7 @@ export default function Dashboard() {
             <CardContent>
               <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Total Traffic</Typography>
               <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1 }}>{metrics.totalCalls}</Typography>
-              <Typography variant="body2" color="success.main">↑ 12% vs last month</Typography>
+              <Typography variant="body2" color="text.secondary">All time calls</Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -223,7 +281,7 @@ export default function Dashboard() {
             <CardContent>
               <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Autonomous Resolutions</Typography>
               <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1, color: 'success.main' }}>{metrics.autonomousResolutions}</Typography>
-              <Typography variant="body2" color="text.secondary">66.7% of total volume</Typography>
+              <Typography variant="body2" color="text.secondary">Appointments & Orders</Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -231,9 +289,9 @@ export default function Dashboard() {
         <Grid item xs={12} sm={4} md={2}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Active Workflows</Typography>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Active Calls</Typography>
               <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1, color: 'primary.main' }}>{metrics.activeWorkflows}</Typography>
-              <Typography variant="body2" color="text.secondary">Running on Nova Act</Typography>
+              <Typography variant="body2" color="text.secondary">Currently in progress</Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -241,9 +299,9 @@ export default function Dashboard() {
         <Grid item xs={12} sm={4} md={2}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Avg Reasoning Time</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1 }}>{metrics.avgResponseTime}s</Typography>
-              <Typography variant="body2" color="info.main">Nova 2 Lite Latency</Typography>
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Avg Call Duration</Typography>
+              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1 }}>{Math.floor(metrics.avgCallDuration / 60)}:{(metrics.avgCallDuration % 60).toString().padStart(2, '0')}</Typography>
+              <Typography variant="body2" color="info.main">Minutes:Seconds</Typography>
             </CardContent>
           </Card>
         </Grid>
@@ -278,27 +336,31 @@ export default function Dashboard() {
           <Card sx={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
             <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
-                <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+                {liveCalls.length > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
                 Live Agent Orchestration
               </Typography>
-              <List>
-                {[
-                  { id: '1', phone: '+1 (555) 012-3456', status: 'REASONING', model: 'Nova 2 Lite' },
-                  { id: '2', phone: '+1 (555) 987-6543', status: 'AUTOMATING', model: 'Nova Act' },
-                  { id: '3', phone: '+1 (555) 444-5555', status: 'LISTENING', model: 'Nova 2 Sonic' },
-                ].map((call) => (
-                  <ListItem key={call.id} divider sx={{ px: 0 }}>
-                    <ListItemAvatar>
-                      <Avatar sx={{ bgcolor: 'primary.main' }}><CallIcon /></Avatar>
-                    </ListItemAvatar>
-                    <ListItemText 
-                      primary={call.phone} 
-                      secondary={<span className="font-mono text-xs">{call.model} handling request...</span>} 
-                    />
-                    <Chip label={call.status} size="small" color={call.status === 'AUTOMATING' ? 'info' : 'success'} />
-                  </ListItem>
-                ))}
-              </List>
+              {liveCalls.length > 0 ? (
+                <List>
+                  {liveCalls.map((call) => (
+                    <ListItem key={call.id} divider sx={{ px: 0 }}>
+                      <ListItemAvatar>
+                        <Avatar sx={{ bgcolor: 'primary.main' }}><CallIcon /></Avatar>
+                      </ListItemAvatar>
+                      <ListItemText 
+                        primary={call.customerPhone} 
+                        secondary={<span className="font-mono text-xs">{call.reasoning}</span>} 
+                      />
+                      <Chip label={call.status.toUpperCase()} size="small" color="success" />
+                    </ListItem>
+                  ))}
+                </List>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '250px', color: 'text.secondary' }}>
+                  <PhoneIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+                  <Typography variant="body1">No active calls</Typography>
+                  <Typography variant="body2">Calls will appear here in real-time</Typography>
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -308,27 +370,30 @@ export default function Dashboard() {
           <Card sx={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
             <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                Recent Autonomous Workflows
+                Recent Activity
               </Typography>
-              <List>
-                {[
-                  { id: '1', task: 'Dental Booking', status: 'SUCCESS', desc: 'Booked cleaning for John Doe via SmilePortal', time: '2m ago' },
-                  { id: '2', task: 'FAQ Inquiry', status: 'SUCCESS', desc: 'Resolved question about pricing tiers', time: '15m ago' },
-                  { id: '3', task: 'Rescheduling', status: 'SUCCESS', desc: 'Moved appointment for Sarah Smith', time: '45m ago' },
-                  { id: '4', task: 'Lead Capture', status: 'SUCCESS', desc: 'Collected contact info for insurance query', time: '1h ago' },
-                ].map((wf) => (
-                  <ListItem key={wf.id} divider sx={{ px: 0 }}>
-                    <ListItemAvatar>
-                      <Avatar sx={{ bgcolor: 'success.light' }}><SmartToyIcon /></Avatar>
-                    </ListItemAvatar>
-                    <ListItemText 
-                      primary={wf.task} 
-                      secondary={`${wf.desc} • ${wf.time}`} 
-                    />
-                    <Chip label={wf.status} size="small" variant="outlined" color="success" />
-                  </ListItem>
-                ))}
-              </List>
+              {workflows.length > 0 ? (
+                <List>
+                  {workflows.map((wf) => (
+                    <ListItem key={wf.id} divider sx={{ px: 0 }}>
+                      <ListItemAvatar>
+                        <Avatar sx={{ bgcolor: 'success.light' }}><SmartToyIcon /></Avatar>
+                      </ListItemAvatar>
+                      <ListItemText 
+                        primary={wf.task} 
+                        secondary={`${wf.desc} • ${wf.time}`} 
+                      />
+                      <Chip label={wf.status} size="small" variant="outlined" color={getStatusColor(wf.status) as any} />
+                    </ListItem>
+                  ))}
+                </List>
+              ) : (
+                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '250px', color: 'text.secondary' }}>
+                  <SmartToyIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
+                  <Typography variant="body1">No recent activity</Typography>
+                  <Typography variant="body2">Orders and appointments will appear here</Typography>
+                </Box>
+              )}
             </CardContent>
           </Card>
         </Grid>
@@ -336,4 +401,3 @@ export default function Dashboard() {
     </Container>
   );
 }
-

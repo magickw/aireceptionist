@@ -1,10 +1,11 @@
 from typing import Any, Dict, List
 from fastapi import APIRouter, Depends
-import random
 from datetime import datetime, timedelta
+from sqlalchemy import func
+from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.models.models import User
+from app.models.models import User, CallSession, Appointment, Order
 
 router = APIRouter()
 
@@ -13,26 +14,73 @@ def get_analytics(
     business_id: int,
     timeframe: str = "30d",
     current_user: User = Depends(deps.get_current_active_user),
+    db: Session = Depends(deps.get_db),
 ) -> Any:
     """
-    Get comprehensive analytics for a business (Mock Data).
+    Get comprehensive analytics for a business.
     """
-    # Generate realistic mock data
+    # Calculate date range based on timeframe
+    days = 7 if timeframe == '7d' else 30 if timeframe == '30d' else 90
+    start_date = datetime.utcnow() - timedelta(days=days)
+    
+    # Query call sessions
+    call_query = db.query(CallSession).filter(
+        CallSession.business_id == business_id,
+        CallSession.started_at >= start_date
+    )
+    
+    total_calls = call_query.count()
+    
+    # Calculate average call duration
+    completed_calls = call_query.filter(CallSession.duration_seconds.isnot(None)).all()
+    avg_duration = sum(c.duration_seconds or 0 for c in completed_calls) / len(completed_calls) if completed_calls else 0
+    
+    # Query appointments
+    appointments = db.query(Appointment).filter(
+        Appointment.business_id == business_id,
+        Appointment.created_at >= start_date
+    ).count()
+    
+    # Query successful resolutions (calls with high AI confidence)
+    high_confidence_calls = call_query.filter(
+        CallSession.ai_confidence >= 0.85,
+        CallSession.status == 'ended'
+    ).count()
+    
+    success_rate = (high_confidence_calls / total_calls * 100) if total_calls > 0 else 0
+    
+    # Get intent analysis from call sessions with sentiment
+    intent_counts = db.query(
+        CallSession.status,
+        func.count(CallSession.id).label('count')
+    ).filter(
+        CallSession.business_id == business_id,
+        CallSession.started_at >= start_date
+    ).group_by(CallSession.status).all()
+    
+    intent_analysis = [
+        {"intent": intent or "unknown", "count": count, "avg_confidence": 0.85}
+        for intent, count in intent_counts
+    ]
+    
+    # Generate daily trends
+    daily_trends = _get_daily_trends(db, business_id, start_date, days)
+    
+    # Generate peak hours
+    peak_hours = _get_peak_hours(db, business_id, start_date)
+    
     return {
-      "totalCalls": random.randint(100, 600),
-      "avgCallDuration": random.randint(120, 300),
-      "appointmentsBooked": random.randint(20, 70),
-      "successRate": random.randint(80, 100),
-      "dailyTrends": generate_mock_daily_trends(timeframe),
-      "intentAnalysis": [
-        { "intent": 'appointment_booking', "count": 45, "avg_confidence": 0.92 },
-        { "intent": 'general_inquiry', "count": 32, "avg_confidence": 0.87 },
-        { "intent": 'support_request', "count": 28, "avg_confidence": 0.89 },
-        { "intent": 'service_info', "count": 21, "avg_confidence": 0.85 },
-        { "intent": 'pricing_inquiry', "count": 18, "avg_confidence": 0.91 }
-      ],
-      "peakHours": generate_mock_peak_hours(),
-      "timeframe": timeframe
+        "totalCalls": total_calls,
+        "avgCallDuration": int(avg_duration),
+        "appointmentsBooked": appointments,
+        "successRate": round(success_rate, 1),
+        "dailyTrends": daily_trends,
+        "intentAnalysis": intent_analysis if intent_analysis else [
+            {"intent": "appointment_booking", "count": 0, "avg_confidence": 0},
+            {"intent": "general_inquiry", "count": 0, "avg_confidence": 0},
+        ],
+        "peakHours": peak_hours,
+        "timeframe": timeframe
     }
 
 @router.get("/business/{business_id}/revenue")
@@ -40,86 +88,173 @@ def get_revenue_analytics(
     business_id: int,
     timeframe: str = "30d",
     current_user: User = Depends(deps.get_current_active_user),
+    db: Session = Depends(deps.get_db),
 ) -> Any:
-    avg_appointment_value = 150
-    appointment_revenue = generate_mock_revenue_trends(timeframe)
-    total_revenue = sum(day["revenue"] for day in appointment_revenue)
-
+    # Calculate date range
+    days = 7 if timeframe == '7d' else 30 if timeframe == '30d' else 90
+    start_date = datetime.utcnow() - timedelta(days=days)
+    
+    # Query orders for revenue
+    orders = db.query(Order).filter(
+        Order.business_id == business_id,
+        Order.created_at >= start_date,
+        Order.status.in_(['confirmed', 'completed'])
+    ).all()
+    
+    total_revenue = sum(float(o.total_amount or 0) for o in orders)
+    
+    # Get daily revenue trends
+    daily_revenue = db.query(
+        func.date(Order.created_at).label('date'),
+        func.count(Order.id).label('appointments'),
+        func.sum(Order.total_amount).label('revenue')
+    ).filter(
+        Order.business_id == business_id,
+        Order.created_at >= start_date,
+        Order.status.in_(['confirmed', 'completed'])
+    ).group_by(func.date(Order.created_at)).all()
+    
+    revenue_trends = [
+        {
+            "date": str(r.date),
+            "total_appointments": r.appointments,
+            "revenue": float(r.revenue or 0)
+        }
+        for r in daily_revenue
+    ]
+    
+    avg_appointment_value = total_revenue / len(orders) if orders else 0
+    
     return {
-      "totalRevenue": total_revenue,
-      "avgAppointmentValue": avg_appointment_value,
-      "appointmentRevenue": appointment_revenue,
-      "timeframe": timeframe
+        "totalRevenue": round(total_revenue, 2),
+        "avgAppointmentValue": round(avg_appointment_value, 2),
+        "appointmentRevenue": revenue_trends,
+        "timeframe": timeframe
     }
 
 @router.get("/business/{business_id}/realtime")
 def get_realtime_analytics(
     business_id: int,
     current_user: User = Depends(deps.get_current_active_user),
+    db: Session = Depends(deps.get_db),
 ) -> Any:
+    """Get realtime analytics including active calls."""
+    # Get active calls
+    active_calls = db.query(CallSession).filter(
+        CallSession.business_id == business_id,
+        CallSession.status == 'active'
+    ).all()
+    
+    # Get today's stats
+    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    todays_calls = db.query(CallSession).filter(
+        CallSession.business_id == business_id,
+        CallSession.started_at >= today_start
+    ).all()
+    
+    calls_today = len(todays_calls)
+    completed_today = len([c for c in todays_calls if c.status == 'ended'])
+    avg_duration_today = sum(c.duration_seconds or 0 for c in todays_calls if c.duration_seconds) / completed_today if completed_today > 0 else 0
+    
+    # Get recent calls (last 5)
+    recent_calls = db.query(CallSession).filter(
+        CallSession.business_id == business_id
+    ).order_by(CallSession.started_at.desc()).limit(5).all()
+    
     return {
-      "activeCalls": random.randint(0, 5),
-      "todayStats": {
-        "calls_today": random.randint(5, 30),
-        "avg_duration_today": random.randint(120, 180),
-        "completed_calls": random.randint(5, 25)
-      },
-      "recentCalls": generate_mock_recent_calls()
+        "activeCalls": len(active_calls),
+        "todayStats": {
+            "calls_today": calls_today,
+            "avg_duration_today": int(avg_duration_today),
+            "completed_calls": completed_today
+        },
+        "recentCalls": [
+            {
+                "id": call.id,
+                "customer_phone": call.customer_phone,
+                "status": call.status,
+                "started_at": call.started_at.isoformat() if call.started_at else None,
+                "duration_seconds": call.duration_seconds,
+                "ai_confidence": float(call.ai_confidence) if call.ai_confidence else None
+            }
+            for call in recent_calls
+        ]
     }
 
-# Helper functions
-def generate_mock_daily_trends(timeframe: str):
-    days = 7 if timeframe == '7d' else 30 if timeframe == '30d' else 90
-    trends = []
-    for i in range(days):
-        date = datetime.now() - timedelta(days=i)
-        trends.append({
-            "date": date.strftime("%Y-%m-%d"),
-            "calls": random.randint(5, 25),
-            "avg_duration": random.randint(120, 180),
-            "avg_confidence": round(random.uniform(0.7, 1.0), 2)
-        })
-    return trends
-
-def generate_mock_peak_hours():
-    hours = []
-    for hour in range(24):
-        calls = 0
-        if 8 <= hour <= 18:
-            calls = random.randint(5, 20)
-        elif 19 <= hour <= 21:
-            calls = random.randint(2, 10)
-        else:
-            calls = random.randint(0, 3)
-        hours.append({ "hour": hour, "calls": calls })
-    return hours
-
-def generate_mock_revenue_trends(timeframe: str):
-    days = 7 if timeframe == '7d' else 30 if timeframe == '30d' else 90
-    trends = []
-    for i in range(days):
-        date = datetime.now() - timedelta(days=i)
-        appointments = random.randint(1, 6)
-        trends.append({
-            "date": date.strftime("%Y-%m-%d"),
-            "total_appointments": appointments,
-            "revenue": appointments * 150
-        })
-    return trends
-
-def generate_mock_recent_calls():
-    calls = []
-    phone_numbers = ['+1234567890', '+1987654321', '+1555123456', '+1444555666', '+1777888999']
-    statuses = ['ended', 'active', 'ended', 'ended', 'ended']
+@router.get("/business/{business_id}/active-calls")
+def get_active_calls(
+    business_id: int,
+    current_user: User = Depends(deps.get_current_active_user),
+    db: Session = Depends(deps.get_db),
+) -> Any:
+    """Get list of currently active calls."""
+    active_calls = db.query(CallSession).filter(
+        CallSession.business_id == business_id,
+        CallSession.status == 'active'
+    ).all()
     
-    for i in range(5):
-        start_time = datetime.now() - timedelta(minutes=(i * 30 + random.randint(0, 60)))
-        calls.append({
-            "id": f"call_{i + 1}",
-            "customer_phone": phone_numbers[i],
-            "status": statuses[i],
-            "started_at": start_time.isoformat(),
-            "duration_seconds": random.randint(60, 360),
-            "ai_confidence": round(random.uniform(0.7, 1.0), 2)
+    return [
+        {
+            "id": call.id,
+            "customer_phone": call.customer_phone,
+            "customer_name": call.customer_name,
+            "status": call.status,
+            "started_at": call.started_at.isoformat() if call.started_at else None,
+            "duration_seconds": call.duration_seconds,
+            "ai_confidence": float(call.ai_confidence) if call.ai_confidence else None,
+            "sentiment": call.sentiment
+        }
+        for call in active_calls
+    ]
+
+
+def _get_daily_trends(db: Session, business_id: int, start_date: datetime, days: int) -> List[Dict]:
+    """Get daily call trends."""
+    # Query daily aggregates
+    daily_stats = db.query(
+        func.date(CallSession.started_at).label('date'),
+        func.count(CallSession.id).label('calls'),
+        func.avg(CallSession.duration_seconds).label('avg_duration'),
+        func.avg(CallSession.ai_confidence).label('avg_confidence')
+    ).filter(
+        CallSession.business_id == business_id,
+        CallSession.started_at >= start_date
+    ).group_by(func.date(CallSession.started_at)).all()
+    
+    # Convert to dict for easy lookup
+    stats_dict = {str(s.date): s for s in daily_stats}
+    
+    # Generate full date range with defaults
+    trends = []
+    for i in range(days):
+        date = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
+        stat = stats_dict.get(date)
+        trends.append({
+            "date": date,
+            "calls": stat.calls if stat else 0,
+            "avg_duration": int(stat.avg_duration) if stat and stat.avg_duration else 0,
+            "avg_confidence": round(float(stat.avg_confidence), 2) if stat and stat.avg_confidence else 0
         })
-    return calls
+    
+    return trends
+
+
+def _get_peak_hours(db: Session, business_id: int, start_date: datetime) -> List[Dict]:
+    """Get peak hours analysis."""
+    # Query hourly call counts
+    hourly_stats = db.query(
+        func.extract('hour', CallSession.started_at).label('hour'),
+        func.count(CallSession.id).label('calls')
+    ).filter(
+        CallSession.business_id == business_id,
+        CallSession.started_at >= start_date
+    ).group_by(func.extract('hour', CallSession.started_at)).all()
+    
+    # Convert to dict
+    hours_dict = {int(s.hour): s.calls for s in hourly_stats}
+    
+    # Generate full 24-hour range
+    return [
+        {"hour": hour, "calls": hours_dict.get(hour, 0)}
+        for hour in range(24)
+    ]

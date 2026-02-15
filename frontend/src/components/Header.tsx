@@ -127,6 +127,7 @@ export default function Header() {
             <Collapse in={openSections.management} timeout="auto" unmountOnExit>
               <List component="div" disablePadding>
                 {managementItems.map((item) => renderNavItem(item, handleDrawerToggle))}
+                {renderNavItem({ label: 'Orders', href: '/orders' }, handleDrawerToggle)}
               </List>
             </Collapse>
             
@@ -279,6 +280,9 @@ export default function Header() {
                       {item.label}
                     </MenuItem>
                   ))}
+                  <MenuItem key="orders-desktop" component={Link} href="/orders" onClick={handleMenuClose}>
+                    Orders
+                  </MenuItem>
                   <MenuItem disabled sx={{ fontWeight: 'bold', color: 'primary.main', mt: 1 }}>
                     AI & Automation
                   </MenuItem>

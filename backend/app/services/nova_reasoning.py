@@ -96,7 +96,8 @@ class NovaReasoningEngine:
             "SEND_DIRECTIONS",
             "PLACE_ORDER",
             "CONFIRM_ORDER",
-            "HUMAN_INTERVENTION"
+            "HUMAN_INTERVENTION",
+            "CREATE_ORDER"
         ]
         
         # Safety Thresholds
@@ -317,7 +318,8 @@ When handling customer requests, always collect: {', '.join(required_info)}
     "issue_type": "<complaint_type_or_null>",
     "payment_method": "<extracted_payment_method_or_null>",
     "total_amount": "<extracted_amount_if_mentioned>",
-    "landmark": "<extracted_nearby_landmark_if_mentioned>"
+    "landmark": "<extracted_nearby_landmark_if_mentioned>",
+    "order_items": ["<list_of_ordered_items>"]
   }},
   "selected_action": "<ONE_OF_AVAILABLE_ACTIONS>",
   "action_reasoning": "<Why this action was selected (2-3 sentences)>",
@@ -384,7 +386,8 @@ When handling customer requests, always collect: {', '.join(required_info)}
             "PAYMENT_PROCESS": "Initiate secure payment collection",
             "SEND_DIRECTIONS": "Provide business location and directions",
             "PLACE_ORDER": "Add item to customer's order (requires menu_item entity)",
-            "CONFIRM_ORDER": "Finalize and save the order to the system"
+            "CONFIRM_ORDER": "Finalize and save the order to the system",
+            "CREATE_ORDER": "Finalize and log a customer's food/product order"
         }
         
         return "\n".join([

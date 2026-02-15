@@ -1,8 +1,9 @@
 'use client';
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { Container, Typography, Box, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, LinearProgress } from '@mui/material';
+import { Container, Typography, Box, Paper, Table, TableBody, TableCell, TableContainer, TableHead, TableRow, LinearProgress, Chip } from '@mui/material';
 import api from '@/services/api';
+import { format } from 'date-fns';
 
 export default function AppointmentsPage() {
   const [appointments, setAppointments] = useState<any[]>([]);
@@ -25,6 +26,16 @@ export default function AppointmentsPage() {
     fetchData();
   }, []);
 
+  const getStatusChipColor = (status: string) => {
+    switch (status.toLowerCase()) {
+      case 'scheduled': return 'primary';
+      case 'completed': return 'success';
+      case 'cancelled': return 'error';
+      case 'no_show': return 'warning';
+      default: return 'default';
+    }
+  };
+
   if (loading) return <Container sx={{p:4}}><LinearProgress /></Container>;
 
   return (
@@ -36,8 +47,10 @@ export default function AppointmentsPage() {
           <TableRow key={apt.id}>
             <TableCell>{apt.customer_name}</TableCell>
             <TableCell>{apt.service_type}</TableCell>
-            <TableCell>{new Date(apt.appointment_time).toLocaleString()}</TableCell>
-            <TableCell>{apt.status}</TableCell>
+            <TableCell>{format(new Date(apt.appointment_time), 'MMM d, yyyy h:mm a')}</TableCell>
+            <TableCell>
+              <Chip label={apt.status} color={getStatusChipColor(apt.status)} size="small" />
+            </TableCell>
           </TableRow>
         ))}
       </TableBody></Table></TableContainer>
