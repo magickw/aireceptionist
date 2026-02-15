@@ -5,7 +5,6 @@ import { Container, Typography, Box, Paper, Table, TableBody, TableCell, TableCo
 import { AccessTime, AttachMoney, Person, Phone, ShoppingCart, Event } from '@mui/icons-material';
 import api from '@/services/api';
 import { format } from 'date-fns';
-import Header from '@/components/Header';
 
 interface OrderItem {
   id: number;
@@ -62,7 +61,6 @@ const OrdersPage: React.FC = () => {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Header title="Order Management" />
       <Box sx={{ my: 4 }}>
         <Typography variant="h4" component="h1" gutterBottom>
           Customer Orders

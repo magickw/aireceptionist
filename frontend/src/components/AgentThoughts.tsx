@@ -56,6 +56,42 @@ interface AgentThoughtsProps {
 }
 
 const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }) => {
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  const handleApprove = async () => {
+    setIsProcessing(true);
+    try {
+      await api.post('/approvals/override', {
+        request_type: reasoningData?.selected_action,
+        call_session_id: reasoningData?.context?.call_session_id,
+        original_response: reasoningData?.suggested_response,
+        context: reasoningData
+      });
+      alert('Override approved');
+    } catch (error) {
+      console.error('Failed to approve:', error);
+      alert('Failed to approve');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleReject = async () => {
+    setIsProcessing(true);
+    try {
+      await api.post('/approvals/reject', {
+        request_type: reasoningData?.selected_action,
+        call_session_id: reasoningData?.context?.call_session_id,
+        context: reasoningData
+      });
+      alert('Action rejected');
+    } catch (error) {
+      console.error('Failed to reject:', error);
+      alert('Failed to reject');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
   const [activeStep, setActiveStep] = useState<number>(-1);
 
   const getConfidenceColor = (confidence: number) => {
@@ -148,7 +184,7 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
                   size="small" 
                   color="success" 
                   clickable 
-                  onClick={() => alert("Simulated: Manager approved action.")}
+                  onClick={handleApprove}
                   sx={{ fontWeight: 'bold' }} 
                 />
                 <Chip 
@@ -156,7 +192,7 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
                   size="small" 
                   color="error" 
                   clickable 
-                  onClick={() => alert("Simulated: Manager taking over call.")}
+                  onClick={handleReject}
                   sx={{ fontWeight: 'bold' }} 
                 />
               </Box>

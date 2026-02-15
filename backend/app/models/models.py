@@ -269,6 +269,45 @@ class DocumentChunk(Base):
     document = relationship("KnowledgeBaseDocument", back_populates="chunks")
 
 
+class ApprovalRequest(Base):
+    """Manager approval requests for AI actions requiring review"""
+    __tablename__ = "approval_requests"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"))
+    call_session_id = Column(String(100), ForeignKey("call_sessions.id"))
+    request_type = Column(String(50))  # 'HUMAN_INTERVENTION', 'APPOINTMENT', 'PAYMENT', etc.
+    status = Column(String(20), default="pending")  # pending, approved, rejected
+    action_taken = Column(String(100))  # The action that was ultimately taken
+    requested_by = Column(String(100))  # AI model name
+    reason = Column(Text)  # Why approval was requested
+    original_response = Column(Text)  # Original AI response
+    final_response = Column(Text)  # Modified response after approval
+    context = Column(JSON)  # Full context of the decision
+    request_metadata = Column(JSON)  # Additional metadata
+    reviewed_by = Column(Integer, ForeignKey("users.id"))
+    reviewed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    business = relationship("Business", backref="approval_requests")
+
+
+class ManagerAction(Base):
+    """Records manager actions on approval requests"""
+    __tablename__ = "manager_actions"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    approval_request_id = Column(Integer, ForeignKey("approval_requests.id"))
+    manager_id = Column(Integer, ForeignKey("users.id"))
+    action = Column(String(50))  # 'approve', 'reject', 'modify'
+    notes = Column(Text)
+    timestamp = Column(DateTime, server_default=func.now())
+    
+    approval_request = relationship("ApprovalRequest", backref="manager_actions")
+    manager = relationship("User")
+
+
 class Webhook(Base):
     """Webhooks for real-time event notifications"""
     __tablename__ = "webhooks"

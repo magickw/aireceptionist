@@ -28,7 +28,6 @@ import MenuItem from '@mui/material/MenuItem';
 const navigationItems = [
   { label: 'Dashboard', href: '/', icon: 'dashboard' },
   { label: 'Live Demo', href: '/call-simulator', icon: 'phone' },
-  { label: 'Call Management', href: '/call-management', icon: 'settings' },
   { label: 'Call Logs', href: '/call-logs', icon: 'history' },
   { label: 'Appointments', href: '/appointments', icon: 'event' },
   { label: 'Orders', href: '/orders', icon: 'shopping_cart' },
