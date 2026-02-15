@@ -31,6 +31,7 @@ const navigationItems = [
   { label: 'Call Management', href: '/call-management', icon: 'settings' },
   { label: 'Call Logs', href: '/call-logs', icon: 'history' },
   { label: 'Appointments', href: '/appointments', icon: 'event' },
+  { label: 'Orders', href: '/orders', icon: 'shopping_cart' },
   { label: 'Customers', href: '/customers', icon: 'people' },
 ];
 
@@ -127,7 +128,7 @@ export default function Header() {
             <Collapse in={openSections.management} timeout="auto" unmountOnExit>
               <List component="div" disablePadding>
                 {managementItems.map((item) => renderNavItem(item, handleDrawerToggle))}
-                {renderNavItem({ label: 'Orders', href: '/orders' }, handleDrawerToggle)}
+
               </List>
             </Collapse>
             
@@ -280,9 +281,7 @@ export default function Header() {
                       {item.label}
                     </MenuItem>
                   ))}
-                  <MenuItem key="orders-desktop" component={Link} href="/orders" onClick={handleMenuClose}>
-                    Orders
-                  </MenuItem>
+
                   <MenuItem disabled sx={{ fontWeight: 'bold', color: 'primary.main', mt: 1 }}>
                     AI & Automation
                   </MenuItem>
