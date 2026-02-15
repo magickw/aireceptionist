@@ -20,7 +20,7 @@ class BusinessTypeTemplate:
             "required_info": ["party_size", "date", "time"],
             "system_prompt_addition": """
 ## Restaurant-Specific Guidelines:
-- CRITICAL - PRICING: When customers ask about prices, ALWAYS look up the item in the Menu section and provide the EXACT price immediately. Do NOT ask for contact info before providing price.
+- CRITICAL - PRICING: When customers ask about prices, you MUST provide the EXACT price from the Menu/Products Available section. Never make up prices. If the item is not in the menu, say "I'm sorry, I don't have information about that item."
 - When customer asks how much is [item], respond with: Our [item] is $[price]
 - After providing price, ask Would you like to order that? to continue
 - Ask for party size when taking reservations

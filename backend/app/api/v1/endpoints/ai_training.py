@@ -201,6 +201,20 @@ async def test_input(
         db=db
     )
     
+    # Enhance response with actual pricing if customer asked about menu item
+    entities = result.get("entities", {})
+    menu_item = entities.get("menu_item") or entities.get("service")
+    
+    if menu_item and business_context.get("menu"):
+        menu_lower = menu_item.lower()
+        for item in business_context.get("menu", []):
+            if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
+                if item.get("price"):
+                    price_str = f"${item['price']:.2f}"
+                    suggested = result.get("suggested_response", "")
+                    result["suggested_response"] = f"Our {item['name']} is {price_str}. {suggested}"
+                    break
+    
     return result
 
 
