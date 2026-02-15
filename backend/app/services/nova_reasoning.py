@@ -93,8 +93,13 @@ class NovaReasoningEngine:
             "CANCEL_APPOINTMENT",
             "TAKE_MESSAGE",
             "PAYMENT_PROCESS",
-            "SEND_DIRECTIONS"
+            "SEND_DIRECTIONS",
+            "HUMAN_INTERVENTION"
         ]
+        
+        # Safety Thresholds
+        self.CONFIDENCE_THRESHOLD = 0.85
+        self.RISK_THRESHOLD = 0.7
     
     async def reason(
         self,
@@ -175,6 +180,29 @@ class NovaReasoningEngine:
             
             # Parse and validate the response
             reasoning_result = self._parse_reasoning_response(response)
+            
+            # --- CONFIDENCE GATING & SAFETY CHECK ---
+            # Check if the AI is confident enough to act autonomously
+            requires_approval = False
+            safety_reason = ""
+            
+            if reasoning_result["confidence"] < self.CONFIDENCE_THRESHOLD:
+                requires_approval = True
+                safety_reason = f"Low confidence ({reasoning_result['confidence']:.2f} < {self.CONFIDENCE_THRESHOLD})"
+            
+            elif reasoning_result["escalation_risk"] > self.RISK_THRESHOLD:
+                requires_approval = True
+                safety_reason = f"High escalation risk ({reasoning_result['escalation_risk']:.2f} > {self.RISK_THRESHOLD})"
+            
+            # If safety check fails, override action
+            if requires_approval:
+                print(f"[Nova Safety] Triggering Human Intervention: {safety_reason}")
+                reasoning_result["selected_action"] = "HUMAN_INTERVENTION"
+                reasoning_result["action_reasoning"] = f"SAFETY TRIGGER: {safety_reason}. Pausing for human review."
+                reasoning_result["requires_approval"] = True
+                reasoning_result["safety_reason"] = safety_reason
+                # Provide a stalling response while waiting for human
+                reasoning_result["suggested_response"] = "Let me just double check that information for you, one moment please."
             
             # Add reasoning chain for visualization
             reasoning_result["reasoning_chain"] = self._build_reasoning_chain(

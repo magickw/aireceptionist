@@ -128,6 +128,41 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
       {/* Rich Reasoning Data */}
       {reasoningData && (
         <Box>
+          {/* Human Intervention Alert */}
+          {reasoningData.selected_action === 'HUMAN_INTERVENTION' && (
+            <Alert 
+              severity="error" 
+              variant="filled" 
+              sx={{ mb: 3, border: '1px solid #ef4444', bgcolor: 'rgba(239, 68, 68, 0.1)', color: '#fca5a5' }}
+              icon={<WarningIcon fontSize="inherit" />}
+            >
+              <Typography variant="subtitle2" sx={{ fontWeight: 'bold', color: '#fca5a5' }}>
+                SAFETY GATE TRIGGERED
+              </Typography>
+              <Typography variant="body2" sx={{ fontSize: '0.8rem', mt: 0.5, color: '#fca5a5' }}>
+                {reasoningData.action_reasoning?.split('SAFETY TRIGGER:')[1] || reasoningData.action_reasoning}
+              </Typography>
+              <Box sx={{ mt: 1.5, display: 'flex', gap: 1 }}>
+                <Chip 
+                  label="APPROVE OVERRIDE" 
+                  size="small" 
+                  color="success" 
+                  clickable 
+                  onClick={() => alert("Simulated: Manager approved action.")}
+                  sx={{ fontWeight: 'bold' }} 
+                />
+                <Chip 
+                  label="REJECT & TAKE OVER" 
+                  size="small" 
+                  color="error" 
+                  clickable 
+                  onClick={() => alert("Simulated: Manager taking over call.")}
+                  sx={{ fontWeight: 'bold' }} 
+                />
+              </Box>
+            </Alert>
+          )}
+
           {/* Summary Cards */}
           <Stack spacing={1.5} sx={{ mb: 3 }}>
             {/* Intent Card */}

@@ -216,6 +216,18 @@ async def voice_websocket(
                     else:
                         agent_response = f"I'd be happy to help with that payment. Could you please confirm what you'd like to pay for? {agent_response}"
                 
+                elif selected_action == "HUMAN_INTERVENTION":
+                    # Send intervention request event
+                    await manager.send_json(session_id, {
+                        "type": "human_intervention_request",
+                        "reason": reasoning_result.get("safety_reason", "Unknown safety trigger"),
+                        "context": {
+                            "intent": reasoning_result.get("intent"),
+                            "confidence": reasoning_result.get("confidence"),
+                            "risk": reasoning_result.get("escalation_risk")
+                        }
+                    })
+                
                 # Calculate total if customer asks about total cost
                 conversation_lower = content.lower()
                 if ws_session["order_items"]:
@@ -728,6 +740,17 @@ async def send_http_message(
             agent_response = f"I've initiated a secure payment process for your total of ${total:.2f}. I'm sending a secure link to your phone now. {agent_response}"
         else:
             agent_response = f"I'd be happy to help with that payment. Could you please confirm what you'd like to pay for? {agent_response}"
+    elif selected_action == "HUMAN_INTERVENTION":
+        # Add intervention request event
+        session_store.add_event(session_id, {
+            "type": "human_intervention_request",
+            "reason": reasoning_result.get("safety_reason", "Unknown safety trigger"),
+            "context": {
+                "intent": reasoning_result.get("intent"),
+                "confidence": reasoning_result.get("confidence"),
+                "risk": reasoning_result.get("escalation_risk")
+            }
+        })
     
     # Add only agent_response event (frontend handles single message display)
     # Do NOT add text_chunk to avoid duplicates

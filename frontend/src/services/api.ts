@@ -204,4 +204,20 @@ export const aiTrainingApi = {
   getStats: () => api.get('/ai-training/statistics'),
 };
 
+// Menu/Pricing API
+export const menuApi = {
+  list: (businessId: number, params?: { category?: string; available_only?: boolean }) => 
+    api.get('/menu/', { params: { business_id: businessId, ...params } }),
+  get: (itemId: number, businessId: number) => 
+    api.get(`/menu/${itemId}`, { params: { business_id: businessId } }),
+  create: (businessId: number, data: { name: string; description?: string; price?: number; unit?: string; category?: string; available?: boolean }) => 
+    api.post('/menu/', data, { params: { business_id: businessId } }),
+  update: (itemId: number, businessId: number, data: { name?: string; description?: string; price?: number; unit?: string; category?: string; available?: boolean; is_active?: boolean }) => 
+    api.put(`/menu/${itemId}`, data, { params: { business_id: businessId } }),
+  delete: (itemId: number, businessId: number) => 
+    api.delete(`/menu/${itemId}`, { params: { business_id: businessId } }),
+  getCategories: (businessId: number) => 
+    api.get('/menu/categories/list', { params: { business_id: businessId } }),
+};
+
 export default api;

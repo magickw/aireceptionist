@@ -17,6 +17,7 @@ export default function CallSimulator() {
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'http_fallback'>('connecting');
+  const [autonomyMode, setAutonomyMode] = useState<'AUTONOMOUS' | 'GUARDED'>('AUTONOMOUS');
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string>('');
@@ -73,6 +74,8 @@ export default function CallSimulator() {
         } else if (event.type === 'reasoning_chain' || event.type === 'reasoning_complete') {
           // Handle reasoning data
           if (event.data) setReasoningData(event.data);
+        } else if (event.type === 'human_intervention_request') {
+          setAutonomyMode('GUARDED');
         }
       }
     } catch (error) {
@@ -159,6 +162,8 @@ export default function CallSimulator() {
             }
             if (data.reasoning) setReasoningData(data.reasoning);
             setStreamingText('');
+          } else if (data.type === 'human_intervention_request') {
+            setAutonomyMode('GUARDED');
           }
         };
         
@@ -212,6 +217,7 @@ export default function CallSimulator() {
     setCurrentCall({ messages: [] });
     setThoughts([]);
     setStreamingText('');
+    setAutonomyMode('AUTONOMOUS');
     setTimeout(() => addMessage("Hello! How can I help you today?", 'ai'), 500);
   };
   
@@ -256,6 +262,19 @@ export default function CallSimulator() {
             color={connectionStatus === 'connected' ? 'success' : connectionStatus === 'http_fallback' ? 'warning' : 'default'}
             size="small"
           />
+          {currentCall && (
+            <Chip 
+              label={`MODE: ${autonomyMode}`} 
+              color={autonomyMode === 'AUTONOMOUS' ? 'success' : 'error'}
+              variant="outlined"
+              size="small"
+              sx={{ 
+                fontWeight: 'bold', 
+                borderWidth: 2,
+                animation: autonomyMode === 'GUARDED' ? 'blink 1s infinite' : 'none'
+              }}
+            />
+          )}
         </Box>
         {currentCall && (
           <Button variant="outlined" color="error" onClick={endCall}>
@@ -326,6 +345,10 @@ export default function CallSimulator() {
         @keyframes pulse {
           0%, 100% { opacity: 1; }
           50% { opacity: 0; }
+        }
+        @keyframes blink {
+          0%, 100% { opacity: 1; border-color: #ef4444; }
+          50% { opacity: 0.5; border-color: transparent; }
         }
       `}</style>
     </Container>

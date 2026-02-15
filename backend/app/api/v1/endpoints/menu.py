@@ -32,6 +32,7 @@ class MenuItemUpdate(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     price: Optional[float] = None
+    unit: Optional[str] = None
     category: Optional[str] = None
     available: Optional[bool] = None
     dietary_info: Optional[dict] = None

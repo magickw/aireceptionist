@@ -1,8 +1,8 @@
 'use client';
 
-import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
-import api from '@/services/api';
+import api, { BACKEND_URL } from '@/services/api';
 
 interface User {
   id: number;
@@ -60,6 +60,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Keepalive ping to prevent backend cold starts (Render free tier spins down after 15 min)
+  const pingBackend = useCallback(() => {
+    fetch(`${BACKEND_URL}/health`, { method: 'GET', mode: 'no-cors' }).catch(() => {
+      // Silently ignore errors - this is just a keepalive ping
+    });
+  }, []);
+
   useEffect(() => {
     const token = localStorage.getItem('token');
     if (token) {
@@ -68,6 +75,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setIsLoading(false);
     }
   }, []);
+
+  // Set up keepalive ping every 4 minutes when user is authenticated
+  useEffect(() => {
+    if (!user) return;
+
+    // Ping immediately when user logs in
+    pingBackend();
+
+    // Then ping every 4 minutes (well under Render's 15-min cold start threshold)
+    const interval = setInterval(pingBackend, 4 * 60 * 1000);
+
+    return () => clearInterval(interval);
+  }, [user, pingBackend]);
 
   const login = async (token: string) => {
     localStorage.setItem('token', token);
