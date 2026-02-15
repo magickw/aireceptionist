@@ -40,6 +40,7 @@ const managementItems = [
   { label: 'Reports', href: '/reports', icon: 'assessment' },
   { label: 'Sentiment', href: '/sentiment', icon: 'sentiment' },
   { label: 'Churn Prediction', href: '/churn', icon: 'warning' },
+  { label: 'Pricing', href: '/pricing', icon: 'attach_money' },
 ];
 
 const aiItems = [
