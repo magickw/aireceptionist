@@ -581,6 +581,16 @@ async def send_http_message(
     selected_action = reasoning_result.get("selected_action", "")
     entities = reasoning_result.get("entities", {})
     
+    # Use extracted phone from entities if available, otherwise use session phone
+    extracted_phone = entities.get("customer_phone")
+    if extracted_phone:
+        customer_phone = extracted_phone
+    
+    # Also try to get customer name from entities
+    extracted_name = entities.get("customer_name")
+    if extracted_name:
+        customer_name = extracted_name
+    
     # Also check if the AI response mentions scheduling an appointment
     appointment_created = False
     
