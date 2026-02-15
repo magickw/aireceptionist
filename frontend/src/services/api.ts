@@ -1,11 +1,65 @@
-import axios from 'axios';
+import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://receptium.onrender.com';
 export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://receptium.onrender.com';
 
+// Extend config type to include retry count
+interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
+  __retryCount?: number;
+}
+
+// Configure axios with longer timeout and retry logic
 const api = axios.create({
   baseURL: `${BACKEND_URL}/api`,
+  timeout: 30000, // 30 second timeout for cold starts
+  timeoutErrorMessage: 'Server is starting up. Please try again...',
 });
+
+// Retry configuration
+const MAX_RETRIES = 3;
+const RETRY_DELAY = 2000; // 2 seconds between retries
+
+// Add retry interceptor for network errors
+api.interceptors.response.use(
+  (response) => response,
+  async (error: AxiosError) => {
+    const config = error.config as ExtendedAxiosRequestConfig | undefined;
+    
+    // Only retry on network errors, not on 401/403
+    if (!config) return Promise.reject(error);
+    
+    const isNetworkError = !error.response && (
+      error.code === 'ECONNABORTED' ||
+      error.message.includes('Network Error') ||
+      error.message.includes('timeout')
+    );
+    
+    // Don't retry auth errors
+    if (error.response?.status === 401 || error.response?.status === 403) {
+      return Promise.reject(error);
+    }
+    
+    // Retry logic for network errors
+    if (isNetworkError && !config.__retryCount) {
+      config.__retryCount = 0;
+    }
+    
+    if (isNetworkError && config.__retryCount !== undefined && config.__retryCount < MAX_RETRIES) {
+      config.__retryCount += 1;
+      const delay = RETRY_DELAY * config.__retryCount; // Exponential backoff
+      
+      console.log(`Retrying request (${config.__retryCount}/${MAX_RETRIES}) after ${delay}ms...`);
+      
+      return new Promise((resolve) => {
+        setTimeout(() => {
+          resolve(api(config));
+        }, delay);
+      });
+    }
+    
+    return Promise.reject(error);
+  }
+);
 
 if (typeof window !== 'undefined') {
   api.interceptors.request.use((config) => {
