@@ -91,7 +91,9 @@ class NovaReasoningEngine:
             "COLLECT_INFO",
             "RESCHEDULE_APPOINTMENT",
             "CANCEL_APPOINTMENT",
-            "TAKE_MESSAGE"
+            "TAKE_MESSAGE",
+            "PAYMENT_PROCESS",
+            "SEND_DIRECTIONS"
         ]
     
     async def reason(
@@ -281,7 +283,10 @@ When handling customer requests, always collect: {', '.join(required_info)}
     "customer_name": "<extracted_name_or_null>",
     "customer_phone": "<extracted_phone_or_null>",
     "urgency": "<low|medium|high>",
-    "issue_type": "<complaint_type_or_null>"
+    "issue_type": "<complaint_type_or_null>",
+    "payment_method": "<extracted_payment_method_or_null>",
+    "total_amount": "<extracted_amount_if_mentioned>",
+    "landmark": "<extracted_nearby_landmark_if_mentioned>"
   }},
   "selected_action": "<ONE_OF_AVAILABLE_ACTIONS>",
   "action_reasoning": "<Why this action was selected (2-3 sentences)>",
@@ -333,7 +338,9 @@ When handling customer requests, always collect: {', '.join(required_info)}
             "COLLECT_INFO": "Gather missing customer information",
             "RESCHEDULE_APPOINTMENT": "Modify existing appointment times",
             "CANCEL_APPOINTMENT": "Cancel scheduled appointments",
-            "TAKE_MESSAGE": "Record message for callback"
+            "TAKE_MESSAGE": "Record message for callback",
+            "PAYMENT_PROCESS": "Initiate secure payment collection",
+            "SEND_DIRECTIONS": "Provide business location and directions"
         }
         
         return "\n".join([

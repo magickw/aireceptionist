@@ -86,6 +86,11 @@ async def voice_websocket(
     }
     """
     session_id = f"session_{business_id}_{asyncio.get_event_loop().time()}"
+    # Track session state (like order items) for the duration of the WebSocket
+    ws_session = {
+        "order_items": [],
+        "created_at": datetime.utcnow()
+    }
     
     try:
         await manager.connect(websocket, session_id)
@@ -192,18 +197,32 @@ async def voice_websocket(
                                 break
                 
                 # Track order items in session
-                if order_items and session:
-                    if "order_items" not in session:
-                        session["order_items"] = []
-                    session["order_items"].extend(order_items)
+                if order_items:
+                    ws_session["order_items"].extend(order_items)
+                
+                # Handle specific actions from reasoning
+                selected_action = reasoning_result.get("selected_action")
+                
+                if selected_action == "SEND_DIRECTIONS":
+                    address = business_context.get("address", "our location")
+                    landmark = entities.get("landmark", "")
+                    landmark_text = f" near {landmark}" if landmark else ""
+                    agent_response = f"We are located at {address}{landmark_text}. {agent_response}"
+                
+                elif selected_action == "PAYMENT_PROCESS":
+                    total = sum(item["price"] for item in ws_session["order_items"]) if ws_session["order_items"] else 0
+                    if total > 0:
+                        agent_response = f"I've initiated a secure payment process for your total of ${total:.2f}. I'm sending a secure link to your phone now. {agent_response}"
+                    else:
+                        agent_response = f"I'd be happy to help with that payment. Could you please confirm what you'd like to pay for? {agent_response}"
                 
                 # Calculate total if customer asks about total cost
                 conversation_lower = content.lower()
-                if session and "order_items" in session and session["order_items"]:
+                if ws_session["order_items"]:
                     if "total" in conversation_lower or "cost me" in conversation_lower or "how much" in conversation_lower:
-                        total = sum(item["price"] for item in session["order_items"])
-                        items_list = ", ".join([item["name"] for item in session["order_items"]])
-                        if len(session["order_items"]) > 1:
+                        total = sum(item["price"] for item in ws_session["order_items"])
+                        items_list = ", ".join([item["name"] for item in ws_session["order_items"]])
+                        if len(ws_session["order_items"]) > 1:
                             agent_response = f"You ordered: {items_list}. Your total is ${total:.2f}. {agent_response}"
                 
                 # Stream the response in chunks
@@ -412,6 +431,7 @@ async def _get_business_context(business_id: int, db: Session = None) -> Dict[st
     return {
         "name": business.name,
         "type": business.type or "general",
+        "address": business.address or "Our business location",
         "services": services,
         "operating_hours": business.settings.get("operating_hours", "Mon-Fri 9AM-5PM") if business.settings else "Mon-Fri 9AM-5PM",
         "available_slots": business.settings.get("available_slots", ["Today 2PM", "Tomorrow 10AM"]) if business.settings else ["Today 2PM", "Tomorrow 10AM"],
@@ -694,6 +714,20 @@ async def send_http_message(
                 items_list = ", ".join([item["name"] for item in http_session["order_items"]])
                 if len(http_session["order_items"]) > 1:
                     agent_response = f"You ordered: {items_list}. Your total is ${total:.2f}. {agent_response}"
+
+    # Handle specific smart actions
+    selected_action = reasoning_result.get("selected_action", "")
+    if selected_action == "SEND_DIRECTIONS":
+        address = business_context.get("address", "our location")
+        landmark = entities.get("landmark", "")
+        landmark_text = f" near {landmark}" if landmark else ""
+        agent_response = f"We are located at {address}{landmark_text}. {agent_response}"
+    elif selected_action == "PAYMENT_PROCESS":
+        total = sum(item["price"] for item in http_session["order_items"]) if http_session and "order_items" in http_session else 0
+        if total > 0:
+            agent_response = f"I've initiated a secure payment process for your total of ${total:.2f}. I'm sending a secure link to your phone now. {agent_response}"
+        else:
+            agent_response = f"I'd be happy to help with that payment. Could you please confirm what you'd like to pay for? {agent_response}"
     
     # Add only agent_response event (frontend handles single message display)
     # Do NOT add text_chunk to avoid duplicates
