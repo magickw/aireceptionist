@@ -307,7 +307,8 @@ When handling customer requests, always collect: {', '.join(required_info)}
   "confidence": <0.0-1.0>,
   "entities": {{
     "service": "<extracted_service_or_null>",
-    "menu_item": "<if customer asks about menu item price, extract item name (e.g., fried rice, burger)>",
+    "menu_item": "<if customer orders or asks about a menu item, extract item name (e.g., Kung Pow Chicken, burger)>",
+    "quantity": "<number of items if specified, default 1>",
     "date": "<preferred_date_or_null>",
     "time": "<preferred_time_or_null>",
     "customer_name": "<extracted_name_or_null>",
@@ -347,11 +348,17 @@ When handling customer requests, always collect: {', '.join(required_info)}
 - If after hours → Suggest alternative or queue appointment
 - If customer angry (negative sentiment + high urgency) → Consider TRANSFER_HUMAN
 - **IMPORTANT - Appointment Booking**: Before confirming ANY appointment, you MUST collect: (1) customer's full name, (2) phone number. Use COLLECT_INFO action until you have both name AND phone, then use CREATE_APPOINTMENT
-- **IMPORTANT - Order Taking**: 
-  - When customer wants to order, use PLACE_ORDER action with menu_item entity
-  - Multiple items can be added - each PLACE_ORDER adds one item
-  - When customer confirms the order (says "yes", "that's all", "confirm"), use CONFIRM_ORDER
-  - Before confirming, ensure customer name and phone are collected for order tracking
+- **CRITICAL - Order Taking Flow**:
+  - When customer says they want to ORDER something (e.g., "I want to order...", "I'd like to get...", "Can I have..."):
+    1. Extract the menu_item entity from their request
+    2. Set selected_action to "PLACE_ORDER" 
+    3. The menu_item entity should be the exact name of what they want to order
+  - When customer CONFIRMS their order (e.g., "yes", "that's all", "confirm", "that's it", "place the order"):
+    1. Set selected_action to "CONFIRM_ORDER"
+    2. Only use CONFIRM_ORDER when the customer has explicitly confirmed they want to finalize
+  - Example: Customer says "I want to order kung pow chicken" → intent: "place_order", menu_item: "kung pow chicken", selected_action: "PLACE_ORDER"
+  - Example: Customer says "yes that's all" after ordering → selected_action: "CONFIRM_ORDER"
+  - Do NOT use PROVIDE_INFO for orders - use PLACE_ORDER or CONFIRM_ORDER
 
 ## Quality Guidelines:
 - Confidence should reflect how clearly the intent is expressed

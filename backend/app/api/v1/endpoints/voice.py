@@ -3,11 +3,13 @@ Voice WebSocket Endpoint
 Handles real-time voice communication with Nova 2 Sonic and reasoning
 """
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
-from typing import Dict, Any, AsyncGenerator
+from typing import Dict, Any, AsyncGenerator, Optional
 import json
 import asyncio
 import base64
-from datetime import datetime
+from datetime import datetime, timedelta
+from dateutil import parser as date_parser
+from dateutil.relativedelta import relativedelta
 from app.services.nova_reasoning import nova_reasoning
 from app.services.nova_sonic import nova_sonic, AudioBuffer, LatencyTracker
 from app.api.deps import get_current_business_id, get_current_active_user, get_db
@@ -15,6 +17,143 @@ from app.models.models import User, Appointment, Order, OrderItem, MenuItem, Cal
 from sqlalchemy.orm import Session
 
 router = APIRouter()
+
+
+def parse_natural_datetime(
+    date_str: Optional[str], 
+    time_str: Optional[str],
+    timezone_hint: str = "local"
+) -> Optional[datetime]:
+    """
+    Parse natural language date and time strings into a datetime object.
+    
+    Examples:
+    - date_str="tomorrow", time_str="2pm" -> tomorrow at 14:00
+    - date_str="next tuesday", time_str="10:30 am" -> next tuesday at 10:30
+    - date_str="today", time_str="3pm" -> today at 15:00
+    - date_str="march 15th", time_str="2pm" -> march 15 at 14:00
+    - date_str=None, time_str="2pm" -> today at 14:00
+    
+    Returns None if parsing fails completely.
+    """
+    now = datetime.now()
+    
+    # Build combined string
+    if date_str and time_str:
+        combined = f"{date_str} {time_str}"
+    elif date_str:
+        combined = date_str
+    elif time_str:
+        combined = f"today {time_str}"
+    else:
+        return None
+    
+    combined = combined.strip().lower()
+    
+    # Pre-process common patterns
+    # Handle "tomorrow" variations
+    if "tomorrow" in combined:
+        combined = combined.replace("tomorrow", "")
+        try:
+            parsed_time = date_parser.parse(combined.strip()) if combined.strip() else None
+            tomorrow = now + timedelta(days=1)
+            if parsed_time:
+                return tomorrow.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
+            return tomorrow.replace(hour=12, minute=0, second=0, microsecond=0)
+        except:
+            return now + timedelta(days=1)
+    
+    # Handle relative days like "in 2 days", "in 3 days"
+    import re
+    in_days_match = re.search(r'in (\d+) days?', combined)
+    if in_days_match:
+        days = int(in_days_match.group(1))
+        future_date = now + timedelta(days=days)
+        combined = combined.replace(in_days_match.group(0), "").strip()
+        if combined:
+            try:
+                parsed_time = date_parser.parse(combined)
+                return future_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
+            except:
+                pass
+        return future_date.replace(hour=12, minute=0, second=0, microsecond=0)
+    
+    # Handle "next [day]" patterns
+    next_day_match = re.search(r'next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)', combined)
+    if next_day_match:
+        day_name = next_day_match.group(1)
+        weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        target_weekday = weekdays.index(day_name)
+        current_weekday = now.weekday()
+        days_ahead = (target_weekday - current_weekday + 7) % 7
+        if days_ahead == 0:
+            days_ahead = 7  # Next week's same day
+        target_date = now + timedelta(days=days_ahead)
+        
+        # Try to extract time from remaining text
+        remaining = combined.replace(next_day_match.group(0), "").strip()
+        if remaining:
+            try:
+                parsed_time = date_parser.parse(remaining)
+                return target_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
+            except:
+                pass
+        return target_date.replace(hour=12, minute=0, second=0, microsecond=0)
+    
+    # Handle "this [day]" patterns
+    this_day_match = re.search(r'this (monday|tuesday|wednesday|thursday|friday|saturday|sunday)', combined)
+    if this_day_match:
+        day_name = this_day_match.group(1)
+        weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
+        target_weekday = weekdays.index(day_name)
+        current_weekday = now.weekday()
+        days_ahead = (target_weekday - current_weekday) % 7
+        if days_ahead < 0:
+            days_ahead += 7
+        target_date = now + timedelta(days=days_ahead)
+        
+        remaining = combined.replace(this_day_match.group(0), "").strip()
+        if remaining:
+            try:
+                parsed_time = date_parser.parse(remaining)
+                return target_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
+            except:
+                pass
+        return target_date.replace(hour=12, minute=0, second=0, microsecond=0)
+    
+    # Handle "today"
+    if "today" in combined:
+        remaining = combined.replace("today", "").strip()
+        if remaining:
+            try:
+                parsed_time = date_parser.parse(remaining)
+                return now.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
+            except:
+                pass
+        return now.replace(hour=12, minute=0, second=0, microsecond=0)
+    
+    # Try general dateutil parsing
+    try:
+        # Use fuzzy parsing to handle natural language
+        parsed = date_parser.parse(combined, fuzzy=True)
+        # If no year was specified and the date is in the past, assume next year
+        if parsed.year == now.year and parsed < now:
+            # Check if the parsed date seems like it should be in the future
+            if parsed.month < now.month or (parsed.month == now.month and parsed.day < now.day):
+                parsed = parsed.replace(year=now.year + 1)
+        return parsed
+    except Exception as e:
+        print(f"[Date Parser] Failed to parse '{combined}': {e}")
+    
+    # Final fallback - if only time was provided, use today
+    if time_str and not date_str:
+        try:
+            parsed_time = date_parser.parse(time_str)
+            return now.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
+        except:
+            pass
+    
+    return None
 
 
 class VoiceConnectionManager:
@@ -206,73 +345,64 @@ async def voice_websocket(
                 if entities.get("customer_phone"):
                     ws_session["customer_phone"] = entities.get("customer_phone")
                 
-                # If customer asked about pricing and we have menu info, include actual price
-                order_items = []
-                if menu_item and business_context.get("menu"):
-                    menu_lower = menu_item.lower()
-                    for item in business_context.get("menu", []):
-                        if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
-                            if item.get("price"):
-                                price_str = f"${item['price']:.2f}"
-                                order_items.append({"name": item["name"], "price": item["price"]})
-                                # Include price in response (only once)
-                                if "Our" not in agent_response:
-                                    unit_text = f" {item.get('unit', 'per item')}" if item.get('unit') and item.get('unit') != 'per item' else ''
-                                    agent_response = f"Our {item['name']} is {price_str}{unit_text}. {agent_response}"
-                                break
-                
-                # Track order items in session
-                if order_items:
-                    ws_session["order_items"].extend(order_items)
-                
                 # Handle specific actions from reasoning
                 selected_action = reasoning_result.get("selected_action")
+                menu_item = entities.get("menu_item") or entities.get("service")
+                quantity = entities.get("quantity", 1) if isinstance(entities.get("quantity"), int) else 1
                 
-                if selected_action == "SEND_DIRECTIONS":
+                # Detect if this is an order request based on intent or action
+                intent = reasoning_result.get("intent", "").lower()
+                is_order_intent = selected_action == "PLACE_ORDER" or "order" in intent or "place_order" in intent
+                
+                # Handle PLACE_ORDER action or detected order intent
+                if selected_action == "PLACE_ORDER" or (is_order_intent and menu_item):
+                    if menu_item and business_context.get("menu"):
+                        menu_lower = menu_item.lower()
+                        for item in business_context.get("menu", []):
+                            if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
+                                # Check if item already in order (avoid duplicates)
+                                existing = next((i for i in ws_session["order_items"] if i["name"] == item["name"]), None)
+                                if existing:
+                                    existing["quantity"] = existing.get("quantity", 1) + quantity
+                                else:
+                                    order_entry = {
+                                        "name": item["name"],
+                                        "price": item.get("price", 0),
+                                        "quantity": quantity,
+                                        "menu_item_id": item.get("id")
+                                    }
+                                    ws_session["order_items"].append(order_entry)
+                                
+                                # Build confirmation response
+                                total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
+                                agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like to add anything else, or shall I confirm your order?"
+                                break
+                
+                elif selected_action == "CONFIRM_ORDER":
+                    # Save the order to the database
+                    if ws_session["order_items"]:
+                        total = sum(item.get("price", 0) * item.get("quantity", 1) for item in ws_session["order_items"])
+                        items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in ws_session["order_items"]])
+                        agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}. Your order has been placed and will be ready shortly. Thank you!"
+                        
+                        # Store order info for later database persistence
+                        ws_session["order_confirmed"] = True
+                        ws_session["order_total"] = total
+                    else:
+                        agent_response = f"I don't see any items in your order yet. Would you like to order something?"
+                
+                elif selected_action == "SEND_DIRECTIONS":
                     address = business_context.get("address", "our location")
                     landmark = entities.get("landmark", "")
                     landmark_text = f" near {landmark}" if landmark else ""
                     agent_response = f"We are located at {address}{landmark_text}. {agent_response}"
                 
                 elif selected_action == "PAYMENT_PROCESS":
-                    total = sum(item["price"] for item in ws_session["order_items"]) if ws_session["order_items"] else 0
+                    total = sum(item.get("price", 0) * item.get("quantity", 1) for item in ws_session["order_items"]) if ws_session["order_items"] else 0
                     if total > 0:
                         agent_response = f"I've initiated a secure payment process for your total of ${total:.2f}. I'm sending a secure link to your phone now. {agent_response}"
                     else:
                         agent_response = f"I'd be happy to help with that payment. Could you please confirm what you'd like to pay for? {agent_response}"
-                
-                elif selected_action == "PLACE_ORDER":
-                    # Add item to the current order session
-                    menu_item_name = entities.get("menu_item") or entities.get("service")
-                    quantity = entities.get("quantity", 1)
-                    
-                    if menu_item_name and business_context.get("menu"):
-                        menu_lower = menu_item_name.lower()
-                        for item in business_context.get("menu", []):
-                            if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
-                                # Add to session order items
-                                order_entry = {
-                                    "name": item["name"],
-                                    "price": item.get("price", 0),
-                                    "quantity": quantity,
-                                    "menu_item_id": item.get("id")
-                                }
-                                ws_session["order_items"].append(order_entry)
-                                agent_response = f"Added {quantity}x {item['name']} to your order. {agent_response}"
-                                break
-                
-                elif selected_action == "CONFIRM_ORDER":
-                    # Save the order to the database
-                    if ws_session["order_items"]:
-                        total = sum(item["price"] * item.get("quantity", 1) for item in ws_session["order_items"])
-                        items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in ws_session["order_items"]])
-                        agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}. Your order number will be provided shortly. {agent_response}"
-                        
-                        # Store order info for later database persistence
-                        ws_session["order_confirmed"] = True
-                        ws_session["order_total"] = total
-                    else:
-                        agent_response = f"I don't see any items in your order yet. Would you like to order something? {agent_response}"
                 
                 elif selected_action == "HUMAN_INTERVENTION":
                     # Send intervention request event
@@ -285,15 +415,6 @@ async def voice_websocket(
                             "risk": reasoning_result.get("escalation_risk")
                         }
                     })
-                
-                # Calculate total if customer asks about total cost
-                conversation_lower = content.lower()
-                if ws_session["order_items"]:
-                    if "total" in conversation_lower or "cost me" in conversation_lower or "how much" in conversation_lower:
-                        total = sum(item["price"] for item in ws_session["order_items"])
-                        items_list = ", ".join([item["name"] for item in ws_session["order_items"]])
-                        if len(ws_session["order_items"]) > 1:
-                            agent_response = f"You ordered: {items_list}. Your total is ${total:.2f}. {agent_response}"
                 
                 # Stream the response in chunks
                 chunk_size = 20  # characters per chunk
@@ -962,51 +1083,75 @@ async def send_http_message(
         time_str = entities.get("time")
         service = entities.get("service")
         
-        # Try to parse date and time
-        if date_str or time_str:
+        # Use the natural language date parser
+        appointment_time = parse_natural_datetime(date_str, time_str)
+        
+        if appointment_time:
             try:
-                # Combine date and time strings
-                datetime_str = f"{date_str or 'today'} {time_str or '12:00'}"
-                # Try to parse - this is simplified, in production use more robust parsing
-                appointment_time = datetime.now()  # Default to now if parsing fails
+                # Use calendar service for conflict checking and booking
+                from app.services.calendar_service import calendar_service
+                from datetime import timedelta
                 
-                # Create appointment
-                appointment = Appointment(
+                end_time = appointment_time + timedelta(hours=1)  # Default 1-hour appointment
+                
+                result = await calendar_service.check_and_book_appointment(
                     business_id=business_id,
+                    start_time=appointment_time,
+                    end_time=end_time,
                     customer_name=customer_name,
                     customer_phone=customer_phone,
-                    appointment_time=appointment_time,
-                    service_type=service or "General Checkup",
-                    status="scheduled"
+                    service=service or "General Checkup",
+                    db=db
                 )
-                db.add(appointment)
-                db.commit()
-                db.refresh(appointment)
-                print(f"[Voice API] Created appointment {appointment.id} for {customer_phone}")
-                appointment_created = True
+                
+                if result["success"]:
+                    print(f"[Voice API] Created appointment {result['appointment'].id} for {customer_phone} at {appointment_time}")
+                    if result.get("calendar_event"):
+                        print(f"[Voice API] Synced to calendar: {result['calendar_event'].get('id')}")
+                    appointment_created = True
+                else:
+                    # Conflict detected - update agent response
+                    conflicts = result.get("conflicts", [])
+                    print(f"[Voice API] Appointment conflict: {conflicts}")
+                    # Add conflict info to response
+                    agent_response = f"I'm sorry, that time slot is not available. {agent_response}"
+            except Exception as e:
+                print(f"[Voice API] Failed to create appointment: {e}")
+        else:
+            # Couldn't parse date - ask for clarification
+            print(f"[Voice API] Could not parse date/time: date='{date_str}', time='{time_str}'")
+    
+    # Also check if AI response mentions scheduling (fallback) - but only if we have a time
+    if not appointment_created and ("scheduled" in agent_response.lower() or "booked" in agent_response.lower()):
+        # Try to extract date/time from the response or entities
+        date_str = entities.get("date")
+        time_str = entities.get("time")
+        appointment_time = parse_natural_datetime(date_str, time_str)
+        
+        if appointment_time:
+            try:
+                from app.services.calendar_service import calendar_service
+                from datetime import timedelta
+                
+                end_time = appointment_time + timedelta(hours=1)
+                
+                result = await calendar_service.check_and_book_appointment(
+                    business_id=business_id,
+                    start_time=appointment_time,
+                    end_time=end_time,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                    service=entities.get("service", "Checkup"),
+                    db=db
+                )
+                
+                if result["success"]:
+                    print(f"[Voice API] Created appointment from AI confirmation at {appointment_time}")
+            except Exception as e:
+                print(f"[Voice API] Failed to create appointment: {e}")
             except Exception as e:
                 print(f"[Voice API] Failed to create appointment: {e}")
                 db.rollback()
-    
-    # Also check if AI response mentions scheduling (fallback)
-    if not appointment_created and ("scheduled" in agent_response.lower() or "booked" in agent_response.lower()):
-        # AI confirmed appointment in response - create it
-        try:
-            appointment = Appointment(
-                business_id=business_id,
-                customer_name=customer_name,
-                customer_phone=customer_phone,
-                appointment_time=datetime.now(),
-                service_type="Checkup",
-                status="scheduled"
-            )
-            db.add(appointment)
-            db.commit()
-            db.refresh(appointment)
-            print(f"[Voice API] Created appointment {appointment.id} from AI confirmation")
-        except Exception as e:
-            print(f"[Voice API] Failed to create appointment: {e}")
-            db.rollback()
     
     # Add to conversation history
     session["conversation_history"].append({

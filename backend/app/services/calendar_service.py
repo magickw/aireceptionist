@@ -243,6 +243,356 @@ class CalendarService:
                 data = await response.json()
                 return data.get("items", [])
     
+    async def check_availability(
+        self,
+        integration: CalendarIntegration,
+        start_time: datetime,
+        end_time: datetime,
+        db: Session = None
+    ) -> Dict[str, Any]:
+        """
+        Check if a time slot is available using Google Calendar freebusy API.
+        
+        Returns:
+            {
+                "available": bool,
+                "conflicts": List of conflicting events,
+                "busy_periods": List of busy time ranges
+            }
+        """
+        # Check token validity
+        if integration.token_expires_at and integration.token_expires_at < datetime.utcnow():
+            if not await self.refresh_google_token(integration, db):
+                raise Exception("Failed to refresh calendar token")
+        
+        headers = {
+            "Authorization": f"Bearer {integration.access_token}",
+            "Content-Type": "application/json"
+        }
+        
+        # Use freebusy API for efficient availability checking
+        body = {
+            "timeMin": start_time.isoformat(),
+            "timeMax": end_time.isoformat(),
+            "items": [{"id": integration.calendar_id}]
+        }
+        
+        url = "https://www.googleapis.com/calendar/v3/freeBusy"
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, json=body, headers=headers) as response:
+                if response.status != 200:
+                    # Fallback to checking events directly
+                    return await self._check_availability_via_events(
+                        integration, start_time, end_time, db
+                    )
+                
+                data = await response.json()
+                calendars = data.get("calendars", {})
+                calendar_data = calendars.get(integration.calendar_id, {})
+                busy_periods = calendar_data.get("busy", [])
+                
+                # Check if any busy period overlaps with our requested slot
+                conflicts = []
+                for period in busy_periods:
+                    busy_start = datetime.fromisoformat(period["start"].replace("Z", "+00:00"))
+                    busy_end = datetime.fromisoformat(period["end"].replace("Z", "+00:00"))
+                    
+                    # Check for overlap
+                    if start_time < busy_end and end_time > busy_start:
+                        conflicts.append({
+                            "start": busy_start.isoformat(),
+                            "end": busy_end.isoformat()
+                        })
+                
+                return {
+                    "available": len(conflicts) == 0,
+                    "conflicts": conflicts,
+                    "busy_periods": busy_periods
+                }
+    
+    async def _check_availability_via_events(
+        self,
+        integration: CalendarIntegration,
+        start_time: datetime,
+        end_time: datetime,
+        db: Session = None
+    ) -> Dict[str, Any]:
+        """Fallback availability check using events list"""
+        events = await self.get_calendar_events(integration, start_time, end_time, db)
+        
+        conflicts = []
+        for event in events:
+            event_start = event.get("start", {})
+            event_end = event.get("end", {})
+            
+            # Parse event times
+            if "dateTime" in event_start:
+                evt_start = datetime.fromisoformat(event_start["dateTime"].replace("Z", "+00:00"))
+                evt_end = datetime.fromisoformat(event_end["dateTime"].replace("Z", "+00:00"))
+                
+                # Check for overlap
+                if start_time < evt_end and end_time > evt_start:
+                    conflicts.append({
+                        "start": evt_start.isoformat(),
+                        "end": evt_end.isoformat(),
+                        "summary": event.get("summary", "Busy")
+                    })
+        
+        return {
+            "available": len(conflicts) == 0,
+            "conflicts": conflicts,
+            "busy_periods": []
+        }
+    
+    async def get_available_slots(
+        self,
+        integration: CalendarIntegration,
+        date: datetime,
+        duration_minutes: int = 60,
+        business_hours: tuple = (9, 17),
+        db: Session = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Get available time slots for a given date.
+        
+        Args:
+            integration: Calendar integration
+            date: The date to check
+            duration_minutes: Duration of each slot
+            business_hours: Tuple of (start_hour, end_hour) in 24h format
+            db: Database session
+        
+        Returns:
+            List of available slots with start/end times
+        """
+        # Define the time range for the day
+        day_start = date.replace(hour=business_hours[0], minute=0, second=0, microsecond=0)
+        day_end = date.replace(hour=business_hours[1], minute=0, second=0, microsecond=0)
+        
+        # Get busy periods for the day
+        availability = await self.check_availability(integration, day_start, day_end, db)
+        busy_periods = availability.get("conflicts", [])
+        
+        # Generate potential slots
+        slots = []
+        current = day_start
+        while current + timedelta(minutes=duration_minutes) <= day_end:
+            slot_start = current
+            slot_end = current + timedelta(minutes=duration_minutes)
+            
+            # Check if slot conflicts with any busy period
+            is_available = True
+            for busy in busy_periods:
+                busy_start = datetime.fromisoformat(busy["start"].replace("Z", "+00:00").replace("+00:00", ""))
+                busy_end = datetime.fromisoformat(busy["end"].replace("Z", "+00:00").replace("+00:00", ""))
+                
+                if slot_start < busy_end and slot_end > busy_start:
+                    is_available = False
+                    break
+            
+            if is_available:
+                slots.append({
+                    "start": slot_start.isoformat(),
+                    "end": slot_end.isoformat(),
+                    "display": slot_start.strftime("%I:%M %p")
+                })
+            
+            current += timedelta(minutes=30)  # 30-minute increments
+        
+        return slots
+    
+    def check_db_conflicts(
+        self,
+        business_id: int,
+        start_time: datetime,
+        end_time: datetime,
+        db: Session,
+        exclude_appointment_id: int = None
+    ) -> List[Dict[str, Any]]:
+        """
+        Check for conflicting appointments in the local database.
+        
+        Returns list of conflicting appointments.
+        """
+        from app.models.models import Appointment
+        
+        query = db.query(Appointment).filter(
+            Appointment.business_id == business_id,
+            Appointment.status.in_(["scheduled", "confirmed"]),
+            Appointment.appointment_time < end_time,
+            Appointment.appointment_time >= start_time - timedelta(hours=2)  # Buffer for appointment duration
+        )
+        
+        if exclude_appointment_id:
+            query = query.filter(Appointment.id != exclude_appointment_id)
+        
+        conflicts = []
+        for appt in query.all():
+            # Estimate end time (default 1 hour if not stored)
+            appt_end = appt.appointment_time + timedelta(hours=1)
+            if start_time < appt_end and end_time > appt.appointment_time:
+                conflicts.append({
+                    "id": appt.id,
+                    "customer_name": appt.customer_name,
+                    "start": appt.appointment_time.isoformat(),
+                    "end": appt_end.isoformat(),
+                    "service": appt.service_type
+                })
+        
+        return conflicts
+    
+    async def sync_appointment_to_calendar(
+        self,
+        appointment_id: int,
+        db: Session
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Sync an appointment to the connected calendar.
+        
+        This should be called after an appointment is created in the database.
+        
+        Returns:
+            The created calendar event or None if no calendar connected.
+        """
+        from app.models.models import Appointment
+        
+        appointment = db.query(Appointment).filter(Appointment.id == appointment_id).first()
+        if not appointment:
+            return None
+        
+        # Get calendar integration for this business
+        integration = db.query(CalendarIntegration).filter(
+            CalendarIntegration.business_id == appointment.business_id,
+            CalendarIntegration.status == "active"
+        ).first()
+        
+        if not integration:
+            return None
+        
+        # Calculate end time (default 1 hour)
+        end_time = appointment.appointment_time + timedelta(hours=1)
+        
+        # Create event
+        summary = f"{appointment.service_type or 'Appointment'} - {appointment.customer_name}"
+        description = f"""
+Appointment Details:
+- Customer: {appointment.customer_name}
+- Phone: {appointment.customer_phone}
+- Service: {appointment.service_type or 'General'}
+
+Booked via AI Receptionist
+        """.strip()
+        
+        try:
+            event = await self.create_calendar_event(
+                integration=integration,
+                summary=summary,
+                description=description,
+                start_time=appointment.appointment_time,
+                end_time=end_time,
+                attendees=None,
+                db=db
+            )
+            
+            # Store the calendar event ID with the appointment if we had such a field
+            # For now, just return the event
+            return event
+            
+        except Exception as e:
+            print(f"[Calendar Service] Failed to sync appointment: {e}")
+            return None
+    
+    async def check_and_book_appointment(
+        self,
+        business_id: int,
+        start_time: datetime,
+        end_time: datetime,
+        customer_name: str,
+        customer_phone: str,
+        service: str,
+        db: Session
+    ) -> Dict[str, Any]:
+        """
+        Check availability and book an appointment if the slot is free.
+        
+        This combines conflict checking and appointment creation for convenience.
+        
+        Returns:
+            {
+                "success": bool,
+                "appointment": Appointment or None,
+                "calendar_event": dict or None,
+                "conflicts": list,
+                "message": str
+            }
+        """
+        from app.models.models import Appointment
+        
+        # Check local database conflicts first
+        db_conflicts = self.check_db_conflicts(business_id, start_time, end_time, db)
+        
+        if db_conflicts:
+            return {
+                "success": False,
+                "appointment": None,
+                "calendar_event": None,
+                "conflicts": db_conflicts,
+                "message": "This time slot conflicts with an existing appointment."
+            }
+        
+        # Check calendar conflicts if integration exists
+        integration = db.query(CalendarIntegration).filter(
+            CalendarIntegration.business_id == business_id,
+            CalendarIntegration.status == "active"
+        ).first()
+        
+        calendar_conflicts = []
+        if integration:
+            try:
+                availability = await self.check_availability(integration, start_time, end_time, db)
+                if not availability.get("available"):
+                    calendar_conflicts = availability.get("conflicts", [])
+                    return {
+                        "success": False,
+                        "appointment": None,
+                        "calendar_event": None,
+                        "conflicts": calendar_conflicts,
+                        "message": "This time slot is not available in the calendar."
+                    }
+            except Exception as e:
+                print(f"[Calendar Service] Could not check calendar availability: {e}")
+                # Continue anyway - local DB check passed
+        
+        # Create the appointment
+        appointment = Appointment(
+            business_id=business_id,
+            customer_name=customer_name,
+            customer_phone=customer_phone,
+            appointment_time=start_time,
+            service_type=service,
+            status="scheduled"
+        )
+        db.add(appointment)
+        db.commit()
+        db.refresh(appointment)
+        
+        # Sync to external calendar
+        calendar_event = None
+        if integration:
+            try:
+                calendar_event = await self.sync_appointment_to_calendar(appointment.id, db)
+            except Exception as e:
+                print(f"[Calendar Service] Could not sync to calendar: {e}")
+        
+        return {
+            "success": True,
+            "appointment": appointment,
+            "calendar_event": calendar_event,
+            "conflicts": [],
+            "message": f"Appointment scheduled for {start_time.strftime('%B %d at %I:%M %p')}"
+        }
+    
     def list_integrations(
         self,
         business_id: int,
