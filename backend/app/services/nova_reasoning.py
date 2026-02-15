@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Any
 from datetime import datetime
 from app.core.config import settings
 from app.services.knowledge_base import knowledge_base_service
+from app.services.business_templates import BusinessTypeTemplate
 
 
 class NovaReasoningEngine:
@@ -138,6 +139,13 @@ class NovaReasoningEngine:
 **Use this menu information to help customers with orders, answer pricing questions, and make recommendations.**
 """
         
+        # Get business type template for specialized behavior
+        business_type = business_context.get('type', 'general')
+        template_prompt = BusinessTypeTemplate.get_template_prompt(business_type)
+        
+        # Get required info fields for this business type
+        required_info = BusinessTypeTemplate.get_required_info(business_type)
+        
         prompt = f"""
 You are Nova 2 Lite, the reasoning core of an autonomous business operations agent.
 
@@ -148,11 +156,16 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
 
 ## Business Context:
 - Business Name: {business_context.get('name', 'Unknown')}
-- Business Type: {business_context.get('type', 'general')}
+- Business Type: {business_type.title()}
 - Services: {', '.join(business_context.get('services', []))}
 - Operating Hours: {business_context.get('operating_hours', 'Not specified')}
 - Available Slots: {', '.join(business_context.get('available_slots', []))}
 {menu_section}
+
+## Required Information to Collect:
+When handling customer requests, always collect: {', '.join(required_info)}
+
+{template_prompt}
 
 ## Customer Context:
 - Name: {customer_context.get('name', 'Unknown')}

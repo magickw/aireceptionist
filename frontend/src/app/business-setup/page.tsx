@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useState, useEffect } from 'react';
-import { Container, Typography, Box, TextField, Button, Card, CardContent, LinearProgress, Grid, Chip, IconButton, Alert } from '@mui/material';
+import { Container, Typography, Box, TextField, Button, Card, CardContent, LinearProgress, Grid, Chip, IconButton, Alert, FormControl, InputLabel, Select, MenuItem } from '@mui/material';
 import AddIcon from '@mui/icons-material/Add';
 import DeleteIcon from '@mui/icons-material/Delete';
 import api from '@/services/api';
@@ -13,6 +13,18 @@ interface OperatingHours {
 interface BusinessSettings {
   services: string[];
 }
+
+const BUSINESS_TYPES = [
+  { value: 'general', label: 'General Business' },
+  { value: 'restaurant', label: 'Restaurant' },
+  { value: 'hotel', label: 'Hotel' },
+  { value: 'dental', label: 'Dental Clinic' },
+  { value: 'medical', label: 'Medical Clinic' },
+  { value: 'law_firm', label: 'Law Firm' },
+  { value: 'salon', label: 'Salon / Spa' },
+  { value: 'retail', label: 'Retail Store' },
+  { value: 'auto_repair', label: 'Auto Repair' },
+];
 
 export default function BusinessSetupPage() {
   const [profile, setProfile] = useState<{
@@ -133,7 +145,18 @@ export default function BusinessSetupPage() {
               <TextField fullWidth margin="normal" label="Business Name" value={profile.name} onChange={(e) => setProfile(p => ({...p, name: e.target.value}))} />
             </Grid>
             <Grid item xs={12} sm={6}>
-              <TextField fullWidth margin="normal" label="Business Type" value={profile.type} onChange={(e) => setProfile(p => ({...p, type: e.target.value}))} placeholder="e.g., dental, medical, legal" />
+              <FormControl fullWidth margin="normal">
+                            <InputLabel>Business Type</InputLabel>
+                            <Select
+                              value={profile.type}
+                              label="Business Type"
+                              onChange={(e) => setProfile(p => ({...p, type: e.target.value}))}
+                            >
+                              {BUSINESS_TYPES.map((bt) => (
+                                <MenuItem key={bt.value} value={bt.value}>{bt.label}</MenuItem>
+                              ))}
+                            </Select>
+                          </FormControl>
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField fullWidth margin="normal" label="Phone Number" value={profile.phone} onChange={(e) => setProfile(p => ({...p, phone: e.target.value}))} />
