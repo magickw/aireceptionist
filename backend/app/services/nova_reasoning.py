@@ -11,6 +11,61 @@ from app.services.knowledge_base import knowledge_base_service
 from app.services.business_templates import BusinessTypeTemplate
 
 
+
+
+async def get_training_context(business_id: int, db, conversation: str = "") -> str:
+    """Get relevant training scenarios for the current conversation."""
+    if not db or not business_id:
+        return ""
+    
+    try:
+        from app.models.models import AITrainingScenario
+        
+        scenarios = db.query(AITrainingScenario).filter(
+            AITrainingScenario.business_id == business_id,
+            AITrainingScenario.is_active == True
+        ).all()
+        
+        if not scenarios:
+            return ""
+        
+        conversation_lower = conversation.lower()
+        relevant = []
+        
+        for scenario in scenarios:
+            keywords = scenario.user_input.lower().split()
+            match_count = sum(1 for kw in keywords if len(kw) > 3 and kw in conversation_lower)
+            
+            if match_count > 0 or not conversation:
+                relevant.append({
+                    "user_input": scenario.user_input,
+                    "expected_response": scenario.expected_response,
+                    "category": scenario.category,
+                    "match_score": match_count
+                })
+        
+        if not relevant:
+            relevant = [
+                {"user_input": s.user_input, "expected_response": s.expected_response, "category": s.category, "match_score": 0}
+                for s in scenarios[:5]
+            ]
+        
+        relevant.sort(key=lambda x: x["match_score"], reverse=True)
+        
+        training_text = "\n\n## Training Examples (follow these response patterns):\n"
+        for i, r in enumerate(relevant[:5], 1):
+            training_text += f"\nExample {i} ({r['category']}):\n"
+            training_text += f"Customer: {r['user_input']}\n"
+            response_preview = r['expected_response'][:150] + "..." if len(r['expected_response']) > 150 else r['expected_response']
+            training_text += f"Response: {response_preview}\n"
+        
+        return training_text
+        
+    except Exception as e:
+        print(f"Error fetching training context: {e}")
+        return ""
+
+
 class NovaReasoningEngine:
     """
     Nova 2 Lite-powered reasoning engine for autonomous business operations.
@@ -72,7 +127,20 @@ class NovaReasoningEngine:
             except Exception as e:
                 print(f"Knowledge base lookup failed: {e}")
         
-        system_prompt = self._build_system_prompt(business_context, customer_context, knowledge_context)
+        # Get training context
+        training_context = ""
+        if db and business_context.get("business_id"):
+            try:
+                from app.services.nova_reasoning import get_training_context
+                training_context = await get_training_context(
+                    business_id=business_context.get("business_id"),
+                    db=db,
+                    conversation=conversation
+                )
+            except Exception as e:
+                print(f"Training context lookup failed: {e}")
+        
+        system_prompt = self._build_system_prompt(business_context, customer_context, knowledge_context, training_context)
         
         messages = [
             {"role": "user", "content": [{"text": conversation}]}
@@ -99,7 +167,8 @@ class NovaReasoningEngine:
         self,
         business_context: Dict[str, Any],
         customer_context: Dict[str, Any],
-        knowledge_context: str = ""
+        knowledge_context: str = "",
+        training_context: str = ""
     ) -> str:
         """
         Build comprehensive system prompt with all context.
@@ -176,6 +245,7 @@ When handling customer requests, always collect: {', '.join(required_info)}
 - Preferred Services: {', '.join(customer_context.get('preferred_services', []))}
 - Previous Complaints: {customer_context.get('complaint_count', 0)}
 {kb_section}
+{training_context}
 
 ## Response Format (strict JSON):
 {{
