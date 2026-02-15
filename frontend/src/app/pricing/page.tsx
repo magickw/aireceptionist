@@ -18,10 +18,26 @@ interface PricingItem {
   name: string;
   description: string;
   price: number | null;
+  unit: string;
   category: string;
   available: boolean;
   is_active: boolean;
 }
+
+const UNITS = [
+  { value: 'per item', label: 'Per Item' },
+  { value: 'per piece', label: 'Per Piece' },
+  { value: 'per serving', label: 'Per Serving' },
+  { value: 'per lb', label: 'Per Pound (lb)' },
+  { value: 'per kg', label: 'Per Kilogram (kg)' },
+  { value: 'per hour', label: 'Per Hour' },
+  { value: 'per day', label: 'Per Day' },
+  { value: 'per ton', label: 'Per Ton' },
+  { value: 'per meter', label: 'Per Meter' },
+  { value: 'per roll', label: 'Per Roll' },
+  { value: 'per box', label: 'Per Box' },
+  { value: 'per pack', label: 'Per Pack' },
+];
 
 const CATEGORIES = [
   'Main Course', 'Appetizers', 'Desserts', 'Drinks',
@@ -40,6 +56,7 @@ export default function PricingPage() {
     name: '',
     description: '',
     price: null,
+    unit: 'per item',
     category: 'Services',
     available: true,
     is_active: true
@@ -201,6 +218,7 @@ export default function PricingPage() {
                 <TableCell>{item.description || '-'}</TableCell>
                 <TableCell align="right" sx={{ fontWeight: 'bold', color: 'primary.main' }}>
                   {item.price ? `$${item.price.toFixed(2)}` : '-'}
+                  {item.unit && <Typography variant="caption" display="block" color="text.secondary">{item.unit}</Typography>}
                 </TableCell>
                 <TableCell align="center">
                   <Chip 
@@ -246,7 +264,7 @@ export default function PricingPage() {
                 placeholder="e.g., Kung Pow Chicken, Haircut, Legal Consultation"
               />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} sm={4}>
               <TextField
                 fullWidth
                 label="Price"
@@ -256,7 +274,21 @@ export default function PricingPage() {
                 onChange={(e) => setFormData({ ...formData, price: e.target.value ? parseFloat(e.target.value) : null })}
               />
             </Grid>
-            <Grid item xs={12} sm={6}>
+            <Grid item xs={12} sm={4}>
+              <FormControl fullWidth>
+                <InputLabel>Unit</InputLabel>
+                <Select
+                  value={formData.unit}
+                  label="Unit"
+                  onChange={(e) => setFormData({ ...formData, unit: e.target.value })}
+                >
+                  {UNITS.map(u => (
+                    <MenuItem key={u.value} value={u.value}>{u.label}</MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            <Grid item xs={12} sm={4}>
               <FormControl fullWidth>
                 <InputLabel>Category</InputLabel>
                 <Select

@@ -212,7 +212,8 @@ async def test_input(
                 if item.get("price"):
                     price_str = f"${item['price']:.2f}"
                     suggested = result.get("suggested_response", "")
-                    result["suggested_response"] = f"Our {item['name']} is {price_str}. {suggested}"
+                    unit_text = f" {item.get('unit', 'per item')}" if item.get('unit') and item.get('unit') != 'per item' else ''
+                    result["suggested_response"] = f"Our {item['name']} is {price_str}{unit_text}. {suggested}"
                     break
     
     return result

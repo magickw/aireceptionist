@@ -63,6 +63,7 @@ class MenuItem(Base):
     name = Column(String(255), nullable=False)
     description = Column(Text)
     price = Column(DECIMAL(10, 2))
+    unit = Column(String(50), default="per item")  # e.g., per item, per lb, per kg, per hour, per ton
     category = Column(String(100))  # e.g., Appetizers, Main Course, Drinks
     available = Column(Boolean, default=True)
     dietary_info = Column(JSON)  # e.g., {"vegetarian": true, "gluten_free": false}

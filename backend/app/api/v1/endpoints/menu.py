@@ -17,6 +17,7 @@ class MenuItemBase(BaseModel):
     name: str
     description: Optional[str] = None
     price: Optional[float] = None
+    unit: Optional[str] = "per item"  # e.g., per item, per lb, per kg, per hour, per ton
     category: Optional[str] = None
     available: bool = True
     dietary_info: Optional[dict] = None

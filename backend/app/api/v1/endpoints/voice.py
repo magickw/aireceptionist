@@ -187,7 +187,8 @@ async def voice_websocket(
                                 order_items.append({"name": item["name"], "price": item["price"]})
                                 # Include price in response (only once)
                                 if "Our" not in agent_response:
-                                    agent_response = f"Our {item['name']} is {price_str}. {agent_response}"
+                                    unit_text = f" {item.get('unit', 'per item')}" if item.get('unit') and item.get('unit') != 'per item' else ''
+                                agent_response = f"Our {item['name']} is {price_str}{unit_text}. {agent_response}"
                                 break
                 
                 # Track order items in session
@@ -673,7 +674,8 @@ async def send_http_message(
                     order_items.append({"name": item["name"], "price": item["price"]})
                     # Include price only once
                     if "Our" not in agent_response:
-                        agent_response = f"Our {item['name']} is {price_str}. {agent_response}"
+                        unit_text = f" {item.get('unit', 'per item')}" if item.get('unit') and item.get('unit') != 'per item' else ''
+                                agent_response = f"Our {item['name']} is {price_str}{unit_text}. {agent_response}"
                     break
     
     # Track order items in session
