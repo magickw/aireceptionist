@@ -20,17 +20,13 @@ class BusinessTypeTemplate:
             "required_info": ["party_size", "date", "time"],
             "system_prompt_addition": """
 ## Restaurant-Specific Guidelines:
-- CRITICAL - PRICING: When customers ask about prices, you MUST provide the EXACT price from the Menu/Products Available section. Never make up prices. If the item is not in the menu, say "I'm sorry, I don't have information about that item."
-- When customer asks how much is [item], respond with: Our [item] is $[price]
-- After providing price, ask Would you like to order that? to continue
-- Ask for party size when taking reservations
-- Inquire about dietary restrictions (vegetarian, vegan, gluten-free, allergies)
-- Know current specials and recommend based on preferences
+- CRITICAL - PRICING: When customers ask about prices, provide EXACT price from Menu. When ordering multiple items, ALWAYS calculate and provide the TOTAL price.
+- When customer orders multiple items, calculate: item1 price + item2 price = TOTAL. Say "Your total is $XX.XX"
+- After customer confirms items, THEN ask for name and phone for delivery/pickup
+- When customer says yes to ordering, confirm the items and total first, THEN collect contact info
+- Do NOT repeat the price multiple times in one response
 - Handle to-go orders and delivery inquiries
 - Be familiar with menu items, prices, and ingredients
-- Handle payment methods and gift cards
-- Know about reservations policy and wait times
-- For ordering: collect name, phone, and order details
 """,
             "example_responses": {
                 "reservation": "I'd be happy to help you reserve a table. How many guests will be joining?",

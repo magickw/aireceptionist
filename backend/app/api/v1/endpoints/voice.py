@@ -177,15 +177,33 @@ async def voice_websocket(
                 menu_item = entities.get("menu_item") or entities.get("service")
                 
                 # If customer asked about pricing and we have menu info, include actual price
+                order_items = []
                 if menu_item and business_context.get("menu"):
                     menu_lower = menu_item.lower()
                     for item in business_context.get("menu", []):
                         if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
                             if item.get("price"):
                                 price_str = f"${item['price']:.2f}"
-                                # Include price in response
-                                agent_response = f"Our {item['name']} is {price_str}. {agent_response}"
+                                order_items.append({"name": item["name"], "price": item["price"]})
+                                # Include price in response (only once)
+                                if "Our" not in agent_response:
+                                    agent_response = f"Our {item['name']} is {price_str}. {agent_response}"
                                 break
+                
+                # Track order items in session
+                if order_items and session:
+                    if "order_items" not in session:
+                        session["order_items"] = []
+                    session["order_items"].extend(order_items)
+                
+                # Calculate total if customer asks about total cost
+                conversation_lower = content.lower()
+                if session and "order_items" in session and session["order_items"]:
+                    if "total" in conversation_lower or "cost me" in conversation_lower or "how much" in conversation_lower:
+                        total = sum(item["price"] for item in session["order_items"])
+                        items_list = ", ".join([item["name"] for item in session["order_items"]])
+                        if len(session["order_items"]) > 1:
+                            agent_response = f"You ordered: {items_list}. Your total is ${total:.2f}. {agent_response}"
                 
                 # Stream the response in chunks
                 chunk_size = 20  # characters per chunk
@@ -506,6 +524,7 @@ class HTTPSessionStore:
             "call_type": call_type,
             "conversation_history": [],
             "events": [],
+            "order_items": [],  # Track items ordered
             "created_at": datetime.utcnow(),
             "active": True
         }
@@ -644,14 +663,35 @@ async def send_http_message(
     menu_item = entities.get("menu_item") or entities.get("service")
     
     # If customer asked about pricing and we have menu info, include actual price
+    order_items = []
     if menu_item and business_context.get("menu"):
         menu_lower = menu_item.lower()
         for item in business_context.get("menu", []):
             if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
                 if item.get("price"):
                     price_str = f"${item['price']:.2f}"
-                    agent_response = f"Our {item['name']} is {price_str}. {agent_response}"
+                    order_items.append({"name": item["name"], "price": item["price"]})
+                    # Include price only once
+                    if "Our" not in agent_response:
+                        agent_response = f"Our {item['name']} is {price_str}. {agent_response}"
                     break
+    
+    # Track order items in session
+    http_session = session_store.get_session(session_id)
+    if order_items and http_session:
+        if "order_items" not in http_session:
+            http_session["order_items"] = []
+        http_session["order_items"].extend(order_items)
+    
+    # Calculate total if customer asks about total cost
+    if message:
+        message_lower = message.text.lower() if hasattr(message, 'text') else str(message).lower()
+        if http_session and "order_items" in http_session and http_session["order_items"]:
+            if "total" in message_lower or "cost me" in message_lower or "how much" in message_lower:
+                total = sum(item["price"] for item in http_session["order_items"])
+                items_list = ", ".join([item["name"] for item in http_session["order_items"]])
+                if len(http_session["order_items"]) > 1:
+                    agent_response = f"You ordered: {items_list}. Your total is ${total:.2f}. {agent_response}"
     
     # Add only agent_response event (frontend handles single message display)
     # Do NOT add text_chunk to avoid duplicates
