@@ -235,9 +235,17 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
         
         # Extract the content from the response
         if "messages" in response_body and len(response_body["messages"]) > 0:
-            return response_body["messages"][0]["content"]
+            content = response_body["messages"][0].get("content", "")
+            # Handle both string and list content
+            if isinstance(content, list):
+                # Join text from all content blocks
+                return "".join([block.get("text", "") for block in content if block.get("text")])
+            return content
         elif "output" in response_body:
-            return response_body["output"].get("message", {}).get("content", {})
+            content = response_body["output"].get("message", {}).get("content", {})
+            if isinstance(content, list):
+                return "".join([block.get("text", "") for block in content if block.get("text")])
+            return content
         else:
             raise ValueError(f"Unexpected response format: {response_body}")
     
