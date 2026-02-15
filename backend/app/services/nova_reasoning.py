@@ -253,19 +253,41 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
         """
         Parse and validate the reasoning response.
         """
+        # Debug: print raw response
+        print(f"[Nova Reasoning] Raw response: {response[:500]}...")
+        
         try:
             # Try to extract JSON from the response
             if isinstance(response, dict):
                 result = response
             else:
-                # Find JSON in the response text
+                # First try to find JSON object in response
                 import re
+                
+                # Try to find JSON with nested objects first
                 json_match = re.search(r'\{[^{}]*\{[^{}]*\}[^{}]*\}', response)
                 if json_match:
-                    result = json.loads(json_match.group())
-                else:
-                    # Try parsing the whole response
+                    try:
+                        result = json.loads(json_match.group())
+                    except:
+                        json_match = None
+                
+                # If no nested JSON found, try finding any JSON object
+                if not json_match:
+                    json_match = re.search(r'\{[^{}]*\}', response)
+                    if json_match:
+                        try:
+                            result = json.loads(json_match.group())
+                        except:
+                            pass
+                
+                # Last resort: try parsing the whole response
+                if not json_match:
                     result = json.loads(response)
+            
+            # Check if result was actually defined
+            if 'result' not in locals():
+                raise ValueError("Could not parse JSON from response")
             
             # Validate required fields
             required_fields = [
