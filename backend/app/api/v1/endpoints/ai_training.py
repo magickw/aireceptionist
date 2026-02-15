@@ -172,6 +172,38 @@ async def test_all_scenarios(
     )
 
 
+@router.post("/test-input")
+async def test_input(
+    test_input: dict,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Test AI with custom input"""
+    from app.services.nova_reasoning import nova_reasoning
+    from app.api.v1.endpoints.voice import _get_business_context
+    
+    business_id = deps.get_current_business_id(current_user, db)
+    business_context = await _get_business_context(business_id, db)
+    customer_context = {
+        "name": "Test Customer",
+        "phone": "+1 (555) 123-4567",
+        "call_count": 0,
+        "last_contact": "Never",
+        "satisfaction_score": 5.0,
+        "preferred_services": [],
+        "complaint_count": 0
+    }
+    
+    result = await nova_reasoning.reason(
+        conversation=test_input.get("input", ""),
+        business_context=business_context,
+        customer_context=customer_context,
+        db=db
+    )
+    
+    return result
+
+
 @router.get("/categories")
 async def get_categories():
     """Get available training categories"""
