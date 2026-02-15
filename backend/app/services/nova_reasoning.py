@@ -254,7 +254,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
         Parse and validate the reasoning response.
         """
         # Debug: print raw response
-        print(f"[Nova Reasoning] Raw response: {response[:500]}...")
+        print(f"[Nova Reasoning] Raw response: {response[:1000]}...")
         
         try:
             # Try to extract JSON from the response
@@ -269,7 +269,9 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
                 if json_match:
                     try:
                         result = json.loads(json_match.group())
-                    except:
+                        print(f"[Nova Reasoning] Parsed nested JSON: {result}")
+                    except Exception as e:
+                        print(f"[Nova Reasoning] Failed to parse nested JSON: {e}")
                         json_match = None
                 
                 # If no nested JSON found, try finding any JSON object
@@ -278,12 +280,15 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
                     if json_match:
                         try:
                             result = json.loads(json_match.group())
-                        except:
+                            print(f"[Nova Reasoning] Parsed simple JSON: {result}")
+                        except Exception as e:
+                            print(f"[Nova Reasoning] Failed to parse simple JSON: {e}")
                             pass
                 
                 # Last resort: try parsing the whole response
                 if not json_match:
                     result = json.loads(response)
+                    print(f"[Nova Reasoning] Parsed full response as JSON")
             
             # Check if result was actually defined
             if 'result' not in locals():
@@ -292,11 +297,12 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
             # Validate required fields
             required_fields = [
                 "intent", "confidence", "entities", "selected_action",
-                "action_reasoning", "sentiment", "escalation_risk"
+                "action_reasoning", "sentiment", "escalation_risk", "suggested_response"
             ]
             
             for field in required_fields:
                 if field not in result:
+                    print(f"[Nova Reasoning] Missing field '{field}', using default")
                     result[field] = self._get_default_value(field)
             
             # Validate selected action
@@ -401,7 +407,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
             "sentiment": "neutral",
             "escalation_risk": 0.1,
             "memory_update": {"key": "none", "value": None},
-            "suggested_response": "I'm here to help. Could you please tell me more about what you need?"
+            "suggested_response": "I'd be happy to help you with that. Could you please provide more details?"
         }
         return defaults.get(field, None)
     
