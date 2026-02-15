@@ -72,9 +72,9 @@ export default function MenuManagementPage() {
       };
       
       if (editingItem?.id) {
-        await api.put(`/menu/${editingItem.id}`, { ...payload, business_id: 1 });
+        await api.put(`/menu/${editingItem.id}`, payload, { params: { business_id: 1 } });
       } else {
-        await api.post('/menu/', { ...payload, business_id: 1 });
+        await api.post('/menu/', payload, { params: { business_id: 1 } });
       }
       
       setDialogOpen(false);
