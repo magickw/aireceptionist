@@ -51,6 +51,28 @@ class Business(Base):
     integrations = relationship("Integration", back_populates="business")
     training_scenarios = relationship("AITrainingScenario", back_populates="business")
     appointments = relationship("Appointment", back_populates="business")
+    menu_items = relationship("MenuItem", back_populates="business")
+
+
+class MenuItem(Base):
+    """Menu items for restaurants and retail businesses"""
+    __tablename__ = "menu_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"))
+    name = Column(String(255), nullable=False)
+    description = Column(Text)
+    price = Column(DECIMAL(10, 2))
+    category = Column(String(100))  # e.g., Appetizers, Main Course, Drinks
+    available = Column(Boolean, default=True)
+    dietary_info = Column(JSON)  # e.g., {"vegetarian": true, "gluten_free": false}
+    image_url = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    business = relationship("Business", back_populates="menu_items")
+
 
 class CallSession(Base):
     __tablename__ = "call_sessions"

@@ -335,7 +335,7 @@ async def _get_business_context(business_id: int, db: Session = None) -> Dict[st
                 "available_slots": ["Today 2PM", "Tomorrow 10AM"]
             }
     
-    from app.models.models import Business
+    from app.models.models import Business, MenuItem
     
     business = db.query(Business).filter(Business.id == business_id).first()
     
@@ -346,7 +346,8 @@ async def _get_business_context(business_id: int, db: Session = None) -> Dict[st
             "type": "general",
             "services": ["Consultation"],
             "operating_hours": "Mon-Fri 9AM-5PM",
-            "available_slots": ["Today 2PM", "Tomorrow 10AM"]
+            "available_slots": ["Today 2PM", "Tomorrow 10AM"],
+            "menu": []
         }
     
     # Get services from business settings if available
@@ -354,12 +355,33 @@ async def _get_business_context(business_id: int, db: Session = None) -> Dict[st
     if not services:
         services = ["Consultation", "Service 1", "Service 2"]
     
+    # Get menu items if available
+    menu_items = db.query(MenuItem).filter(
+        MenuItem.business_id == business_id,
+        MenuItem.is_active == True,
+        MenuItem.available == True
+    ).all()
+    
+    menu = []
+    if menu_items:
+        menu = [
+            {
+                "name": item.name,
+                "description": item.description,
+                "price": float(item.price) if item.price else None,
+                "category": item.category,
+                "dietary_info": item.dietary_info
+            }
+            for item in menu_items
+        ]
+    
     return {
         "name": business.name,
         "type": business.type or "general",
         "services": services,
         "operating_hours": business.settings.get("operating_hours", "Mon-Fri 9AM-5PM") if business.settings else "Mon-Fri 9AM-5PM",
-        "available_slots": business.settings.get("available_slots", ["Today 2PM", "Tomorrow 10AM"]) if business.settings else ["Today 2PM", "Tomorrow 10AM"]
+        "available_slots": business.settings.get("available_slots", ["Today 2PM", "Tomorrow 10AM"]) if business.settings else ["Today 2PM", "Tomorrow 10AM"],
+        "menu": menu
     }
 
 

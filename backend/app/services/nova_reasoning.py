@@ -114,6 +114,30 @@ class NovaReasoningEngine:
 **Use this knowledge base information to answer customer questions accurately.**
 """
         
+        # Build menu context if available (for restaurants, retail, etc.)
+        menu_section = ""
+        menu = business_context.get('menu', [])
+        if menu:
+            menu_items_text = []
+            # Group by category
+            by_category = {}
+            for item in menu:
+                cat = item.get('category', 'Other')
+                if cat not in by_category:
+                    by_category[cat] = []
+                price_str = f"${item['price']:.2f}" if item.get('price') else "Price TBD"
+                by_category[cat].append(f"- {item['name']}: {price_str}" + (f" ({item.get('description', '')})" if item.get('description') else ""))
+            
+            for cat, items in by_category.items():
+                menu_items_text.append(f"\n### {cat}:\n" + "\n".join(items))
+            
+            menu_section = f"""
+- Menu/Products Available:
+{''.join(menu_items_text)}
+
+**Use this menu information to help customers with orders, answer pricing questions, and make recommendations.**
+"""
+        
         prompt = f"""
 You are Nova 2 Lite, the reasoning core of an autonomous business operations agent.
 
@@ -128,6 +152,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
 - Services: {', '.join(business_context.get('services', []))}
 - Operating Hours: {business_context.get('operating_hours', 'Not specified')}
 - Available Slots: {', '.join(business_context.get('available_slots', []))}
+{menu_section}
 
 ## Customer Context:
 - Name: {customer_context.get('name', 'Unknown')}
