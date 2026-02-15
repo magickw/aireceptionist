@@ -99,16 +99,19 @@ class NovaReasoningEngine:
         conversation: str,
         business_context: Dict[str, Any],
         customer_context: Dict[str, Any],
-        db=None
+        db=None,
+        multimodal_data: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         Main reasoning method - analyzes conversation and determines best action.
+        Supports multimodal data (images, documents).
         
         Args:
             conversation: Current conversation transcript
             business_context: Business information (type, services, hours, etc.)
             customer_context: Customer information (history, preferences, etc.)
             db: Database session for knowledge base lookup
+            multimodal_data: Optional data for multimodal analysis (e.g., {"type": "image", "bytes": "..."})
             
         Returns:
             Structured reasoning result with intent, entities, action, and metadata
@@ -142,8 +145,27 @@ class NovaReasoningEngine:
         
         system_prompt = self._build_system_prompt(business_context, customer_context, knowledge_context, training_context)
         
+        # Build multimodal message if data provided
+        content = [{"text": conversation}]
+        if multimodal_data:
+            if multimodal_data.get("type") == "image":
+                content.append({
+                    "image": {
+                        "format": multimodal_data.get("format", "png"),
+                        "source": {"bytes": multimodal_data.get("bytes")}
+                    }
+                })
+            elif multimodal_data.get("type") == "document":
+                content.append({
+                    "document": {
+                        "format": multimodal_data.get("format", "pdf"),
+                        "name": multimodal_data.get("name", "Document"),
+                        "source": {"bytes": multimodal_data.get("bytes")}
+                    }
+                })
+        
         messages = [
-            {"role": "user", "content": [{"text": conversation}]}
+            {"role": "user", "content": content}
         ]
         
         try:

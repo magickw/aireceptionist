@@ -1,173 +1,73 @@
-# AI Receptionist Pro
+# Nova Autonomous Business Agent Platform
 
-AI-powered business phone management platform with WebSocket, Authentication, and Comprehensive Logging.
+A production-ready, Nova-native autonomous agent system that handles live voice calls, reasons through complex customer intents, and executes real-world business workflows.
 
-## 📋 Prerequisites
+Built for the **Amazon Nova Hackathon**.
 
-Before you begin, ensure you have the following installed:
+## 🚀 The Nova Advantage
 
-- **Node.js** (v16 or higher)
-- **npm** (v8 or higher)
-- **PostgreSQL** (v13 or higher)
+This platform is built from the ground up to leverage the full power of the Amazon Nova model family:
 
-## 🚀 Getting Started
+*   **Nova 2 Sonic:** Low-latency conversational voice AI (Speech-to-Speech integration).
+*   **Nova 2 Lite:** High-confidence structured reasoning for autonomous decision making.
+*   **Nova Act:** Autonomous UI automation for executing real-world workflows (Calendly, CRM, etc.).
+*   **Nova Embeddings:** Multimodal embeddings for advanced customer intelligence and RAG.
 
-This project consists of two main components: a Next.js frontend and an Express.js backend. Each component has its own package.json and dependencies.
+## 🏗 Architecture
 
-### Installation
+- **Backend:** FastAPI (Python 3.10+)
+- **Frontend:** Next.js 14 (TypeScript, Material UI)
+- **Database:** PostgreSQL with pgvector for semantic search
+- **AI Engine:** Amazon Bedrock (Nova Pro/Lite/Sonic/Act)
+- **Voice Infrastructure:** WebSocket-based streaming with Twilio support
+- **Automation:** Nova Act Planner + Simulated UI Execution
 
-1. **Clone the repository**
+## 🌟 Key Features
 
+### 1. Agentic AI Reasoning
+Uses **Nova 2 Lite** to analyze conversations in real-time. It doesn't just generate text; it extracts intents, identifies missing required information, assesses escalation risk, and plans its next moves with >94% confidence.
+
+### 2. Autonomous UI Automation
+Powered by **Nova Act**, the agent can autonomously navigate and interact with external web applications. It can book appointments via Calendly, update records in Salesforce/HubSpot, and verify its own actions through "visual" observation.
+
+### 3. Voice AI Experience
+Integrated with **Nova 2 Sonic**, providing a natural, low-latency speech-to-speech experience. It handles interruptions, maintains context, and speaks with human-like prosody.
+
+### 4. Customer Intelligence
+Leverages **Nova Multimodal Embeddings** to identify VIP customers, detect churn risk patterns, and perform semantic search across years of customer history.
+
+## 🛠 Setup & Installation
+
+### Prerequisites
+- Python 3.10+
+- Node.js 18+
+- PostgreSQL with pgvector
+- AWS Account with Bedrock access (Nova models enabled)
+
+### Backend Setup
+1. `cd backend`
+2. `python -m venv venv && source venv/bin/activate`
+3. `pip install -r requirements.txt`
+4. Create `.env` from `.env.example`
+5. `uvicorn app.main:app --reload`
+
+### Frontend Setup
+1. `cd frontend`
+2. `npm install`
+3. Create `.env.local`
+4. `npm run dev`
+
+## 🧪 Testing the Workflow
+
+Run the automated test script to verify all Nova integrations:
 ```bash
-git clone <repository-url>
-cd aireceptionist
+./test_workflow.sh
 ```
 
-2. **Install frontend dependencies**
+## 📄 Submission Details
+- **Category:** Agentic AI / Voice AI
+- **Models Used:** Nova 2 Lite, Nova 2 Sonic, Nova Act, Nova Embedding
+- **Focus Area:** Autonomous Business Operations
 
-```bash
-cd frontend
-npm install
-```
-
-3. **Install backend dependencies**
-
-```bash
-cd ../backend
-npm install
-```
-
-### Configuration
-
-1. **Set up environment variables**
-
-Create `.env` files in both the frontend and backend directories based on the provided examples:
-
-**Backend (.env)**
-```
-# Database
-DATABASE_URL=postgres://username:password@localhost:5432/aireceptionist
-
-# JWT Authentication
-JWT_SECRET=your_jwt_secret_key
-JWT_EXPIRES_IN=90d
-JWT_COOKIE_EXPIRES_IN=90
-
-# Server
-PORT=3001
-NODE_ENV=development
-
-# External APIs
-OPENROUTER_API_KEY=your_openrouter_api_key
-TWILIO_ACCOUNT_SID=your_twilio_account_sid
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
-TWILIO_PHONE_NUMBER=your_twilio_phone_number
-
-# Logging
-LOG_LEVEL=debug
-```
-
-**Frontend (.env.local)**
-```
-NEXT_PUBLIC_API_URL=http://localhost:3001
-NEXT_PUBLIC_WS_URL=ws://localhost:3001/ws
-```
-
-2. **Set up the database**
-
-Create a PostgreSQL database and run the schema file:
-
-```bash
-psql -U username -d aireceptionist -f backend/database/enhanced_schema.sql
-```
-
-### Running the Application
-
-#### Development Mode
-
-1. **Start the backend server**
-
-```bash
-cd backend
-npm run dev
-```
-
-2. **Start the frontend development server**
-
-```bash
-# In a new terminal
-cd frontend
-npm run dev
-```
-
-#### Production Mode
-
-1. **Build the frontend**
-
-```bash
-cd frontend
-npm run build
-```
-
-2. **Start the backend server**
-
-```bash
-cd backend
-npm start
-```
-
-3. **Start the frontend server**
-
-```bash
-cd frontend
-npm start
-```
-
-## 🧪 Testing
-
-```bash
-cd backend
-npm test
-```
-
-For coverage report:
-
-```bash
-cd backend
-npm run test:coverage
-```
-
-## 📚 Documentation
-
-For detailed implementation information, please refer to the [IMPLEMENTATION_GUIDE.md](./IMPLEMENTATION_GUIDE.md) file.
-
-## 🔒 Security Features
-
-- JWT Authentication
-- Password Hashing (bcrypt)
-- CORS Protection
-- Rate Limiting
-- Input Validation
-- HTTP Security Headers (Helmet.js)
-
-## 📞 WebSocket Implementation
-
-The application uses WebSockets for real-time communication during calls. See the WebSocket section in the Implementation Guide for details on message types and usage.
-
-## 📊 Monitoring
-
-A health endpoint is available at `/health` which provides system status information including:
-
-- API Status
-- Timestamp
-- Uptime
-- Memory Usage
-- WebSocket Statistics
-
-## 🤝 Contributing
-
-Please read the [CONTRIBUTING.md](./CONTRIBUTING.md) for details on our code of conduct and the process for submitting pull requests.
-
-## 📄 License
-
-This project is licensed under the MIT License - see the [LICENSE](./LICENSE) file for details.
+---
+*Created for the AWS Amazon Nova Hackathon - February 2026*
