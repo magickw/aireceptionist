@@ -17,5 +17,5 @@ twilio>=8.10.0
 python-dateutil>=2.8.2
 playwright>=1.40.0
 stripe>=7.0.0
-salesforce-oauth>=2.0.0
+simple-salesforce>=1.12.0
 hubspot-api-client>=8.0.0

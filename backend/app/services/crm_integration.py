@@ -16,9 +16,10 @@ class CRMIntegrationService:
     
     def __init__(self):
         # Salesforce config
-        self.sf_client_id = settings.SALESFORCE_CLIENT_ID if hasattr(settings, 'SALESFORCE_CLIENT_ID') else os.environ.get('SALESFORCE_CLIENT_ID')
-        self.sf_client_secret = settings.SALESFORCE_CLIENT_SECRET if hasattr(settings, 'SALESFORCE_CLIENT_SECRET') else os.environ.get('SALESFORCE_CLIENT_SECRET')
-        self.sf_redirect_uri = settings.SALESFORCE_REDIRECT_URI if hasattr(settings, 'SALESFORCE_REDIRECT_URI') else os.environ.get('SALESFORCE_REDIRECT_URI')
+        self.sf_username = settings.SALESFORCE_USERNAME if hasattr(settings, 'SALESFORCE_USERNAME') else os.environ.get('SALESFORCE_USERNAME')
+        self.sf_password = settings.SALESFORCE_PASSWORD if hasattr(settings, 'SALESFORCE_PASSWORD') else os.environ.get('SALESFORCE_PASSWORD')
+        self.sf_security_token = settings.SALESFORCE_SECURITY_TOKEN if hasattr(settings, 'SALESFORCE_SECURITY_TOKEN') else os.environ.get('SALESFORCE_SECURITY_TOKEN')
+        self.sf_instance_url = None
         self.sf_access_token = None
         
         # HubSpot config
@@ -32,12 +33,31 @@ class CRMIntegrationService:
         phone: Optional[str] = None,
         company: Optional[str] = None
     ) -> Dict[str, Any]:
-        """Create a contact in Salesforce"""
-        if not self.sf_access_token:
-            return {"success": False, "error": "Salesforce not authenticated"}
+        """Create a contact in Salesforce using REST API"""
+        if not all([self.sf_username, self.sf_password, self.sf_security_token]):
+            return {"success": False, "error": "Salesforce not configured"}
         
         try:
             async with aiohttp.ClientSession() as session:
+                # First, authenticate to get access token
+                auth_url = "https://login.salesforce.com/services/oauth2/token"
+                auth_data = {
+                    "grant_type": "password",
+                    "client_id": self.sf_username,
+                    "client_secret": self.sf_password,
+                    "username": self.sf_username,
+                    "password": self.sf_password + self.sf_security_token
+                }
+                
+                async with session.post(auth_url, data=auth_data) as auth_response:
+                    if auth_response.status != 200:
+                        return {"success": False, "error": "Salesforce authentication failed"}
+                    
+                    auth_result = await auth_response.json()
+                    self.sf_access_token = auth_result["access_token"]
+                    self.sf_instance_url = auth_result["instance_url"]
+                
+                # Create contact
                 headers = {
                     "Authorization": f"Bearer {self.sf_access_token}",
                     "Content-Type": "application/json"
@@ -95,10 +115,18 @@ class CRMIntegrationService:
                 }
                 
                 # Get or create contact by email
-                async with session.get(
+                async with session.post(
                     f"https://api.hubapi.com/crm/v3/objects/contacts/search",
                     headers=headers,
-                    params={"filter": f"email EQ '{email}'"}
+                    json={
+                        "filterGroups": [{
+                            "filters": [{
+                                "propertyName": "email",
+                                "operator": "EQ",
+                                "value": email
+                            }]
+                        }]
+                    }
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
@@ -212,7 +240,10 @@ class CRMIntegrationService:
                 }
                 
                 if contact_id:
-                    payload["properties"]["associatedcontactids"] = [contact_id]
+                    payload["associations"] = [{
+                        "to": {"id": contact_id},
+                        "types": [{"associationCategory": "HUBSPOT_DEFINED", "associationTypeId": 3}]
+                    }]
                 
                 if close_date:
                     payload["properties"]["closedate"] = close_date
@@ -247,11 +278,30 @@ class CRMIntegrationService:
         close_date: Optional[str] = None
     ) -> Dict[str, Any]:
         """Create an opportunity in Salesforce"""
-        if not self.sf_access_token:
-            return {"success": False, "error": "Salesforce not authenticated"}
+        if not all([self.sf_username, self.sf_password, self.sf_security_token]):
+            return {"success": False, "error": "Salesforce not configured"}
         
         try:
             async with aiohttp.ClientSession() as session:
+                # Reuse or refresh access token
+                if not self.sf_access_token:
+                    auth_url = "https://login.salesforce.com/services/oauth2/token"
+                    auth_data = {
+                        "grant_type": "password",
+                        "client_id": self.sf_username,
+                        "client_secret": self.sf_password,
+                        "username": self.sf_username,
+                        "password": self.sf_password + self.sf_security_token
+                    }
+                    
+                    async with session.post(auth_url, data=auth_data) as auth_response:
+                        if auth_response.status != 200:
+                            return {"success": False, "error": "Salesforce authentication failed"}
+                        
+                        auth_result = await auth_response.json()
+                        self.sf_access_token = auth_result["access_token"]
+                        self.sf_instance_url = auth_result["instance_url"]
+                
                 headers = {
                     "Authorization": f"Bearer {self.sf_access_token}",
                     "Content-Type": "application/json"
