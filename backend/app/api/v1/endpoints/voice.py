@@ -11,7 +11,7 @@ from datetime import datetime
 from app.services.nova_reasoning import nova_reasoning
 from app.services.nova_sonic import nova_sonic, AudioBuffer, LatencyTracker
 from app.api.deps import get_current_business_id, get_current_active_user, get_db
-from app.models.models import User, Appointment
+from app.models.models import User, Appointment, Order, OrderItem, MenuItem, CallSession
 from sqlalchemy.orm import Session
 
 router = APIRouter()
@@ -89,11 +89,17 @@ async def voice_websocket(
     # Track session state (like order items) for the duration of the WebSocket
     ws_session = {
         "order_items": [],
-        "created_at": datetime.utcnow()
+        "created_at": datetime.utcnow(),
+        "business_id": business_id,
+        "customer_name": None,
+        "customer_phone": None
     }
     
     try:
         await manager.connect(websocket, session_id)
+        
+        # Create CallSession record in database
+        _create_call_session(ws_session, session_id)
         
         # Send connection acknowledgment with audio config
         await manager.send_json(session_id, {
@@ -105,6 +111,9 @@ async def voice_websocket(
         
         # Store conversation history for context
         conversation_history = []
+        
+        # Track final sentiment for CallSession
+        final_sentiment = "neutral"
         
         while True:
             # Receive message from client
@@ -131,7 +140,7 @@ async def voice_websocket(
                 # Get business context
                 business_context = await _get_business_context(business_id)
                 
-                # Build customer context
+                # Build customer context and update ws_session
                 customer_context = {
                     "name": context.get("customer_name", "Unknown"),
                     "phone": context.get("customer_phone", "Unknown"),
@@ -141,6 +150,12 @@ async def voice_websocket(
                     "preferred_services": context.get("preferred_services", []),
                     "complaint_count": context.get("complaint_count", 0)
                 }
+                
+                # Store customer info for order persistence
+                if context.get("customer_name"):
+                    ws_session["customer_name"] = context.get("customer_name")
+                if context.get("customer_phone"):
+                    ws_session["customer_phone"] = context.get("customer_phone")
                 
                 # Send reasoning thoughts to UI
                 await manager.send_json(session_id, {
@@ -174,12 +189,22 @@ async def voice_websocket(
                     }
                 })
                 
+                # Track sentiment for final session summary
+                if reasoning_result.get("sentiment"):
+                    final_sentiment = reasoning_result.get("sentiment")
+                
                 # Send agent response - streaming text chunks
                 agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
                 
                 # Enhance response with actual pricing if customer asked about menu item
                 entities = reasoning_result.get("entities", {})
                 menu_item = entities.get("menu_item") or entities.get("service")
+                
+                # Store customer info from entities if extracted
+                if entities.get("customer_name"):
+                    ws_session["customer_name"] = entities.get("customer_name")
+                if entities.get("customer_phone"):
+                    ws_session["customer_phone"] = entities.get("customer_phone")
                 
                 # If customer asked about pricing and we have menu info, include actual price
                 order_items = []
@@ -215,6 +240,39 @@ async def voice_websocket(
                         agent_response = f"I've initiated a secure payment process for your total of ${total:.2f}. I'm sending a secure link to your phone now. {agent_response}"
                     else:
                         agent_response = f"I'd be happy to help with that payment. Could you please confirm what you'd like to pay for? {agent_response}"
+                
+                elif selected_action == "PLACE_ORDER":
+                    # Add item to the current order session
+                    menu_item_name = entities.get("menu_item") or entities.get("service")
+                    quantity = entities.get("quantity", 1)
+                    
+                    if menu_item_name and business_context.get("menu"):
+                        menu_lower = menu_item_name.lower()
+                        for item in business_context.get("menu", []):
+                            if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
+                                # Add to session order items
+                                order_entry = {
+                                    "name": item["name"],
+                                    "price": item.get("price", 0),
+                                    "quantity": quantity,
+                                    "menu_item_id": item.get("id")
+                                }
+                                ws_session["order_items"].append(order_entry)
+                                agent_response = f"Added {quantity}x {item['name']} to your order. {agent_response}"
+                                break
+                
+                elif selected_action == "CONFIRM_ORDER":
+                    # Save the order to the database
+                    if ws_session["order_items"]:
+                        total = sum(item["price"] * item.get("quantity", 1) for item in ws_session["order_items"])
+                        items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in ws_session["order_items"]])
+                        agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}. Your order number will be provided shortly. {agent_response}"
+                        
+                        # Store order info for later database persistence
+                        ws_session["order_confirmed"] = True
+                        ws_session["order_total"] = total
+                    else:
+                        agent_response = f"I don't see any items in your order yet. Would you like to order something? {agent_response}"
                 
                 elif selected_action == "HUMAN_INTERVENTION":
                     # Send intervention request event
@@ -363,7 +421,10 @@ async def voice_websocket(
                 })
             
             elif message_type == "end_call":
-                # End the call
+                # End the call - save session and order
+                summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if conversation_history else ""
+                _end_call_session(ws_session, session_id, summary, final_sentiment)
+                await _save_confirmed_order(ws_session, session_id)
                 await manager.send_json(session_id, {
                     "type": "call_ended",
                     "message": "Call ended"
@@ -371,13 +432,132 @@ async def voice_websocket(
                 break
     
     except WebSocketDisconnect:
+        # Save session and any confirmed orders before disconnecting
+        summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
+        _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
+        await _save_confirmed_order(ws_session, session_id)
         manager.disconnect(session_id)
     except Exception as e:
         await manager.send_json(session_id, {
             "type": "error",
             "message": f"Error: {str(e)}"
         })
+        # Try to save session and order even on error
+        summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
+        _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
+        await _save_confirmed_order(ws_session, session_id)
         manager.disconnect(session_id)
+
+
+async def _save_confirmed_order(ws_session: Dict[str, Any], session_id: str) -> None:
+    """Save a confirmed order to the database."""
+    if not ws_session.get("order_confirmed") or not ws_session.get("order_items"):
+        return
+    
+    try:
+        from app.api.deps import get_db
+        gen = get_db()
+        db = next(gen)
+        
+        business_id = ws_session.get("business_id")
+        if not business_id:
+            return
+        
+        # Calculate total
+        total = sum(
+            item.get("price", 0) * item.get("quantity", 1) 
+            for item in ws_session["order_items"]
+        )
+        
+        # Create order
+        order = Order(
+            business_id=business_id,
+            call_session_id=session_id,
+            customer_name=ws_session.get("customer_name"),
+            customer_phone=ws_session.get("customer_phone"),
+            status="confirmed",
+            total_amount=total,
+            confirmed_at=datetime.utcnow()
+        )
+        db.add(order)
+        db.flush()  # Get order ID
+        
+        # Create order items
+        for item in ws_session["order_items"]:
+            order_item = OrderItem(
+                order_id=order.id,
+                menu_item_id=item.get("menu_item_id"),
+                item_name=item["name"],
+                quantity=item.get("quantity", 1),
+                unit_price=item.get("price", 0)
+            )
+            db.add(order_item)
+        
+        db.commit()
+    except Exception as e:
+        print(f"Failed to save order: {e}")
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+
+def _create_call_session(ws_session: Dict[str, Any], session_id: str) -> None:
+    """Create a CallSession record in the database."""
+    try:
+        from app.api.deps import get_db
+        gen = get_db()
+        db = next(gen)
+        
+        business_id = ws_session.get("business_id")
+        if not business_id:
+            return
+        
+        call_session = CallSession(
+            id=session_id,
+            business_id=business_id,
+            customer_name=ws_session.get("customer_name"),
+            customer_phone=ws_session.get("customer_phone"),
+            status="active"
+        )
+        db.add(call_session)
+        db.commit()
+        ws_session["db_session_created"] = True
+    except Exception as e:
+        print(f"Failed to create call session: {e}")
+    finally:
+        try:
+            db.close()
+        except:
+            pass
+
+
+def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str = None, sentiment: str = None) -> None:
+    """Update CallSession record when call ends."""
+    try:
+        from app.api.deps import get_db
+        gen = get_db()
+        db = next(gen)
+        
+        call_session = db.query(CallSession).filter(CallSession.id == session_id).first()
+        if call_session:
+            call_session.status = "ended"
+            call_session.ended_at = datetime.utcnow()
+            if call_session.started_at:
+                call_session.duration_seconds = int((datetime.utcnow() - call_session.started_at).total_seconds())
+            if summary:
+                call_session.summary = summary
+            if sentiment:
+                call_session.sentiment = sentiment
+            db.commit()
+    except Exception as e:
+        print(f"Failed to end call session: {e}")
+    finally:
+        try:
+            db.close()
+        except:
+            pass
 
 
 async def _get_business_context(business_id: int, db: Session = None) -> Dict[str, Any]:

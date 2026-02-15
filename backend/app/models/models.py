@@ -52,6 +52,7 @@ class Business(Base):
     training_scenarios = relationship("AITrainingScenario", back_populates="business")
     appointments = relationship("Appointment", back_populates="business")
     menu_items = relationship("MenuItem", back_populates="business")
+    orders = relationship("Order", back_populates="business")
 
 
 class MenuItem(Base):
@@ -73,6 +74,46 @@ class MenuItem(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     business = relationship("Business", back_populates="menu_items")
+    order_items = relationship("OrderItem", back_populates="menu_item")
+
+
+class Order(Base):
+    """Customer orders for products/services"""
+    __tablename__ = "orders"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    call_session_id = Column(String(100), ForeignKey("call_sessions.id"))
+    customer_name = Column(String(255))
+    customer_phone = Column(String(20))
+    status = Column(String(20), default="pending")  # pending, confirmed, preparing, ready, completed, cancelled
+    total_amount = Column(DECIMAL(10, 2), default=0)
+    notes = Column(Text)  # Special instructions
+    confirmed_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    business = relationship("Business", back_populates="orders")
+    call_session = relationship("CallSession", back_populates="orders")
+    items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
+
+
+class OrderItem(Base):
+    """Individual items within an order"""
+    __tablename__ = "order_items"
+
+    id = Column(Integer, primary_key=True, index=True)
+    order_id = Column(Integer, ForeignKey("orders.id"), nullable=False)
+    menu_item_id = Column(Integer, ForeignKey("menu_items.id"))
+    item_name = Column(String(255), nullable=False)  # Snapshot of item name at time of order
+    quantity = Column(Integer, default=1)
+    unit_price = Column(DECIMAL(10, 2), nullable=False)  # Snapshot of price at time of order
+    notes = Column(Text)  # Item-specific notes (e.g., "no onions")
+    created_at = Column(DateTime, server_default=func.now())
+
+    order = relationship("Order", back_populates="items")
+    menu_item = relationship("MenuItem", back_populates="order_items")
 
 
 class CallSession(Base):
@@ -97,6 +138,7 @@ class CallSession(Base):
 
     business = relationship("Business", back_populates="call_sessions")
     messages = relationship("ConversationMessage", back_populates="session")
+    orders = relationship("Order", back_populates="call_session")
 
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"

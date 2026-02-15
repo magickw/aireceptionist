@@ -52,27 +52,40 @@ class ChatbotService:
         business_id: int
     ) -> Dict:
         """Process a chat message and return AI response"""
-        from app.services.nova_reasoning import nova_reasoning_service
+        import asyncio
+        from app.services.nova_reasoning import nova_reasoning
         
         # Get conversation context
         context = self._get_conversation_context(db, session_id)
         
-        # Process with Nova
-        response = nova_reasoning_service.process_message(
-            message=message,
-            context=context,
-            business_id=business_id
+        # Build business context (simplified for chat)
+        business_context = {"business_id": business_id}
+        
+        # Process with Nova (async method needs to be run in event loop)
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+        
+        response = loop.run_until_complete(
+            nova_reasoning.reason(
+                conversation=message,
+                business_context=business_context,
+                customer_context={"name": "Chat User"},
+                db=db
+            )
         )
         
         # Store the message exchange
         self._store_message(db, session_id, "customer", message)
-        self._store_message(db, session_id, "agent", response.get("answer", ""))
+        self._store_message(db, session_id, "agent", response.get("suggested_response", ""))
         
         return {
-            "response": response.get("answer", ""),
+            "response": response.get("suggested_response", ""),
             "intent": response.get("intent"),
             "entities": response.get("entities", {}),
-            "suggestions": response.get("suggestions", [])
+            "suggestions": []
         }
     
     def _get_conversation_context(self, db: Session, session_id: int) -> List[Dict]:

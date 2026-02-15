@@ -189,20 +189,154 @@ class NovaSonicHandler:
 
     async def _transcribe_audio_with_nova(self, audio_data: bytes) -> str:
         """
-        Uses Nova Lite's multimodal capability to transcribe audio.
+        Uses Amazon Transcribe to transcribe audio.
+        
+        For real-time streaming, this would use StartStreamTranscription API.
+        For simplicity, we use a file-based approach with S3 as intermediate.
         """
-        # In production, we'd use the Converse API with audio blocks
-        # For the hackathon demo, we provide a high-quality simulation 
-        # that picks from common demo phrases based on audio characteristics
-        # or uses Amazon Transcribe if available.
+        import uuid
+        import time
+        
+        if not audio_data or len(audio_data) < 1000:
+            return ""
         
         try:
-            # Try to use Amazon Transcribe for "real" behavior
-            transcribe = boto3.client('transcribe', region_name=settings.AWS_REGION)
-            # (Simplified for demo)
-            return "I'd like to book a dental cleaning for tomorrow at 2 PM please."
-        except:
-            return "I need help with an appointment."
+            # Create a unique job name
+            job_name = f"transcribe-{uuid.uuid4().hex[:8]}"
+            
+            # Upload audio to S3 temporarily (Transcribe requires S3 or streaming)
+            s3 = boto3.client(
+                's3',
+                region_name=settings.AWS_REGION,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+            )
+            
+            # Create a unique bucket name or use existing
+            bucket_name = f"aireceptionist-transcribe-{settings.AWS_REGION}"
+            
+            # Try to create bucket if it doesn't exist (ignore if already exists)
+            try:
+                s3.create_bucket(
+                    Bucket=bucket_name,
+                    CreateBucketConfiguration={'LocationConstraint': settings.AWS_REGION}
+                )
+            except s3.exceptions.BucketAlreadyOwnedByYou:
+                pass
+            except s3.exceptions.BucketAlreadyExists:
+                pass
+            except Exception:
+                pass  # Use existing bucket
+            
+            # Upload the audio file
+            # Convert PCM to WAV format for Transcribe
+            wav_data = self._pcm_to_wav(audio_data)
+            s3_key = f"temp/{job_name}.wav"
+            
+            s3.put_object(
+                Bucket=bucket_name,
+                Key=s3_key,
+                Body=wav_data
+            )
+            
+            # Start transcription job
+            transcribe = boto3.client(
+                'transcribe',
+                region_name=settings.AWS_REGION,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+            )
+            
+            media_uri = f"s3://{bucket_name}/{s3_key}"
+            
+            transcribe.start_transcription_job(
+                TranscriptionJobName=job_name,
+                Media={'MediaFileUri': media_uri},
+                MediaFormat='wav',
+                LanguageCode='en-US',
+                Settings={
+                    'ShowSpeakerLabels': False,
+                    'MaxSpeakerLabels': 1
+                }
+            )
+            
+            # Poll for completion (with timeout)
+            max_wait = 30  # seconds
+            start_time = time.time()
+            
+            while time.time() - start_time < max_wait:
+                result = transcribe.get_transcription_job(
+                    TranscriptionJobName=job_name
+                )
+                status = result['TranscriptionJob']['TranscriptionJobStatus']
+                
+                if status == 'COMPLETED':
+                    transcript_uri = result['TranscriptionJob']['Transcript']['TranscriptFileUri']
+                    
+                    # Fetch the transcript
+                    import urllib.request
+                    with urllib.request.urlopen(transcript_uri) as response:
+                        transcript_data = json.loads(response.read().decode())
+                        transcript = transcript_data['results']['transcripts'][0]['transcript']
+                    
+                    # Cleanup
+                    try:
+                        s3.delete_object(Bucket=bucket_name, Key=s3_key)
+                    except:
+                        pass
+                    
+                    try:
+                        transcribe.delete_transcription_job(TranscriptionJobName=job_name)
+                    except:
+                        pass
+                    
+                    return transcript
+                
+                elif status == 'FAILED':
+                    print(f"Transcription job failed: {result}")
+                    break
+                
+                await asyncio.sleep(1)
+            
+            # Cleanup on timeout
+            try:
+                s3.delete_object(Bucket=bucket_name, Key=s3_key)
+            except:
+                pass
+            
+            return ""
+            
+        except Exception as e:
+            print(f"[Nova Sonic] Transcription error: {e}")
+            return ""
+    
+    def _pcm_to_wav(self, pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, bits: int = 16) -> bytes:
+        """Convert PCM audio data to WAV format."""
+        import struct
+        
+        byte_rate = sample_rate * channels * bits // 8
+        block_align = channels * bits // 8
+        data_size = len(pcm_data)
+        
+        # WAV header
+        header = struct.pack(
+            '<4sI4s4sIHHIIHH4sI',
+            b'RIFF',
+            36 + data_size,  # File size - 8
+            b'WAVE',
+            b'fmt ',
+            16,  # Subchunk1Size (16 for PCM)
+            1,   # AudioFormat (1 = PCM)
+            channels,
+            sample_rate,
+            byte_rate,
+            block_align,
+            bits,
+            b'data',
+            data_size
+        )
+        
+        return header + pcm_data
     
     async def _get_text_response(
         self,

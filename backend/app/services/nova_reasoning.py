@@ -94,6 +94,8 @@ class NovaReasoningEngine:
             "TAKE_MESSAGE",
             "PAYMENT_PROCESS",
             "SEND_DIRECTIONS",
+            "PLACE_ORDER",
+            "CONFIRM_ORDER",
             "HUMAN_INTERVENTION"
         ]
         
@@ -345,6 +347,11 @@ When handling customer requests, always collect: {', '.join(required_info)}
 - If after hours → Suggest alternative or queue appointment
 - If customer angry (negative sentiment + high urgency) → Consider TRANSFER_HUMAN
 - **IMPORTANT - Appointment Booking**: Before confirming ANY appointment, you MUST collect: (1) customer's full name, (2) phone number. Use COLLECT_INFO action until you have both name AND phone, then use CREATE_APPOINTMENT
+- **IMPORTANT - Order Taking**: 
+  - When customer wants to order, use PLACE_ORDER action with menu_item entity
+  - Multiple items can be added - each PLACE_ORDER adds one item
+  - When customer confirms the order (says "yes", "that's all", "confirm"), use CONFIRM_ORDER
+  - Before confirming, ensure customer name and phone are collected for order tracking
 
 ## Quality Guidelines:
 - Confidence should reflect how clearly the intent is expressed
@@ -368,7 +375,9 @@ When handling customer requests, always collect: {', '.join(required_info)}
             "CANCEL_APPOINTMENT": "Cancel scheduled appointments",
             "TAKE_MESSAGE": "Record message for callback",
             "PAYMENT_PROCESS": "Initiate secure payment collection",
-            "SEND_DIRECTIONS": "Provide business location and directions"
+            "SEND_DIRECTIONS": "Provide business location and directions",
+            "PLACE_ORDER": "Add item to customer's order (requires menu_item entity)",
+            "CONFIRM_ORDER": "Finalize and save the order to the system"
         }
         
         return "\n".join([
