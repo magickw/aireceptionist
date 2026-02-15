@@ -240,7 +240,7 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
           </Stack>
 
           {/* Entities */}
-          {Object.keys(reasoningData.entities).length > 0 && (
+          {reasoningData.entities && Object.keys(reasoningData.entities).length > 0 && (
             <Box sx={{ mb: 3, bgcolor: '#1e293b', p: 2, borderRadius: 1, border: '1px solid #334155' }}>
               <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', textTransform: 'uppercase', mb: 1, display: 'block' }}>
                 Extracted Entities
@@ -266,7 +266,7 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
             <Typography variant="caption" sx={{ color: '#94a3b8', fontSize: '0.7rem', textTransform: 'uppercase', mb: 1.5, display: 'block' }}>
               Reasoning Chain
             </Typography>
-            {reasoningData.reasoning_chain.map((step, index) => (
+            {reasoningData.reasoning_chain && reasoningData.reasoning_chain.map((step, index) => (
               <Accordion
                 key={index}
                 expanded={activeStep === index}
