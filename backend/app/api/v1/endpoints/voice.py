@@ -501,6 +501,8 @@ async def send_http_message(
     message: MessageInput
 ):
     """Send a message via HTTP (HTTP fallback)"""
+    print(f"[Voice API] send_http_message called - session: {session_id}, text: {message.text[:50]}...")
+    
     session = session_store.get_session(session_id)
     if not session:
         return {"error": "Session not found", "status": 404}

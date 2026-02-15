@@ -82,11 +82,16 @@ export default function CallSimulator() {
 
   // Send message via HTTP
   const sendHttpMessage = async (text: string) => {
-    if (!sessionIdRef.current) return;
+    if (!sessionIdRef.current) {
+      console.error('No session ID');
+      return;
+    }
     try {
-      await api.post(`/voice/session/${sessionIdRef.current}/message`, { text });
-    } catch (error) {
-      console.error('Failed to send HTTP message:', error);
+      console.log('[CallSim] Sending message:', text, 'to session:', sessionIdRef.current);
+      const response = await api.post(`/voice/session/${sessionIdRef.current}/message`, { text });
+      console.log('[CallSim] Message sent, response:', response);
+    } catch (error: any) {
+      console.error('[CallSim] Failed to send HTTP message:', error?.response?.data || error?.message || error);
     }
   };
 
