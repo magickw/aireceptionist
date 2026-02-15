@@ -54,13 +54,21 @@ export default function CallSimulator() {
           if (event.is_last) {
             setIsProcessing(false);
             setIsSpeaking(false);
-            addMessage(event.full_text || event.chunk, 'ai');
+            // Only add if full_text is provided to avoid duplicate with agent_response
+            if (event.full_text) {
+              addMessage(event.full_text, 'ai');
+            }
             setStreamingText('');
           }
         } else if (event.type === 'agent_response') {
           setIsProcessing(false);
           setIsSpeaking(false);
-          addMessage(event.text, 'ai');
+          // Only add if streaming didn't already add the message
+          const msgs = currentCall?.messages || [];
+          const lastAiMsg = msgs.filter((m: any) => m.sender === 'ai').pop();
+          if (!lastAiMsg || lastAiMsg.content !== event.text) {
+            addMessage(event.text, 'ai');
+          }
           if (event.reasoning) setReasoningData(event.reasoning);
         } else if (event.type === 'reasoning_chain' || event.type === 'reasoning_complete') {
           // Handle reasoning data
@@ -129,13 +137,21 @@ export default function CallSimulator() {
             if (data.is_last) {
               setIsProcessing(false);
               setIsSpeaking(false);
-              addMessage(data.full_text || streamingText + data.chunk, 'ai');
-              if (data.full_text) setStreamingText('');
+              // Only add if full_text is provided
+              if (data.full_text) {
+                addMessage(data.full_text, 'ai');
+              }
+              setStreamingText('');
             }
           } else if (data.type === 'agent_response') {
             setIsProcessing(false);
             setIsSpeaking(false);
-            addMessage(data.text, 'ai');
+            // Only add if not already added via text_chunk
+            const msgs = currentCall?.messages || [];
+            const lastAiMsg = msgs.filter((m: any) => m.sender === 'ai').pop();
+            if (!lastAiMsg || lastAiMsg.content !== data.text) {
+              addMessage(data.text, 'ai');
+            }
             if (data.reasoning) setReasoningData(data.reasoning);
             setStreamingText('');
           }
