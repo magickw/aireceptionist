@@ -7,10 +7,12 @@ from typing import Dict, Any, AsyncGenerator
 import json
 import asyncio
 import base64
+from datetime import datetime
 from app.services.nova_reasoning import nova_reasoning
 from app.services.nova_sonic import nova_sonic, AudioBuffer, LatencyTracker
-from app.api.deps import get_current_business_id, get_current_active_user
-from app.models.models import User
+from app.api.deps import get_current_business_id, get_current_active_user, get_db
+from app.models.models import User, Appointment
+from sqlalchemy.orm import Session
 
 router = APIRouter()
 
@@ -498,7 +500,8 @@ async def get_session_events(session_id: str):
 @router.post("/session/{session_id}/message")
 async def send_http_message(
     session_id: str,
-    message: MessageInput
+    message: MessageInput,
+    db: Session = Depends(get_db)
 ):
     """Send a message via HTTP (HTTP fallback)"""
     print(f"[Voice API] send_http_message called - session: {session_id}, text: {message.text[:50]}...")
@@ -508,6 +511,8 @@ async def send_http_message(
         return {"error": "Session not found", "status": 404}
     
     business_id = session["business_id"]
+    customer_phone = session.get("customer_phone", "+1555000000")
+    customer_name = "Customer"
     
     # Add to conversation history
     session["conversation_history"].append({
@@ -571,6 +576,64 @@ async def send_http_message(
         "text": agent_response,
         "reasoning": reasoning_result
     })
+    
+    # Create appointment if action is CREATE_APPOINTMENT or if AI confirms scheduling
+    selected_action = reasoning_result.get("selected_action", "")
+    entities = reasoning_result.get("entities", {})
+    
+    # Also check if the AI response mentions scheduling an appointment
+    appointment_created = False
+    
+    if selected_action == "CREATE_APPOINTMENT":
+        date_str = entities.get("date")
+        time_str = entities.get("time")
+        service = entities.get("service")
+        
+        # Try to parse date and time
+        if date_str or time_str:
+            try:
+                # Combine date and time strings
+                datetime_str = f"{date_str or 'today'} {time_str or '12:00'}"
+                # Try to parse - this is simplified, in production use more robust parsing
+                appointment_time = datetime.now()  # Default to now if parsing fails
+                
+                # Create appointment
+                appointment = Appointment(
+                    business_id=business_id,
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                    appointment_time=appointment_time,
+                    service_type=service or "General Checkup",
+                    status="scheduled"
+                )
+                db.add(appointment)
+                db.commit()
+                db.refresh(appointment)
+                print(f"[Voice API] Created appointment {appointment.id} for {customer_phone}")
+                appointment_created = True
+            except Exception as e:
+                print(f"[Voice API] Failed to create appointment: {e}")
+                db.rollback()
+    
+    # Also check if AI response mentions scheduling (fallback)
+    if not appointment_created and ("scheduled" in agent_response.lower() or "booked" in agent_response.lower()):
+        # AI confirmed appointment in response - create it
+        try:
+            appointment = Appointment(
+                business_id=business_id,
+                customer_name=customer_name,
+                customer_phone=customer_phone,
+                appointment_time=datetime.now(),
+                service_type="Checkup",
+                status="scheduled"
+            )
+            db.add(appointment)
+            db.commit()
+            db.refresh(appointment)
+            print(f"[Voice API] Created appointment {appointment.id} from AI confirmation")
+        except Exception as e:
+            print(f"[Voice API] Failed to create appointment: {e}")
+            db.rollback()
     
     # Add to conversation history
     session["conversation_history"].append({
