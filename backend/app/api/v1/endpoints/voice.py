@@ -172,6 +172,21 @@ async def voice_websocket(
                 # Send agent response - streaming text chunks
                 agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
                 
+                # Enhance response with actual pricing if customer asked about menu item
+                entities = reasoning_result.get("entities", {})
+                menu_item = entities.get("menu_item") or entities.get("service")
+                
+                # If customer asked about pricing and we have menu info, include actual price
+                if menu_item and business_context.get("menu"):
+                    menu_lower = menu_item.lower()
+                    for item in business_context.get("menu", []):
+                        if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
+                            if item.get("price"):
+                                price_str = f"${item['price']:.2f}"
+                                # Include price in response
+                                agent_response = f"Our {item['name']} is {price_str}. {agent_response}"
+                                break
+                
                 # Stream the response in chunks
                 chunk_size = 20  # characters per chunk
                 for i in range(0, len(agent_response), chunk_size):
@@ -623,6 +638,20 @@ async def send_http_message(
     
     # Get agent response
     agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
+    
+    # Enhance response with actual pricing if customer asked about menu item
+    entities = reasoning_result.get("entities", {})
+    menu_item = entities.get("menu_item") or entities.get("service")
+    
+    # If customer asked about pricing and we have menu info, include actual price
+    if menu_item and business_context.get("menu"):
+        menu_lower = menu_item.lower()
+        for item in business_context.get("menu", []):
+            if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
+                if item.get("price"):
+                    price_str = f"${item['price']:.2f}"
+                    agent_response = f"Our {item['name']} is {price_str}. {agent_response}"
+                    break
     
     # Add only agent_response event (frontend handles single message display)
     # Do NOT add text_chunk to avoid duplicates

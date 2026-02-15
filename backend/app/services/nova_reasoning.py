@@ -253,6 +253,7 @@ When handling customer requests, always collect: {', '.join(required_info)}
   "confidence": <0.0-1.0>,
   "entities": {{
     "service": "<extracted_service_or_null>",
+    "menu_item": "<if customer asks about menu item price, extract item name (e.g., fried rice, burger)>",
     "date": "<preferred_date_or_null>",
     "time": "<preferred_time_or_null>",
     "customer_name": "<extracted_name_or_null>",

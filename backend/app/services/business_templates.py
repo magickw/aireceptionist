@@ -15,11 +15,14 @@ class BusinessTypeTemplate:
             "common_intents": [
                 "make_reservation", "order_food", "menu_inquiry", 
                 "dietary_options", "hours_inquiry", "location_inquiry",
-                "special_events", "catering", "wait_time"
+                "special_events", "catering", "wait_time", "pricing_inquiry"
             ],
             "required_info": ["party_size", "date", "time"],
             "system_prompt_addition": """
 ## Restaurant-Specific Guidelines:
+- CRITICAL - PRICING: When customers ask about prices, ALWAYS look up the item in the Menu section and provide the EXACT price immediately. Do NOT ask for contact info before providing price.
+- When customer asks how much is [item], respond with: Our [item] is $[price]
+- After providing price, ask Would you like to order that? to continue
 - Ask for party size when taking reservations
 - Inquire about dietary restrictions (vegetarian, vegan, gluten-free, allergies)
 - Know current specials and recommend based on preferences
@@ -27,10 +30,12 @@ class BusinessTypeTemplate:
 - Be familiar with menu items, prices, and ingredients
 - Handle payment methods and gift cards
 - Know about reservations policy and wait times
+- For ordering: collect name, phone, and order details
 """,
             "example_responses": {
                 "reservation": "I'd be happy to help you reserve a table. How many guests will be joining?",
                 "order": "Great choice! Would you like that for here or to go?",
+                "pricing": "Our fried rice is $12.99. Would you like to order that?",
                 "menu": "We have a variety of options including appetizers, main courses, and desserts. What type of cuisine are you interested in?"
             }
         },
