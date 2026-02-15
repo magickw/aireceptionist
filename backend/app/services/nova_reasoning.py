@@ -271,32 +271,16 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
                 
                 print(f"[Nova Reasoning] Cleaned response: {cleaned_response[:500]}...")
                 
-                # Try to find JSON object in cleaned response
-                # Try to find JSON with nested objects first
-                json_match = re.search(r'\{[^{}]*\{[^{}]*\}[^{}]*\}', cleaned_response)
-                if json_match:
-                    try:
-                        result = json.loads(json_match.group())
-                        print(f"[Nova Reasoning] Parsed nested JSON: {result}")
-                    except Exception as e:
-                        print(f"[Nova Reasoning] Failed to parse nested JSON: {e}")
-                        json_match = None
-                
-                # If no nested JSON found, try finding any JSON object
-                if not json_match:
+                # Try to parse the entire cleaned response as JSON (not regex)
+                try:
+                    result = json.loads(cleaned_response)
+                    print(f"[Nova Reasoning] Successfully parsed full JSON, intent: {result.get('intent')}")
+                except json.JSONDecodeError as e:
+                    print(f"[Nova Reasoning] Failed to parse full JSON: {e}")
+                    # Last resort: try regex
                     json_match = re.search(r'\{[^{}]*\}', cleaned_response)
                     if json_match:
-                        try:
-                            result = json.loads(json_match.group())
-                            print(f"[Nova Reasoning] Parsed simple JSON: {result}")
-                        except Exception as e:
-                            print(f"[Nova Reasoning] Failed to parse simple JSON: {e}")
-                            pass
-                
-                # Last resort: try parsing the whole cleaned response
-                if not json_match:
-                    result = json.loads(cleaned_response)
-                    print(f"[Nova Reasoning] Parsed full cleaned response as JSON")
+                        result = json.loads(json_match.group())
             
             # Check if result was actually defined
             if 'result' not in locals():
