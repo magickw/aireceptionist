@@ -74,7 +74,7 @@ class NovaReasoningEngine:
         system_prompt = self._build_system_prompt(business_context, customer_context, knowledge_context)
         
         messages = [
-            {"role": "user", "content": conversation}
+            {"role": "user", "content": [{"text": conversation}]}
         ]
         
         try:
@@ -221,7 +221,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
             "system": [{"text": system_prompt}],
             "inferenceConfig": {
                 "maxTokens": 1024,
-                "temperature": 0.1,  # Low temperature for consistent reasoning
+                "temperature": 0.1,
                 "topP": 0.9
             }
         }
