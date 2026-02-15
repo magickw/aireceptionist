@@ -315,18 +315,51 @@ async def voice_websocket(
         manager.disconnect(session_id)
 
 
-async def _get_business_context(business_id: int) -> Dict[str, Any]:
+async def _get_business_context(business_id: int, db: Session = None) -> Dict[str, Any]:
     """
     Get business context from database.
-    For now, return mock data - will be replaced with actual DB query.
     """
-    # TODO: Query business table
+    # If no db session provided, try to get one
+    if db is None:
+        try:
+            from app.api.deps import get_db
+            gen = get_db()
+            db = next(gen)
+        except:
+            # Fallback if db not available
+            return {
+                "name": "Demo Business",
+                "type": "general",
+                "services": ["Consultation"],
+                "operating_hours": "Mon-Fri 9AM-5PM",
+                "available_slots": ["Today 2PM", "Tomorrow 10AM"]
+            }
+    
+    from app.models.models import Business
+    
+    business = db.query(Business).filter(Business.id == business_id).first()
+    
+    if not business:
+        # Fallback to default if business not found
+        return {
+            "name": "Demo Business",
+            "type": "general",
+            "services": ["Consultation"],
+            "operating_hours": "Mon-Fri 9AM-5PM",
+            "available_slots": ["Today 2PM", "Tomorrow 10AM"]
+        }
+    
+    # Get services from business settings if available
+    services = business.settings.get("services", []) if business.settings else []
+    if not services:
+        services = ["Consultation", "Service 1", "Service 2"]
+    
     return {
-        "name": "Smile Care Dental",
-        "type": "dental",
-        "services": ["Dental Cleaning", "Checkup", "Whitening", "Extraction"],
-        "operating_hours": "Mon-Fri 9AM-5PM, Sat 10AM-2PM",
-        "available_slots": ["Today 2PM", "Today 3:30PM", "Tomorrow 10AM"]
+        "name": business.name,
+        "type": business.type or "general",
+        "services": services,
+        "operating_hours": business.settings.get("operating_hours", "Mon-Fri 9AM-5PM") if business.settings else "Mon-Fri 9AM-5PM",
+        "available_slots": business.settings.get("available_slots", ["Today 2PM", "Tomorrow 10AM"]) if business.settings else ["Today 2PM", "Tomorrow 10AM"]
     }
 
 
