@@ -4,11 +4,15 @@ from datetime import datetime
 
 class BusinessBase(BaseModel):
     name: str
+    type: Optional[str] = "general"
     phone: Optional[str] = None
     address: Optional[str] = None
     website: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = "active"
+    operating_hours: Optional[dict] = None
+    settings: Optional[dict] = None
+    business_license: Optional[str] = None
 
 class BusinessCreate(BusinessBase):
     pass

@@ -39,6 +39,7 @@ class Business(Base):
     website = Column(String(255))
     description = Column(Text)
     operating_hours = Column(JSON)
+    business_license = Column(String(100))
     status = Column(String(20), default="active")
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
