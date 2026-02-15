@@ -261,11 +261,19 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
             if isinstance(response, dict):
                 result = response
             else:
-                # First try to find JSON object in response
+                # First, clean up the response - remove markdown code blocks
                 import re
                 
+                # Remove markdown code block markers (```json, ```, etc.)
+                cleaned_response = re.sub(r'```json\s*', '', response, flags=re.IGNORECASE)
+                cleaned_response = re.sub(r'```\s*$', '', cleaned_response, flags=re.MULTILINE)
+                cleaned_response = cleaned_response.strip()
+                
+                print(f"[Nova Reasoning] Cleaned response: {cleaned_response[:500]}...")
+                
+                # Try to find JSON object in cleaned response
                 # Try to find JSON with nested objects first
-                json_match = re.search(r'\{[^{}]*\{[^{}]*\}[^{}]*\}', response)
+                json_match = re.search(r'\{[^{}]*\{[^{}]*\}[^{}]*\}', cleaned_response)
                 if json_match:
                     try:
                         result = json.loads(json_match.group())
@@ -276,7 +284,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
                 
                 # If no nested JSON found, try finding any JSON object
                 if not json_match:
-                    json_match = re.search(r'\{[^{}]*\}', response)
+                    json_match = re.search(r'\{[^{}]*\}', cleaned_response)
                     if json_match:
                         try:
                             result = json.loads(json_match.group())
@@ -285,10 +293,10 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
                             print(f"[Nova Reasoning] Failed to parse simple JSON: {e}")
                             pass
                 
-                # Last resort: try parsing the whole response
+                # Last resort: try parsing the whole cleaned response
                 if not json_match:
-                    result = json.loads(response)
-                    print(f"[Nova Reasoning] Parsed full response as JSON")
+                    result = json.loads(cleaned_response)
+                    print(f"[Nova Reasoning] Parsed full cleaned response as JSON")
             
             # Check if result was actually defined
             if 'result' not in locals():
