@@ -192,12 +192,13 @@ async def voice_websocket(
                     "content": agent_response
                 })
                 
-                # Send full agent_response message for backwards compatibility
-                await manager.send_json(session_id, {
-                    "type": "agent_response",
-                    "text": agent_response,
-                    "reasoning": reasoning_result
-                })
+                # Skip sending duplicate agent_response - text_chunk already handles it
+                # (keeping for potential backwards compatibility if needed)
+                # await manager.send_json(session_id, {
+                #     "type": "agent_response",
+                #     "text": agent_response,
+                #     "reasoning": reasoning_result
+                # })
                 
                 # Generate audio with Nova 2 Sonic (text-to-speech)
                 audio_data = await nova_sonic.process_text_to_speech(agent_response)
@@ -561,15 +562,8 @@ async def send_http_message(
     # Get agent response
     agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
     
-    # Add text chunks (stream as single chunk for HTTP)
-    session_store.add_event(session_id, {
-        "type": "text_chunk",
-        "chunk": agent_response,
-        "is_last": True,
-        "full_text": agent_response
-    })
-    
-    # Add final response
+    # Add only agent_response event (frontend handles single message display)
+    # Do NOT add text_chunk to avoid duplicates
     session_store.add_event(session_id, {
         "type": "agent_response",
         "text": agent_response,
