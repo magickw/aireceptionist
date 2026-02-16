@@ -339,11 +339,91 @@ async def voice_websocket(
                 entities = reasoning_result.get("entities", {})
                 menu_item = entities.get("menu_item") or entities.get("service")
                 
-                # Store customer info from entities if extracted
-                if entities.get("customer_name"):
-                    ws_session["customer_name"] = entities.get("customer_name")
-                if entities.get("customer_phone"):
-                    ws_session["customer_phone"] = entities.get("customer_phone")
+                # Extract customer info from entities OR from message text directly
+                content_lower = content.lower() if content else ""
+                
+                extracted_phone = entities.get("customer_phone")
+                extracted_name = entities.get("customer_name")
+                
+                # FALLBACK: Extract phone number directly from message if not in entities
+                if not extracted_phone and content:
+                    import re
+                    phone_patterns = [
+                        r'(?:phone|number|cell|mobile|call|reach)[\s:]*([+]?\d[\d\s\-\(\)]{8,})',
+                        r'\b(\d{3}[\s\-]?\d{3}[\s\-]?\d{4})\b',
+                        r'\b(\d{10,11})\b',
+                    ]
+                    for pattern in phone_patterns:
+                        match = re.search(pattern, content, re.IGNORECASE)
+                        if match:
+                            extracted_phone = re.sub(r'[^\d]', '', match.group(1))
+                            if len(extracted_phone) >= 10:
+                                print(f"[Voice WS] Extracted phone from message: {extracted_phone}")
+                                break
+                
+                # FALLBACK: Extract name from message
+                if not extracted_name and content:
+                    import re
+                    name_patterns = [
+                        r'(?:name is|i am|call me|this is|my name\'s)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+                        r'(?:name is|i am|call me|this is|my name\'s)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)',
+                    ]
+                    for pattern in name_patterns:
+                        match = re.search(pattern, content, re.IGNORECASE)
+                        if match:
+                            extracted_name = match.group(1).title()
+                            print(f"[Voice WS] Extracted name from message: {extracted_name}")
+                            break
+                
+                # Store customer info from entities or extracted values
+                if extracted_name:
+                    ws_session["customer_name"] = extracted_name
+                if extracted_phone:
+                    ws_session["customer_phone"] = extracted_phone
+                
+                # Initialize confirmation tracking if not exists
+                if "confirmed_info" not in ws_session:
+                    ws_session["confirmed_info"] = {"name": False, "phone": False}
+                
+                # Intercept if AI is asking for info we already have OR asking for confirmation repeatedly
+                if ws_session.get("customer_name") and ws_session.get("customer_phone"):
+                    suggested = reasoning_result.get("suggested_response", "")
+                    confirmed_info = ws_session.get("confirmed_info", {"name": False, "phone": False})
+                    
+                    # Detect if customer is confirming their info
+                    confirmation_keywords = ["yes", "correct", "that's right", "that is correct", "right", "confirmed", "confirm"]
+                    is_confirming = any(kw in content_lower for kw in confirmation_keywords)
+                    
+                    # If customer is confirming, mark the info as confirmed
+                    if is_confirming:
+                        if "phone" in suggested.lower() or "number" in suggested.lower():
+                            confirmed_info["phone"] = True
+                            ws_session["confirmed_info"] = confirmed_info
+                        if "name" in suggested.lower():
+                            confirmed_info["name"] = True
+                            ws_session["confirmed_info"] = confirmed_info
+                    
+                    asking_for_info = any(phrase in suggested.lower() for phrase in [
+                        "your name", "phone number", "confirm your", "provide your"
+                    ])
+                    
+                    # Check if we're asking for something that's already confirmed
+                    asking_for_confirmed = False
+                    if "phone" in suggested.lower() or "number" in suggested.lower():
+                        if confirmed_info.get("phone", False):
+                            asking_for_confirmed = True
+                    if "name" in suggested.lower():
+                        if confirmed_info.get("name", False):
+                            asking_for_confirmed = True
+                    
+                    if asking_for_info and asking_for_confirmed:
+                        # Stop asking - info is already confirmed
+                        reasoning_result["suggested_response"] = f"Great, thank you {ws_session['customer_name']}! Let me proceed with your appointment."
+                        agent_response = reasoning_result["suggested_response"]
+                        print(f"[Voice API WS] Skipping confirmation - info already confirmed: {confirmed_info}")
+                    elif asking_for_info:
+                        reasoning_result["suggested_response"] = f"Great, thank you {ws_session['customer_name']}! Let me check availability for your appointment."
+                        agent_response = reasoning_result["suggested_response"]
                 
                 # Handle specific actions from reasoning
                 selected_action = reasoning_result.get("selected_action")
@@ -351,7 +431,7 @@ async def voice_websocket(
                 quantity = entities.get("quantity", 1) if isinstance(entities.get("quantity"), int) else 1
                 
                 # Detect clarification phrases - customer is NOT adding items
-                content_lower = content.lower() if content else ""
+                # (content_lower is already defined above)
                 clarification_phrases = [
                     "i just wanted", "i didn't say", "i meant", "what i meant",
                     "i already", "already ordered", "don't add", "didn't want to add",
@@ -381,9 +461,9 @@ async def voice_websocket(
                                     }
                                     ws_session["order_items"].append(order_entry)
                                     
-                                    # Build confirmation response
+                                    # Ask for delivery method
                                     total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
-                                    agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like to add anything else, or shall I confirm your order?"
+                                    agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like pickup or delivery?"
                                 break
                 
                 # Handle clarification about existing order
@@ -393,19 +473,47 @@ async def voice_websocket(
                     agent_response = f"I understand. You have: {items_list}. Your total is ${total:.2f}. Would you like pickup or delivery?"
                 
                 elif selected_action == "CONFIRM_ORDER":
-                    # Save the order to the database
+                    # Check for missing required info first
                     if ws_session["order_items"]:
-                        total = sum(item.get("price", 0) * item.get("quantity", 1) for item in ws_session["order_items"])
-                        items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in ws_session["order_items"]])
-                        agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}. Your order has been placed and will be ready shortly. Thank you!"
+                        missing_info = []
+                        if not ws_session.get("customer_name"):
+                            missing_info.append("name")
+                        if not ws_session.get("customer_phone"):
+                            missing_info.append("phone number")
                         
-                        await _create_order_from_session(ws_session, session_id, db) # Persist immediately
-                        
-                        # Store order info for later database persistence
-                        ws_session["order_confirmed"] = True
-                        ws_session["order_total"] = total
+                        # If missing info, ask for it
+                        if missing_info:
+                            total = sum(item.get("price", 0) * item.get("quantity", 1) for item in ws_session["order_items"])
+                            items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in ws_session["order_items"]])
+                            
+                            if len(missing_info) == 2:
+                                agent_response = f"Almost there! For your order of {items_list} (${total:.2f}), I'll need your name and phone number."
+                            else:
+                                agent_response = f"Almost there! What's your {missing_info[0]} for the order?"
+                        else:
+                            # All info collected - proceed
+                            total = sum(item.get("price", 0) * item.get("quantity", 1) for item in ws_session["order_items"])
+                            items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in ws_session["order_items"]])
+                            delivery_text = f" for {ws_session.get('delivery_method', 'pickup')}" if ws_session.get("delivery_method") else " for pickup"
+                            agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}{delivery_text}. We'll have it ready for you. Thank you!"
+                            
+                            await _create_order_from_session(ws_session, session_id, db)
+                            
+                            # Store order summary for context
+                            ws_session["order_confirmed"] = True
+                            ws_session["last_order_summary"] = {
+                                "items": items_list,
+                                "total": total,
+                                "delivery_method": ws_session.get("delivery_method", "pickup")
+                            }
+                            ws_session["order_items"] = []
                     else:
-                        agent_response = f"I don't see any items in your order yet. Would you like to add anything?"
+                        # Check if we just completed an order
+                        if ws_session.get("order_confirmed") and ws_session.get("last_order_summary"):
+                            last_order = ws_session["last_order_summary"]
+                            agent_response = f"You're welcome! Your order ({last_order['items']}) will be ready for {last_order.get('delivery_method', 'pickup')}. Is there anything else I can help you with?"
+                        else:
+                            agent_response = f"I don't see any items in your order yet. Would you like to add anything?"
                 
                 elif selected_action == "SEND_DIRECTIONS":
                     address = business_context.get("address", "our location")
@@ -1183,17 +1291,99 @@ async def send_http_message(
     # Get HTTP session for state tracking
     http_session = session_store.get_session(session_id)
     
-    # Extract and store customer info from entities
+    # Initialize confirmation tracking if not exists
+    if http_session and "confirmed_info" not in http_session:
+        http_session["confirmed_info"] = {"name": False, "phone": False}
+    
+    # Extract and store customer info from entities OR from message text directly
     extracted_name = entities.get("customer_name")
     extracted_phone = entities.get("customer_phone")
+    
+    # FALLBACK: Extract phone number directly from message if not in entities
+    # This handles cases where Nova fails to extract the phone
+    message_text = message.text if hasattr(message, 'text') else str(message)
+    message_lower = message_text.lower()
+    
+    if not extracted_phone:
+        # Try to extract phone number from message text
+        import re
+        # Match various phone formats: 1234567890, 123-456-7890, (123) 456-7890, etc.
+        phone_patterns = [
+            r'(?:phone|number|cell|mobile|call|reach)[\s:]*([+]?\d[\d\s\-\(\)]{8,})',
+            r'\b(\d{3}[\s\-]?\d{3}[\s\-]?\d{4})\b',  # 10 digit US format
+            r'\b(\d{10,11})\b',  # Plain digits
+        ]
+        for pattern in phone_patterns:
+            match = re.search(pattern, message_text, re.IGNORECASE)
+            if match:
+                # Clean up the phone number
+                extracted_phone = re.sub(r'[^\d]', '', match.group(1))
+                if len(extracted_phone) >= 10:
+                    print(f"[Voice API] Extracted phone from message: {extracted_phone}")
+                    break
+    
+    # FALLBACK: Extract name from message if not in entities
+    if not extracted_name:
+        name_patterns = [
+            r'(?:name is|i am|call me|this is|my name\'s)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)',
+            r'(?:name is|i am|call me|this is|my name\'s)\s+([a-zA-Z]+(?:\s+[a-zA-Z]+)?)',
+        ]
+        for pattern in name_patterns:
+            match = re.search(pattern, message_text, re.IGNORECASE)
+            if match:
+                extracted_name = match.group(1).title()
+                print(f"[Voice API] Extracted name from message: {extracted_name}")
+                break
+    
     if extracted_name and http_session:
         http_session["customer_name"] = extracted_name
     if extracted_phone and http_session:
         http_session["customer_phone"] = extracted_phone
     
-    # Extract delivery method from entities or message
+    # Check if we already have all required info - override AI response if needed
+    # This prevents the AI from asking for info we already have OR asking for confirmation repeatedly
+    if http_session:
+        customer_name = http_session.get("customer_name")
+        customer_phone = http_session.get("customer_phone")
+        confirmed_info = http_session.get("confirmed_info", {"name": False, "phone": False})
+        
+        # Detect if customer is confirming their info
+        confirmation_keywords = ["yes", "correct", "that's right", "that is correct", "right", "confirmed", "confirm"]
+        is_confirming = any(kw in message_lower for kw in confirmation_keywords)
+        
+        # If customer is confirming, mark the info as confirmed
+        if is_confirming:
+            if "phone" in suggested.lower() or "number" in suggested.lower():
+                confirmed_info["phone"] = True
+                http_session["confirmed_info"] = confirmed_info
+            if "name" in suggested.lower():
+                confirmed_info["name"] = True
+                http_session["confirmed_info"] = confirmed_info
+        
+        # If AI is asking for info we already have AND already confirmed, don't ask again
+        if customer_name and customer_phone:
+            suggested = reasoning_result.get("suggested_response", "")
+            asking_for_info = any(phrase in suggested.lower() for phrase in [
+                "your name", "phone number", "confirm your", "provide your"
+            ])
+            
+            # Check if we're asking for something that's already confirmed
+            asking_for_confirmed = False
+            if "phone" in suggested.lower() or "number" in suggested.lower():
+                if confirmed_info.get("phone", False):
+                    asking_for_confirmed = True
+            if "name" in suggested.lower():
+                if confirmed_info.get("name", False):
+                    asking_for_confirmed = True
+            
+            if asking_for_info and asking_for_confirmed:
+                # Stop asking - info is already confirmed
+                reasoning_result["suggested_response"] = f"Great, thank you {customer_name}! Let me proceed with your appointment."
+                reasoning_result["selected_action"] = "COLLECT_INFO"
+                print(f"[Voice API] Skipping confirmation - info already confirmed: {confirmed_info}")
+    
+    # Extract delivery method from entities or message (reuse message_lower)
     delivery_method = entities.get("delivery_method")
-    message_lower = message.text.lower() if hasattr(message, 'text') else str(message).lower()
     if "pickup" in message_lower or "pick up" in message_lower or "pick it up" in message_lower:
         delivery_method = "pickup"
     elif "delivery" in message_lower or "deliver" in message_lower:
@@ -1225,6 +1415,42 @@ async def send_http_message(
     ]
     is_clarification = any(phrase in message_lower for phrase in clarification_phrases)
     
+    # Handle post-order confirmation context
+    # If customer thanks us after order, acknowledge properly
+    gratitude_phrases = ["thank you", "thanks", "thank", "thx", "appreciate it"]
+    is_gratitude = any(phrase in message_lower for phrase in gratitude_phrases)
+    
+    if is_gratitude and http_session and http_session.get("order_confirmed"):
+        last_order = http_session.get("last_order_summary", {})
+        if last_order:
+            agent_response = f"You're welcome! Your order ({last_order.get('items', 'your items')}) will be ready for {last_order.get('delivery_method', 'pickup')}. Is there anything else I can help you with?"
+            session_store.add_event(session_id, {
+                "type": "agent_response",
+                "text": agent_response,
+                "reasoning": reasoning_result
+            })
+            session["conversation_history"].append({
+                "role": "ai",
+                "content": agent_response
+            })
+            return {"status": "processed", "text": agent_response}
+    
+    # If customer confirms they want pickup/delivery, store it and ask for contact info
+    if delivery_method and http_session and http_session.get("order_items"):
+        # Check if we need customer info
+        if not http_session.get("customer_name") or not http_session.get("customer_phone"):
+            agent_response = f"Great! We'll have it ready for {delivery_method}. May I have your name and phone number for the order?"
+            session_store.add_event(session_id, {
+                "type": "agent_response",
+                "text": agent_response,
+                "reasoning": reasoning_result
+            })
+            session["conversation_history"].append({
+                "role": "ai",
+                "content": agent_response
+            })
+            return {"status": "processed", "text": agent_response}
+    
     # Handle PLACE_ORDER action - ONLY when explicitly triggered by the model
     # DO NOT auto-trigger based on "order" keyword in message (causes duplicates)
     if selected_action == "PLACE_ORDER" and not is_clarification:
@@ -1251,9 +1477,9 @@ async def send_http_message(
                         }
                         http_session["order_items"].append(order_entry)
                         
-                        # Build confirmation response
+                        # Build response asking for delivery method
                         total = sum(i.get("price", 0) * i.get("quantity", 1) for i in http_session.get("order_items", []))
-                        agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like to add anything else, or shall I confirm your order?"
+                        agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like pickup or delivery?"
                     break
     
     # Handle clarification about existing order
@@ -1263,50 +1489,79 @@ async def send_http_message(
         items_list = ", ".join([f"{i.get('quantity', 1)}x {i['name']}" for i in http_session["order_items"]])
         agent_response = f"I understand. You have: {items_list}. Your total is ${total:.2f}. Would you like pickup or delivery?"
     
-    # Handle CONFIRM_ORDER action - save order to database
+    # Handle CONFIRM_ORDER action - validate and save order to database
     elif selected_action == "CONFIRM_ORDER":
         if http_session and http_session.get("order_items"):
-            total = sum(item.get("price", 0) * item.get("quantity", 1) for item in http_session["order_items"])
-            items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in http_session["order_items"]])
+            # Check for missing required info
+            missing_info = []
+            if not http_session.get("customer_name"):
+                missing_info.append("name")
+            if not http_session.get("customer_phone"):
+                missing_info.append("phone number")
             
-            # Create order in database
-            try:
-                order = Order(
-                    business_id=business_id,
-                    customer_name=http_session.get("customer_name"),
-                    customer_phone=http_session.get("customer_phone"),
-                    status="confirmed",
-                    total_amount=total,
-                    confirmed_at=datetime.utcnow()
-                )
-                db.add(order)
-                db.flush()  # Get order ID
+            # If missing info, ask for it instead of confirming
+            if missing_info:
+                total = sum(item.get("price", 0) * item.get("quantity", 1) for item in http_session["order_items"])
+                items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in http_session["order_items"]])
                 
-                # Create order items
-                for item in http_session["order_items"]:
-                    order_item = OrderItem(
-                        order_id=order.id,
-                        menu_item_id=item.get("menu_item_id"),
-                        item_name=item["name"],
-                        quantity=item.get("quantity", 1),
-                        unit_price=item.get("price", 0)
+                if len(missing_info) == 2:
+                    agent_response = f"Almost there! For your order of {items_list} (${total:.2f}), I'll need your name and phone number."
+                else:
+                    agent_response = f"Almost there! What's your {missing_info[0]} for the order?"
+            else:
+                # All info collected - proceed with order
+                total = sum(item.get("price", 0) * item.get("quantity", 1) for item in http_session["order_items"])
+                items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in http_session["order_items"]])
+                
+                try:
+                    order = Order(
+                        business_id=business_id,
+                        customer_name=http_session.get("customer_name"),
+                        customer_phone=http_session.get("customer_phone"),
+                        status="confirmed",
+                        total_amount=total,
+                        confirmed_at=datetime.utcnow()
                     )
-                    db.add(order_item)
-                
-                db.commit()
-                print(f"[Voice API HTTP] Order {order.id} created successfully for business {business_id}")
-                
-                # Mark order as confirmed and clear items
-                http_session["order_confirmed"] = True
-                delivery_text = f" for {http_session.get('delivery_method', 'pickup')}" if http_session.get("delivery_method") else ""
-                agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}{delivery_text}. Your order has been placed. Thank you!"
-                http_session["order_items"] = []  # Clear after successful order
-            except Exception as e:
-                print(f"[Voice API HTTP] Failed to create order: {e}")
-                db.rollback()
-                agent_response = f"I'm sorry, there was an issue processing your order. Please try again."
+                    db.add(order)
+                    db.flush()
+                    
+                    for item in http_session["order_items"]:
+                        order_item = OrderItem(
+                            order_id=order.id,
+                            menu_item_id=item.get("menu_item_id"),
+                            item_name=item["name"],
+                            quantity=item.get("quantity", 1),
+                            unit_price=item.get("price", 0)
+                        )
+                        db.add(order_item)
+                    
+                    db.commit()
+                    print(f"[Voice API HTTP] Order {order.id} created successfully for business {business_id}")
+                    
+                    # Store order summary for context (don't clear immediately)
+                    delivery_text = f" for {http_session.get('delivery_method', 'pickup')}" if http_session.get("delivery_method") else " for pickup"
+                    http_session["order_confirmed"] = True
+                    http_session["last_order_summary"] = {
+                        "items": items_list,
+                        "total": total,
+                        "order_id": order.id,
+                        "delivery_method": http_session.get("delivery_method", "pickup")
+                    }
+                    # Clear order items but keep context
+                    http_session["order_items"] = []
+                    
+                    agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}{delivery_text}. We'll have it ready for you. Thank you!"
+                except Exception as e:
+                    print(f"[Voice API HTTP] Failed to create order: {e}")
+                    db.rollback()
+                    agent_response = f"I'm sorry, there was an issue processing your order. Please try again."
         else:
-            agent_response = "I don't see any items in your order yet. Would you like to add anything?"
+            # Check if we just completed an order
+            if http_session and http_session.get("order_confirmed") and http_session.get("last_order_summary"):
+                last_order = http_session["last_order_summary"]
+                agent_response = f"You're welcome! Your order ({last_order['items']}) will be ready for {last_order.get('delivery_method', 'pickup')}. Is there anything else I can help you with?"
+            else:
+                agent_response = "I don't see any items in your order yet. Would you like to add anything?"
     
     # Handle CREATE_ORDER action - similar to CONFIRM_ORDER
     elif selected_action == "CREATE_ORDER":

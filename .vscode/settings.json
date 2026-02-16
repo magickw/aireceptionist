@@ -1,3 +1,7 @@
 {
-    "CodeGPT.apiKey": "CodeGPT Plus Beta"
+    "CodeGPT.apiKey": "CodeGPT Plus Beta",
+    "python.defaultInterpreterPath": "/Users/bfguo/anaconda3/bin/python",
+    "python.analysis.extraPaths": [
+        "${workspaceFolder}/backend"
+    ]
 }

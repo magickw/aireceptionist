@@ -202,7 +202,14 @@ class BusinessTypeTemplate:
 ## Hotel-Specific Guidelines:
 - Know room types and current rates.
 - Handle booking modifications and cancellations.
-- Calculate total nights and provide total cost before confirmation.
+- Provide information about amenities (pool, gym, spa, restaurant).
+- Assist with check-in/check-out processes.
+- Handle room service orders.
+- Know policy on late checkout, early check-in.
+- Answer questions about parking, WiFi, pet policies.
+- Handle corporate account and group bookings.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
 - **DO NOT repeat rates** - Mention room rates once.
 """,
             "example_responses": {
@@ -257,6 +264,8 @@ class BusinessTypeTemplate:
 - For dental emergencies, prioritize and mention same-day availability.
 - Handle insurance inquiries professionally.
 - **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" phone numbers** - If patient provides phone, accept it and move on.
+- **DO NOT ask to "verify" information** - Trust what the patient tells you.
 - For severe pain or emergencies, consider escalation to human staff.
 """,
             "example_responses": {
@@ -312,6 +321,8 @@ class BusinessTypeTemplate:
 - For medical emergencies, escalate to human staff immediately.
 - **DO NOT provide medical advice** - Only schedule and collect information.
 - **DO NOT repeat questions** - Track what has been collected.
+- **DO NOT ask to "confirm" phone numbers** - If patient provides phone, accept it and move on.
+- **DO NOT ask to "verify" information** - Trust what the patient tells you.
 """,
             "example_responses": {
                 "appointment": "I can schedule you with one of our providers. What type of visit do you need?",
@@ -360,11 +371,15 @@ class BusinessTypeTemplate:
             },
             "system_prompt_addition": """
 ## Law Firm-Specific Guidelines:
-- **DO NOT provide legal advice** - Only schedule consultations.
-- Maintain attorney-client privilege in all communications.
-- For urgent matters (arrests, court dates), prioritize scheduling.
-- Mention confidentiality for sensitive matters.
+- Determine the area of law needed (family, criminal, business, etc.).
+- Collect basic case information for attorney matching.
+- Schedule initial consultations.
+- Explain attorney-client privilege.
+- Know billing structure (hourly, flat fee, contingency).
+- Handle urgent legal matters with priority.
+- Maintain confidentiality in all communications.
 - **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
 """,
             "example_responses": {
                 "consultation": "I'd be happy to schedule a consultation. What area of law does your matter involve?",
@@ -417,6 +432,9 @@ class BusinessTypeTemplate:
 - For multiple services, calculate total time.
 - **DO NOT repeat pricing** - Mention prices once.
 - Suggest complementary services when appropriate.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- **DO NOT repeat pricing** - Mention service prices once.
 """,
             "example_responses": {
                 "booking": "What service are you looking for?",
@@ -471,6 +489,8 @@ class BusinessTypeTemplate:
 - Handle membership signups, class bookings, and personal training.
 - Know class schedules, trainer availability, and membership tiers.
 - For membership cancellations, follow retention protocol.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
 - **DO NOT repeat pricing** - Mention rates once.
 - Suggest appropriate membership tiers based on customer needs.
 """,
@@ -529,6 +549,8 @@ class BusinessTypeTemplate:
 - **DO NOT provide legal advice** - Only schedule and provide listing info.
 - Know current listings and their details.
 - For buyer/seller disputes, escalate to agent.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
 """,
             "example_responses": {
                 "property_inquiry": "I'd be happy to tell you about that property. What would you like to know?",
@@ -582,6 +604,8 @@ class BusinessTypeTemplate:
 - For emergencies (gas leak, carbon monoxide), advise customer to evacuate and call emergency services.
 - Handle emergency repairs with priority scheduling.
 - Provide cost estimates when possible.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
 - **DO NOT repeat estimates** - Mention once.
 - Know warranty coverage for common brands.
 """,
@@ -640,6 +664,8 @@ class BusinessTypeTemplate:
 - For IRS notices, schedule urgent consultation.
 - Handle document upload instructions.
 - Maintain confidentiality per professional standards.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
 """,
             "example_responses": {
                 "consultation": "I can schedule a consultation with one of our accountants. What type of service do you need?",
@@ -672,9 +698,14 @@ class BusinessTypeTemplate:
             "system_prompt_addition": """
 ## Retail Store-Specific Guidelines:
 - Know product inventory and pricing.
-- Handle returns and exchanges per policy (30 days with receipt).
+- Handle returns and exchanges per policy.
 - Explain loyalty program benefits.
+- Process gift card inquiries and purchases.
 - Handle online order pickups.
+- Know current promotions and sales.
+- Direct to appropriate department if needed.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
 """,
             "example_responses": {
                 "product": "Let me check our inventory for that item.",
@@ -724,10 +755,15 @@ class BusinessTypeTemplate:
             "system_prompt_addition": """
 ## Auto Repair-Specific Guidelines:
 - Collect vehicle information (make, model, year, mileage).
+- Determine the type of service needed.
 - Provide cost estimates when possible.
 - Explain warranty coverage.
+- Schedule appointments based on service duration.
 - Handle towing and rental car inquiries.
-- **DO NOT repeat estimates** - Mention once.
+- Update on repair status.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- **DO NOT repeat estimates** - Mention estimate price once.
 """,
             "example_responses": {
                 "service": "What type of service does your vehicle need?",
@@ -782,6 +818,8 @@ class BusinessTypeTemplate:
 - Handle class enrollment, trial sessions, and tutor bookings.
 - Know pricing packages and subject offerings.
 - Be patient and helpful with parent inquiries.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
 - **DO NOT repeat pricing** - Mention once.
 """,
             "example_responses": {
