@@ -876,7 +876,11 @@ class HTTPSessionStore:
             "call_type": call_type,
             "conversation_history": [],
             "events": [],
-            "order_items": [],  # Track items ordered
+            "order_items": [],  # Track items ordered with quantity
+            "order_confirmed": False,  # Track if order was confirmed
+            "delivery_method": None,  # "pickup" or "delivery"
+            "customer_name": None,  # Customer name for order
+            "price_mentioned": False,  # Track if price was already mentioned
             "created_at": datetime.utcnow(),
             "active": True
         }
@@ -995,72 +999,357 @@ async def send_http_message(
         "data": reasoning_result.get("reasoning_chain", [])
     })
     
+    # ===== GOVERNANCE ENGINE INTEGRATION =====
+    # Determine governance tier based on business type, intent, confidence, and action
+    from app.services.business_templates import BusinessTypeTemplate, GovernanceTier
+    business_type = business_context.get('type', 'general')
+    detected_intent = reasoning_result.get("intent", "")
+    confidence = reasoning_result.get("confidence", 0.5)
+    proposed_action = reasoning_result.get("selected_action", "")
+    entities = reasoning_result.get("entities", {})
+    
+    governance_tier = BusinessTypeTemplate.get_governance_tier(
+        business_type=business_type,
+        intent=detected_intent,
+        confidence=confidence,
+        action=proposed_action,
+        entities=entities
+    )
+    execution_policy = BusinessTypeTemplate.get_execution_policy(governance_tier)
+    
+    # Log governance decision
+    print(f"[Voice API] Governance: tier={governance_tier}, action={proposed_action}, confidence={confidence:.2f}")
+    
+    # Add governance info to reasoning complete event
     # Add reasoning complete event
     session_store.add_event(session_id, {
         "type": "reasoning_complete",
         "data": {
-            "intent": reasoning_result.get("intent"),
-            "confidence": reasoning_result.get("confidence"),
-            "selected_action": reasoning_result.get("selected_action"),
+            "intent": detected_intent,
+            "confidence": confidence,
+            "selected_action": proposed_action,
             "sentiment": reasoning_result.get("sentiment"),
-            "escalation_risk": reasoning_result.get("escalation_risk")
+            "escalation_risk": reasoning_result.get("escalation_risk"),
+            "governance_tier": governance_tier,
+            "requires_confirmation": execution_policy.get("requires_confirmation", False),
+            "requires_human_approval": execution_policy.get("requires_human_approval", False)
         }
     })
+    
+    # Handle governance tier actions
+    if governance_tier == GovernanceTier.ESCALATE_IMMEDIATE:
+        # Immediate transfer to human
+        session_store.add_event(session_id, {
+            "type": "human_intervention_request",
+            "reason": f"Governance tier: {governance_tier}",
+            "context": {
+                "intent": detected_intent,
+                "confidence": confidence,
+                "risk": reasoning_result.get("escalation_risk"),
+                "governance_tier": governance_tier
+            }
+        })
+        agent_response = reasoning_result.get("suggested_response", "Let me transfer you to someone who can better assist you.")
+        if execution_policy.get("provide_safety_instructions"):
+            agent_response = "I'm connecting you with our team right away. In the meantime, " + agent_response
+        
+        # Add agent response event
+        session_store.add_event(session_id, {
+            "type": "agent_response",
+            "text": agent_response,
+            "reasoning": reasoning_result
+        })
+        
+        # Create audit record
+        audit_record = BusinessTypeTemplate.create_audit_record(
+            business_type=business_type,
+            session_id=session_id,
+            intent=detected_intent,
+            action=proposed_action,
+            governance_tier=governance_tier,
+            confidence=confidence,
+            entities=entities,
+            collected_data=http_session if http_session else {},
+            executed=False,
+            human_approved=False
+        )
+        print(f"[Audit] {audit_record['log_level'].upper()}: {audit_record}")
+        
+        # Add to conversation history
+        session["conversation_history"].append({
+            "role": "ai",
+            "content": agent_response
+        })
+        return {"status": "processed", "text": agent_response, "governance_tier": governance_tier}
+    
+    elif governance_tier == GovernanceTier.HUMAN_REVIEW:
+        # Pause for human approval
+        session_store.add_event(session_id, {
+            "type": "human_approval_required",
+            "action": proposed_action,
+            "context": {
+                "intent": detected_intent,
+                "confidence": confidence,
+                "entities": entities
+            }
+        })
+        agent_response = "I need to verify this with our team. One moment please."
+        
+        session_store.add_event(session_id, {
+            "type": "agent_response",
+            "text": agent_response,
+            "reasoning": reasoning_result
+        })
+        
+        session["conversation_history"].append({
+            "role": "ai",
+            "content": agent_response
+        })
+        return {"status": "pending_approval", "text": agent_response, "governance_tier": governance_tier}
+    
+    elif governance_tier == GovernanceTier.PRIORITY_FLOW:
+        # Provide safety instructions, then escalate
+        safety_response = "For your safety, please follow these instructions: "
+        if business_type == "hvac":
+            safety_response = "If you smell gas or suspect a leak, please evacuate immediately and call 911. Then I'll connect you with our emergency technician."
+        elif business_type in ["medical", "dental"]:
+            safety_response = "For urgent medical concerns, please call 911 or go to your nearest emergency room. I'm connecting you with our medical team now."
+        elif business_type == "law_firm":
+            safety_response = "This sounds time-sensitive. I'm connecting you with an attorney right away."
+        
+        session_store.add_event(session_id, {
+            "type": "human_intervention_request",
+            "reason": f"Priority flow triggered for {detected_intent}",
+            "context": {
+                "intent": detected_intent,
+                "confidence": confidence,
+                "risk": reasoning_result.get("escalation_risk"),
+                "governance_tier": governance_tier
+            }
+        })
+        
+        agent_response = safety_response + " " + reasoning_result.get("suggested_response", "Let me help you.")
+        
+        session_store.add_event(session_id, {
+            "type": "agent_response",
+            "text": agent_response,
+            "reasoning": reasoning_result
+        })
+        
+        session["conversation_history"].append({
+            "role": "ai",
+            "content": agent_response
+        })
+        return {"status": "processed", "text": agent_response, "governance_tier": governance_tier}
+    
+    elif governance_tier == GovernanceTier.CONFIRM_BEFORE_EXECUTE:
+        # Add confirmation request to response
+        confirmation_prompt = f"Would you like me to proceed with {proposed_action.replace('_', ' ').lower()}? "
+        agent_response = reasoning_result.get("suggested_response", "I'm here to help.")
+        agent_response = confirmation_prompt + agent_response
+        
+        # Store that confirmation is pending
+        if http_session:
+            http_session["pending_confirmation"] = {
+                "action": proposed_action,
+                "entities": entities,
+                "governance_tier": governance_tier
+            }
+    
+    # ===== END GOVERNANCE ENGINE =====
     
     # Get agent response
     agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
     
-    # Enhance response with actual pricing if customer asked about menu item
+    # Extract entities from reasoning
     entities = reasoning_result.get("entities", {})
     menu_item = entities.get("menu_item") or entities.get("service")
+    selected_action = reasoning_result.get("selected_action", "")
     
-    # If customer asked about pricing and we have menu info, include actual price
-    order_items = []
-    if menu_item and business_context.get("menu"):
+    # Get HTTP session for state tracking
+    http_session = session_store.get_session(session_id)
+    
+    # Extract and store customer info from entities
+    extracted_name = entities.get("customer_name")
+    extracted_phone = entities.get("customer_phone")
+    if extracted_name and http_session:
+        http_session["customer_name"] = extracted_name
+    if extracted_phone and http_session:
+        http_session["customer_phone"] = extracted_phone
+    
+    # Extract delivery method from entities or message
+    delivery_method = entities.get("delivery_method")
+    message_lower = message.text.lower() if hasattr(message, 'text') else str(message).lower()
+    if "pickup" in message_lower or "pick up" in message_lower or "pick it up" in message_lower:
+        delivery_method = "pickup"
+    elif "delivery" in message_lower or "deliver" in message_lower:
+        delivery_method = "delivery"
+    if delivery_method and http_session:
+        http_session["delivery_method"] = delivery_method
+    
+    # Get quantity from entities
+    quantity = entities.get("quantity", 1)
+    if not isinstance(quantity, int) or quantity < 1:
+        quantity = 1
+    
+    # Check if price was already mentioned in conversation history
+    price_already_mentioned = http_session.get("price_mentioned", False) if http_session else False
+    if not price_already_mentioned and http_session:
+        # Check conversation history for price mentions
+        for msg in http_session.get("conversation_history", []):
+            if msg.get("role") == "ai" and "$" in msg.get("content", ""):
+                price_already_mentioned = True
+                http_session["price_mentioned"] = True
+                break
+    
+    # Handle PLACE_ORDER action - add items to order
+    if selected_action == "PLACE_ORDER" or (menu_item and "order" in message_lower):
+        if menu_item and business_context.get("menu") and http_session:
+            menu_lower = menu_item.lower()
+            for item in business_context.get("menu", []):
+                if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
+                    # Check if item already in order (avoid duplicates)
+                    existing = next((i for i in http_session.get("order_items", []) if i["name"] == item["name"]), None)
+                    if existing:
+                        existing["quantity"] = existing.get("quantity", 1) + quantity
+                    else:
+                        order_entry = {
+                            "name": item["name"],
+                            "price": item.get("price", 0),
+                            "quantity": quantity,
+                            "menu_item_id": item.get("id")
+                        }
+                        if "order_items" not in http_session:
+                            http_session["order_items"] = []
+                        http_session["order_items"].append(order_entry)
+                    
+                    # Build confirmation response
+                    total = sum(i.get("price", 0) * i.get("quantity", 1) for i in http_session.get("order_items", []))
+                    agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like to add anything else, or shall I confirm your order?"
+                    break
+    
+    # Handle CONFIRM_ORDER action - save order to database
+    elif selected_action == "CONFIRM_ORDER":
+        if http_session and http_session.get("order_items"):
+            total = sum(item.get("price", 0) * item.get("quantity", 1) for item in http_session["order_items"])
+            items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in http_session["order_items"]])
+            
+            # Create order in database
+            try:
+                order = Order(
+                    business_id=business_id,
+                    customer_name=http_session.get("customer_name"),
+                    customer_phone=http_session.get("customer_phone"),
+                    status="confirmed",
+                    total_amount=total,
+                    confirmed_at=datetime.utcnow()
+                )
+                db.add(order)
+                db.flush()  # Get order ID
+                
+                # Create order items
+                for item in http_session["order_items"]:
+                    order_item = OrderItem(
+                        order_id=order.id,
+                        menu_item_id=item.get("menu_item_id"),
+                        item_name=item["name"],
+                        quantity=item.get("quantity", 1),
+                        unit_price=item.get("price", 0)
+                    )
+                    db.add(order_item)
+                
+                db.commit()
+                print(f"[Voice API HTTP] Order {order.id} created successfully for business {business_id}")
+                
+                # Mark order as confirmed and clear items
+                http_session["order_confirmed"] = True
+                delivery_text = f" for {http_session.get('delivery_method', 'pickup')}" if http_session.get("delivery_method") else ""
+                agent_response = f"Perfect! I've confirmed your order: {items_list}. Your total is ${total:.2f}{delivery_text}. Your order has been placed. Thank you!"
+                http_session["order_items"] = []  # Clear after successful order
+            except Exception as e:
+                print(f"[Voice API HTTP] Failed to create order: {e}")
+                db.rollback()
+                agent_response = f"I'm sorry, there was an issue processing your order. Please try again."
+        else:
+            agent_response = "I don't see any items in your order yet. Would you like to add anything?"
+    
+    # Handle CREATE_ORDER action - similar to CONFIRM_ORDER
+    elif selected_action == "CREATE_ORDER":
+        if http_session and http_session.get("order_items"):
+            total = sum(item.get("price", 0) * item.get("quantity", 1) for item in http_session["order_items"])
+            items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in http_session["order_items"]])
+            
+            try:
+                order = Order(
+                    business_id=business_id,
+                    customer_name=http_session.get("customer_name"),
+                    customer_phone=http_session.get("customer_phone"),
+                    status="confirmed",
+                    total_amount=total,
+                    confirmed_at=datetime.utcnow()
+                )
+                db.add(order)
+                db.flush()
+                
+                for item in http_session["order_items"]:
+                    order_item = OrderItem(
+                        order_id=order.id,
+                        menu_item_id=item.get("menu_item_id"),
+                        item_name=item["name"],
+                        quantity=item.get("quantity", 1),
+                        unit_price=item.get("price", 0)
+                    )
+                    db.add(order_item)
+                
+                db.commit()
+                print(f"[Voice API HTTP] Order {order.id} created successfully for business {business_id}")
+                
+                http_session["order_confirmed"] = True
+                http_session["order_items"] = []
+                agent_response = f"Got it! I'm placing your order now for {items_list}. Your total is ${total:.2f}. Thank you!"
+            except Exception as e:
+                print(f"[Voice API HTTP] Failed to create order: {e}")
+                db.rollback()
+                agent_response = f"I'm sorry, there was an issue processing your order."
+        else:
+            agent_response = "I don't have any items in your order. What would you like to get?"
+    
+    # Handle price mention - only if not already mentioned in this conversation
+    elif menu_item and business_context.get("menu") and not price_already_mentioned:
         menu_lower = menu_item.lower()
         for item in business_context.get("menu", []):
             if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
                 if item.get("price"):
                     price_str = f"${item['price']:.2f}"
-                    order_items.append({"name": item["name"], "price": item["price"]})
-                    # Include price only once
-                    if "Our" not in agent_response:
+                    # Only add price if not already in response
+                    if "$" not in agent_response and "price" not in agent_response.lower():
                         unit_text = f" {item.get('unit', 'per item')}" if item.get('unit') and item.get('unit') != 'per item' else ''
                         agent_response = f"Our {item['name']} is {price_str}{unit_text}. {agent_response}"
+                    # Mark that price was mentioned
+                    if http_session:
+                        http_session["price_mentioned"] = True
                     break
     
-    # Track order items in session
-    http_session = session_store.get_session(session_id)
-    if order_items and http_session:
-        if "order_items" not in http_session:
-            http_session["order_items"] = []
-        http_session["order_items"].extend(order_items)
-    
     # Calculate total if customer asks about total cost
-    if message:
-        message_lower = message.text.lower() if hasattr(message, 'text') else str(message).lower()
-        if http_session and "order_items" in http_session and http_session["order_items"]:
-            if "total" in message_lower or "cost me" in message_lower or "how much" in message_lower:
-                total = sum(item["price"] for item in http_session["order_items"])
-                items_list = ", ".join([item["name"] for item in http_session["order_items"]])
-                if len(http_session["order_items"]) > 1:
-                    agent_response = f"You ordered: {items_list}. Your total is ${total:.2f}. {agent_response}"
+    if http_session and http_session.get("order_items"):
+        if "total" in message_lower or "cost me" in message_lower or "how much" in message_lower:
+            total = sum(item.get("price", 0) * item.get("quantity", 1) for item in http_session["order_items"])
+            items_list = ", ".join([f"{item.get('quantity', 1)}x {item['name']}" for item in http_session["order_items"]])
+            agent_response = f"You ordered: {items_list}. Your total is ${total:.2f}."
 
-    # Handle specific smart actions
-    selected_action = reasoning_result.get("selected_action", "")
+    # Handle other smart actions
     if selected_action == "SEND_DIRECTIONS":
         address = business_context.get("address", "our location")
         landmark = entities.get("landmark", "")
         landmark_text = f" near {landmark}" if landmark else ""
         agent_response = f"We are located at {address}{landmark_text}. {agent_response}"
     elif selected_action == "PAYMENT_PROCESS":
-        total = sum(item["price"] for item in http_session["order_items"]) if http_session and "order_items" in http_session else 0
+        total = sum(item.get("price", 0) * item.get("quantity", 1) for item in http_session.get("order_items", [])) if http_session else 0
         if total > 0:
             agent_response = f"I've initiated a secure payment process for your total of ${total:.2f}. I'm sending a secure link to your phone now. {agent_response}"
         else:
             agent_response = f"I'd be happy to help with that payment. Could you please confirm what you'd like to pay for? {agent_response}"
     elif selected_action == "HUMAN_INTERVENTION":
-        # Add intervention request event
         session_store.add_event(session_id, {
             "type": "human_intervention_request",
             "reason": reasoning_result.get("safety_reason", "Unknown safety trigger"),

@@ -1,14 +1,33 @@
 """
 Nova 2 Lite Reasoning Core
 Autonomous Business Operations Agent - Reasoning Engine
+
+Architecture:
+- Model invocation layer with retry logic
+- Safety gate layer with deterministic triggers
+- Structured response validator with multi-layer JSON parsing
+- Industry-specific governance
 """
 import boto3
 import json
+import re
+import asyncio
+import random
 from typing import Dict, List, Optional, Any
 from datetime import datetime
+from botocore.exceptions import ClientError, ReadTimeoutError, ConnectTimeoutError
+
 from app.core.config import settings
 from app.services.knowledge_base import knowledge_base_service
 from app.services.business_templates import BusinessTypeTemplate
+from app.services.conversation_state import (
+    ReasoningError, 
+    SafetyViolationError, 
+    ModelInvocationError, 
+    ParseError,
+    RetryConfig,
+    retry_with_backoff
+)
 
 
 
@@ -70,6 +89,12 @@ class NovaReasoningEngine:
     """
     Nova 2 Lite-powered reasoning engine for autonomous business operations.
     Handles intent detection, entity extraction, action selection, and planning.
+    
+    Architecture:
+    - Model invocation layer
+    - Safety gate layer with deterministic triggers
+    - Structured response validator
+    - Visualization builder
     """
     
     def __init__(self):
@@ -82,6 +107,7 @@ class NovaReasoningEngine:
         self.model_id = "amazon.nova-lite-v1:0"
         
         # Available actions for the agent
+        # NOTE: CREATE_ORDER is deprecated - use PLACE_ORDER + CONFIRM_ORDER flow
         self.available_actions = [
             "CREATE_APPOINTMENT",
             "PROVIDE_INFO",
@@ -94,15 +120,34 @@ class NovaReasoningEngine:
             "TAKE_MESSAGE",
             "PAYMENT_PROCESS",
             "SEND_DIRECTIONS",
-            "PLACE_ORDER",
-            "CONFIRM_ORDER",
+            "PLACE_ORDER",        # Add items to order
+            "CONFIRM_ORDER",      # Finalize and save order
             "HUMAN_INTERVENTION",
-            "CREATE_ORDER"
         ]
         
-        # Safety Thresholds
-        self.CONFIDENCE_THRESHOLD = 0.85
-        self.RISK_THRESHOLD = 0.7
+        # Default Safety Thresholds (overridden by industry-specific risk_profile)
+        self.DEFAULT_CONFIDENCE_THRESHOLD = 0.85
+        self.DEFAULT_RISK_THRESHOLD = 0.7
+        
+        # ===== DETERMINISTIC ESCALATION TRIGGERS =====
+        # These trigger escalation REGARDLESS of model output
+        self.CRITICAL_KEYWORDS = [
+            "sue", "lawsuit", "lawyer", "attorney", "legal action",
+            "emergency", "911", "dying", "unconscious", "chest pain",
+            "gas leak", "fire", "explosion", "carbon monoxide",
+            "sexual harassment", "discrimination", "threaten",
+            "police", "arrest", "criminal"
+        ]
+        
+        self.COMPLAINT_KEYWORDS = [
+            "manager", "supervisor", "speak to someone",
+            "terrible", "awful", "horrible", "disgusting",
+            "never coming back", "refund", "money back",
+            "fraud", "scam", "ripped off"
+        ]
+        
+        self.VIP_SATISFACTION_THRESHOLD = 4.5  # Customers above this are VIPs
+        self.REPEAT_COMPLAINT_THRESHOLD = 2    # Number of past complaints to trigger VIP handling
     
     async def reason(
         self,
@@ -116,6 +161,12 @@ class NovaReasoningEngine:
         Main reasoning method - analyzes conversation and determines best action.
         Supports multimodal data (images, documents).
         
+        Governance Architecture:
+        1. Deterministic triggers (pre-model) - keywords, history, VIP rules
+        2. Model-based reasoning
+        3. Industry-specific thresholds (from risk_profile)
+        4. Combined escalation decision
+        
         Args:
             conversation: Current conversation transcript
             business_context: Business information (type, services, hours, etc.)
@@ -127,6 +178,28 @@ class NovaReasoningEngine:
             Structured reasoning result with intent, entities, action, and metadata
         """
         
+        # ===== STEP 1: DETERMINISTIC PRE-CHECKS =====
+        # These run BEFORE model invocation to catch critical cases
+        business_type = business_context.get('type', 'general')
+        deterministic_escalation = self._check_deterministic_triggers(
+            conversation, customer_context, business_type
+        )
+        
+        # Get industry-specific thresholds
+        risk_profile = BusinessTypeTemplate.get_risk_profile(business_type)
+        confidence_threshold = risk_profile.get("confidence_threshold", self.DEFAULT_CONFIDENCE_THRESHOLD)
+        risk_threshold = risk_profile.get("auto_escalate_threshold", self.DEFAULT_RISK_THRESHOLD)
+        
+        print(f"[Nova Governance] Business: {business_type}, Confidence threshold: {confidence_threshold}, Risk threshold: {risk_threshold}")
+        
+        # Immediate escalation for deterministic triggers
+        if deterministic_escalation["should_escalate"]:
+            print(f"[Nova Safety] Deterministic trigger: {deterministic_escalation['reason']}")
+            return self._create_deterministic_escalation_response(
+                deterministic_escalation, business_context, customer_context
+            )
+        
+        # ===== STEP 2: MODEL-BASED REASONING =====
         # Try to get relevant context from knowledge base
         knowledge_context = ""
         if db and business_context.get("business_id"):
@@ -184,18 +257,36 @@ class NovaReasoningEngine:
             # Parse and validate the response
             reasoning_result = self._parse_reasoning_response(response)
             
-            # --- CONFIDENCE GATING & SAFETY CHECK ---
-            # Check if the AI is confident enough to act autonomously
+            # ===== STEP 3: COMBINED GOVERNANCE CHECK =====
+            # Combine model output with deterministic factors
             requires_approval = False
             safety_reason = ""
             
-            if reasoning_result["confidence"] < self.CONFIDENCE_THRESHOLD:
+            # Check confidence against industry-specific threshold
+            if reasoning_result["confidence"] < confidence_threshold:
                 requires_approval = True
-                safety_reason = f"Low confidence ({reasoning_result['confidence']:.2f} < {self.CONFIDENCE_THRESHOLD})"
+                safety_reason = f"Low confidence ({reasoning_result['confidence']:.2f} < {confidence_threshold})"
             
-            elif reasoning_result["escalation_risk"] > self.RISK_THRESHOLD:
+            # Check model-reported escalation risk against industry threshold
+            elif reasoning_result["escalation_risk"] > risk_threshold:
                 requires_approval = True
-                safety_reason = f"High escalation risk ({reasoning_result['escalation_risk']:.2f} > {self.RISK_THRESHOLD})"
+                safety_reason = f"High escalation risk ({reasoning_result['escalation_risk']:.2f} > {risk_threshold})"
+            
+            # Check for high-risk intents from risk profile
+            high_risk_intents = risk_profile.get("high_risk_intents", [])
+            detected_intent = reasoning_result.get("intent", "")
+            if detected_intent in high_risk_intents:
+                requires_approval = True
+                safety_reason = f"High-risk intent detected: {detected_intent}"
+            
+            # VIP customer with complaint - prioritize handling
+            satisfaction_score = customer_context.get("satisfaction_score", 0)
+            complaint_count = customer_context.get("complaint_count", 0)
+            if satisfaction_score >= self.VIP_SATISFACTION_THRESHOLD and complaint_count > 0:
+                reasoning_result["is_vip"] = True
+                if reasoning_result["sentiment"] == "negative":
+                    requires_approval = True
+                    safety_reason = f"VIP customer with negative sentiment"
             
             # If safety check fails, override action
             if requires_approval:
@@ -212,11 +303,173 @@ class NovaReasoningEngine:
                 reasoning_result, business_context, customer_context
             )
             
+            # Add governance metadata
+            reasoning_result["governance"] = {
+                "business_type": business_type,
+                "confidence_threshold": confidence_threshold,
+                "risk_threshold": risk_threshold,
+                "deterministic_check": deterministic_escalation,
+                "final_tier": "human_review" if requires_approval else "auto"
+            }
+            
             return reasoning_result
             
         except Exception as e:
             # Fallback to safe defaults if reasoning fails
             return self._get_fallback_response(str(e))
+    
+    def _check_deterministic_triggers(
+        self,
+        conversation: str,
+        customer_context: Dict[str, Any],
+        business_type: str
+    ) -> Dict[str, Any]:
+        """
+        Check for deterministic escalation triggers BEFORE model invocation.
+        
+        Returns:
+            Dictionary with should_escalate, reason, and trigger_type
+        """
+        conversation_lower = conversation.lower()
+        
+        # Check for critical keywords (immediate escalation)
+        for keyword in self.CRITICAL_KEYWORDS:
+            if keyword in conversation_lower:
+                return {
+                    "should_escalate": True,
+                    "reason": f"Critical keyword detected: '{keyword}'",
+                    "trigger_type": "critical_keyword",
+                    "keyword": keyword
+                }
+        
+        # Check for complaint escalation triggers
+        complaint_count = customer_context.get("complaint_count", 0)
+        satisfaction_score = customer_context.get("satisfaction_score", 0)
+        
+        # Repeat complaint pattern
+        if complaint_count >= self.REPEAT_COMPLAINT_THRESHOLD:
+            for keyword in self.COMPLAINT_KEYWORDS:
+                if keyword in conversation_lower:
+                    return {
+                        "should_escalate": True,
+                        "reason": f"Repeat complainant ({complaint_count} complaints) with escalation keyword: '{keyword}'",
+                        "trigger_type": "repeat_complaint",
+                        "complaint_count": complaint_count
+                    }
+        
+        # VIP with negative sentiment indicators
+        if satisfaction_score >= self.VIP_SATISFACTION_THRESHOLD:
+            negative_indicators = ["unhappy", "disappointed", "not satisfied", "problem", "issue"]
+            for indicator in negative_indicators:
+                if indicator in conversation_lower:
+                    return {
+                        "should_escalate": True,
+                        "reason": f"VIP customer (satisfaction: {satisfaction_score}) expressing: '{indicator}'",
+                        "trigger_type": "vip_concern",
+                        "satisfaction_score": satisfaction_score
+                    }
+        
+        # Industry-specific triggers
+        if business_type in ["medical", "dental"]:
+            emergency_symptoms = ["chest pain", "difficulty breathing", "severe pain", "bleeding", "unconscious"]
+            for symptom in emergency_symptoms:
+                if symptom in conversation_lower:
+                    return {
+                        "should_escalate": True,
+                        "reason": f"Medical emergency indicator: '{symptom}'",
+                        "trigger_type": "medical_emergency",
+                        "requires_911": True
+                    }
+        
+        if business_type == "hvac":
+            safety_keywords = ["gas smell", "gas leak", "carbon monoxide", "smoke", "fire"]
+            for keyword in safety_keywords:
+                if keyword in conversation_lower:
+                    return {
+                        "should_escalate": True,
+                        "reason": f"Safety emergency: '{keyword}'",
+                        "trigger_type": "safety_emergency",
+                        "requires_911": True
+                    }
+        
+        if business_type == "law_firm":
+            urgent_legal = ["arrested", "court tomorrow", "deadline today", "being sued today"]
+            for keyword in urgent_legal:
+                if keyword in conversation_lower:
+                    return {
+                        "should_escalate": True,
+                        "reason": f"Urgent legal matter: '{keyword}'",
+                        "trigger_type": "urgent_legal"
+                    }
+        
+        return {
+            "should_escalate": False,
+            "reason": None,
+            "trigger_type": None
+        }
+    
+    def _create_deterministic_escalation_response(
+        self,
+        trigger_info: Dict[str, Any],
+        business_context: Dict[str, Any],
+        customer_context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Create a response for deterministic escalation triggers.
+        This bypasses the model entirely for safety-critical cases.
+        """
+        trigger_type = trigger_info.get("trigger_type")
+        
+        # Safety instruction based on trigger type
+        if trigger_info.get("requires_911"):
+            safety_response = "This sounds like an emergency. Please call 911 immediately if you're in danger. I'm connecting you with our team right away."
+        elif trigger_type == "medical_emergency":
+            safety_response = "For medical emergencies, please call 911 or go to your nearest emergency room. I'm alerting our medical team now."
+        elif trigger_type == "safety_emergency":
+            safety_response = "For your safety, please evacuate if you smell gas or suspect danger. I'm dispatching emergency service immediately."
+        elif trigger_type == "urgent_legal":
+            safety_response = "This sounds time-sensitive. I'm connecting you with an attorney right away."
+        elif trigger_type == "vip_concern":
+            safety_response = "I understand this is important to you. Let me connect you with our senior team member right away."
+        else:
+            safety_response = "Let me connect you with someone who can help you with this right away."
+        
+        return {
+            "intent": "escalation_required",
+            "confidence": 1.0,
+            "entities": {},
+            "selected_action": "HUMAN_INTERVENTION",
+            "action_reasoning": f"DETERMINISTIC TRIGGER: {trigger_info['reason']}",
+            "next_questions": [],
+            "sentiment": "neutral",
+            "escalation_risk": 1.0,
+            "memory_update": {"key": "escalation", "value": trigger_info},
+            "suggested_response": safety_response,
+            "requires_approval": True,
+            "safety_reason": trigger_info["reason"],
+            "deterministic_trigger": True,
+            "trigger_info": trigger_info,
+            "reasoning_chain": [
+                {
+                    "step": 1,
+                    "title": "Deterministic Safety Check",
+                    "description": trigger_info["reason"],
+                    "alert": True,
+                    "trigger_type": trigger_type
+                },
+                {
+                    "step": 2,
+                    "title": "Action Override",
+                    "description": "Bypassing model reasoning for safety-critical escalation",
+                    "alert": True
+                }
+            ],
+            "governance": {
+                "business_type": business_context.get("type", "general"),
+                "deterministic_bypass": True,
+                "trigger_type": trigger_type
+            }
+        }
     
     def _build_system_prompt(
         self,
@@ -227,6 +480,7 @@ class NovaReasoningEngine:
     ) -> str:
         """
         Build comprehensive system prompt with all context.
+        Uses structured flow config for data-driven guidance.
         """
         
         # Build knowledge base context if available
@@ -267,8 +521,11 @@ class NovaReasoningEngine:
         business_type = business_context.get('type', 'general')
         template_prompt = BusinessTypeTemplate.get_template_prompt(business_type)
         
-        # Get required info fields for this business type
-        required_info = BusinessTypeTemplate.get_required_info(business_type)
+        # Get structured flow context (replaces verbose prompt instructions)
+        flow_context = BusinessTypeTemplate.get_flow_prompt_context(business_type)
+        
+        # Get risk profile for escalation logic
+        risk_profile = BusinessTypeTemplate.get_risk_profile(business_type)
         
         prompt = f"""
 You are Nova 2 Lite, the reasoning core of an autonomous business operations agent.
@@ -286,8 +543,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
 - Available Slots: {', '.join(business_context.get('available_slots', []))}
 {menu_section}
 
-## Required Information to Collect:
-When handling customer requests, always collect: {', '.join(required_info)}
+{flow_context}
 
 {template_prompt}
 
@@ -314,6 +570,7 @@ When handling customer requests, always collect: {', '.join(required_info)}
     "time": "<preferred_time_or_null>",
     "customer_name": "<extracted_name_or_null>",
     "customer_phone": "<extracted_phone_or_null>",
+    "delivery_method": "<'pickup' or 'delivery' if customer specifies how they want their order>",
     "urgency": "<low|medium|high>",
     "issue_type": "<complaint_type_or_null>",
     "payment_method": "<extracted_payment_method_or_null>",
@@ -338,7 +595,7 @@ When handling customer requests, always collect: {', '.join(required_info)}
 2. Extract relevant entities (service, date, time, etc.)
 3. Check customer history for context
 4. Match intent to best action
-5. Identify missing information needed
+5. Identify missing information needed (use field collection order above)
 6. Assess sentiment and escalation risk
 7. Plan memory updates
 8. Draft appropriate response
@@ -349,18 +606,22 @@ When handling customer requests, always collect: {', '.join(required_info)}
 - If repeat issue in history → Flag for human review, escalate
 - If after hours → Suggest alternative or queue appointment
 - If customer angry (negative sentiment + high urgency) → Consider TRANSFER_HUMAN
-- **IMPORTANT - Appointment Booking**: Before confirming ANY appointment, you MUST collect: (1) customer's full name, (2) phone number. Use COLLECT_INFO action until you have both name AND phone, then use CREATE_APPOINTMENT
+- **IMPORTANT - Appointment Booking**: Before confirming ANY appointment, you MUST collect all required fields. Use COLLECT_INFO action until you have all required info, then use the Final Action specified above.
 - **CRITICAL - Order Taking Flow**:
   - When customer says they want to ORDER something (e.g., "I want to order...", "I'd like to get...", "Can I have..."):
     1. Extract the menu_item entity from their request
     2. Set selected_action to "PLACE_ORDER" 
     3. The menu_item entity should be the exact name of what they want to order
+    4. ONLY mention the price ONCE per item - do NOT repeat prices
+    5. Ask if they want pickup or delivery (only if not already specified)
+  - When customer specifies pickup/delivery:
+    1. Extract delivery_method entity ("pickup" or "delivery")
+    2. Do NOT ask again about pickup/delivery if already answered
   - When customer CONFIRMS their order (e.g., "yes", "that's all", "confirm", "that's it", "place the order"):
     1. Set selected_action to "CONFIRM_ORDER"
     2. Only use CONFIRM_ORDER when the customer has explicitly confirmed they want to finalize
-  - Example: Customer says "I want to order kung pow chicken" → intent: "place_order", menu_item: "kung pow chicken", selected_action: "PLACE_ORDER"
-  - Example: Customer says "yes that's all" after ordering → selected_action: "CONFIRM_ORDER"
-  - Do NOT use PROVIDE_INFO for orders - use PLACE_ORDER or CONFIRM_ORDER
+  - **DO NOT repeat information** - If price was already mentioned, do NOT mention it again
+  - **DO NOT ask questions already answered** - If customer said "pickup", do NOT ask about delivery method
 
 ## Quality Guidelines:
 - Confidence should reflect how clearly the intent is expressed
@@ -385,9 +646,9 @@ When handling customer requests, always collect: {', '.join(required_info)}
             "TAKE_MESSAGE": "Record message for callback",
             "PAYMENT_PROCESS": "Initiate secure payment collection",
             "SEND_DIRECTIONS": "Provide business location and directions",
-            "PLACE_ORDER": "Add item to customer's order (requires menu_item entity)",
-            "CONFIRM_ORDER": "Finalize and save the order to the system",
-            "CREATE_ORDER": "Finalize and log a customer's food/product order"
+            "PLACE_ORDER": "Add item to customer's order cart (step 1 of order flow)",
+            "CONFIRM_ORDER": "Finalize and save the complete order (step 2 of order flow)",
+            "HUMAN_INTERVENTION": "Pause for human review before any action"
         }
         
         return "\n".join([
@@ -398,10 +659,13 @@ When handling customer requests, always collect: {', '.join(required_info)}
     async def _invoke_nova_lite(
         self,
         system_prompt: str,
-        messages: List[Dict[str, str]]
+        messages: List[Dict[str, str]],
+        max_retries: int = 3
     ) -> str:
         """
         Invoke Nova 2 Lite model with structured reasoning prompt.
+        Uses asyncio.to_thread to prevent blocking the event loop.
+        Implements retry logic with exponential backoff for transient failures.
         """
         body = {
             "messages": messages,
@@ -413,99 +677,210 @@ When handling customer requests, always collect: {', '.join(required_info)}
             }
         }
         
-        response = self.bedrock_runtime.invoke_model(
+        # Retry configuration
+        config = RetryConfig(
+            max_retries=max_retries,
+            base_delay=1.0,
+            max_delay=30.0,
+            exponential_base=2.0,
+            jitter=True
+        )
+        
+        # Transient exceptions that should be retried
+        transient_exceptions = (
+            ClientError,
+            ReadTimeoutError, 
+            ConnectTimeoutError,
+            ConnectionError,
+            TimeoutError
+        )
+        
+        last_exception = None
+        
+        for attempt in range(config.max_retries + 1):
+            try:
+                # Run synchronous Bedrock call in a thread pool
+                response = await asyncio.to_thread(
+                    self._invoke_bedrock_sync,
+                    body
+                )
+                
+                response_body = json.loads(response["body"].read().decode())
+                
+                # Extract the content from the response
+                if "messages" in response_body and len(response_body["messages"]) > 0:
+                    content = response_body["messages"][0].get("content", "")
+                    # Handle both string and list content
+                    if isinstance(content, list):
+                        # Join text from all content blocks
+                        return "".join([block.get("text", "") for block in content if block.get("text")])
+                    return content
+                elif "output" in response_body:
+                    content = response_body["output"].get("message", {}).get("content", {})
+                    if isinstance(content, list):
+                        return "".join([block.get("text", "") for block in content if block.get("text")])
+                    return content
+                else:
+                    raise ModelInvocationError(f"Unexpected response format: {response_body}")
+                    
+            except transient_exceptions as e:
+                last_exception = e
+                
+                if attempt == config.max_retries:
+                    raise ModelInvocationError(
+                        f"Failed to invoke model after {config.max_retries} retries: {str(e)}",
+                        retry_count=config.max_retries
+                    )
+                
+                # Calculate delay with exponential backoff
+                delay = min(
+                    config.base_delay * (config.exponential_base ** attempt),
+                    config.max_delay
+                )
+                
+                # Add jitter
+                if config.jitter:
+                    delay = delay * (0.5 + random.random())
+                
+                print(f"[Nova Reasoning] Retry {attempt + 1}/{config.max_retries} after {delay:.2f}s due to: {e}")
+                await asyncio.sleep(delay)
+        
+        raise ModelInvocationError(
+            f"Failed to invoke model: {last_exception}",
+            retry_count=config.max_retries
+        )
+    
+    def _invoke_bedrock_sync(self, body: Dict[str, Any]) -> Any:
+        """
+        Synchronous Bedrock invocation (called from thread pool).
+        """
+        return self.bedrock_runtime.invoke_model(
             modelId=self.model_id,
             body=json.dumps(body)
         )
-        
-        response_body = json.loads(response["body"].read().decode())
-        
-        # Extract the content from the response
-        if "messages" in response_body and len(response_body["messages"]) > 0:
-            content = response_body["messages"][0].get("content", "")
-            # Handle both string and list content
-            if isinstance(content, list):
-                # Join text from all content blocks
-                return "".join([block.get("text", "") for block in content if block.get("text")])
-            return content
-        elif "output" in response_body:
-            content = response_body["output"].get("message", {}).get("content", {})
-            if isinstance(content, list):
-                return "".join([block.get("text", "") for block in content if block.get("text")])
-            return content
-        else:
-            raise ValueError(f"Unexpected response format: {response_body}")
     
     def _parse_reasoning_response(self, response: str) -> Dict[str, Any]:
         """
         Parse and validate the reasoning response.
-        """
-        # Debug: print raw response
-        print(f"[Nova Reasoning] Raw response: {response[:1000]}...")
+        Uses multi-layer JSON extraction for robustness.
         
-        try:
-            # Try to extract JSON from the response
-            if isinstance(response, dict):
-                result = response
-            else:
-                # First, clean up the response - remove markdown code blocks
-                import re
-                
-                # Remove markdown code block markers (```json, ```, etc.)
-                cleaned_response = re.sub(r'```json\s*', '', response, flags=re.IGNORECASE)
-                cleaned_response = re.sub(r'```\s*$', '', cleaned_response, flags=re.MULTILINE)
-                cleaned_response = cleaned_response.strip()
-                
-                print(f"[Nova Reasoning] Cleaned response: {cleaned_response[:500]}...")
-                
-                # Try to parse the entire cleaned response as JSON (not regex)
+        Layers:
+        1. Direct parse if response is already dict
+        2. Strip markdown and try direct JSON parse
+        3. Regex extraction for JSON with nested objects
+        4. Balanced brace extraction for complex nested JSON
+        5. Fallback to error response
+        """
+        print(f"[Nova Reasoning] Raw response length: {len(response)} chars")
+        
+        result = None
+        
+        # Layer 1: Already a dict
+        if isinstance(response, dict):
+            result = response
+        
+        else:
+            # Clean up markdown code blocks
+            cleaned = re.sub(r'```json\s*', '', str(response), flags=re.IGNORECASE)
+            cleaned = re.sub(r'```[\w]*\s*', '', cleaned, flags=re.IGNORECASE)
+            cleaned = cleaned.strip()
+            
+            # Layer 2: Direct JSON parse
+            try:
+                result = json.loads(cleaned)
+                print(f"[Nova Reasoning] Layer 2 success: direct JSON parse")
+            except json.JSONDecodeError:
+                # Layer 3: Regex for JSON with nested objects
+                # This pattern handles one level of nesting
                 try:
-                    result = json.loads(cleaned_response)
-                    print(f"[Nova Reasoning] Successfully parsed full JSON, intent: {result.get('intent')}")
-                except json.JSONDecodeError as e:
-                    print(f"[Nova Reasoning] Failed to parse full JSON: {e}")
-                    # Last resort: try regex
-                    json_match = re.search(r'\{[^{}]*\}', cleaned_response)
-                    if json_match:
-                        result = json.loads(json_match.group())
-            
-            # Check if result was actually defined
-            if 'result' not in locals():
-                raise ValueError("Could not parse JSON from response")
-            
-            # Validate required fields
-            required_fields = [
-                "intent", "confidence", "entities", "selected_action",
-                "action_reasoning", "sentiment", "escalation_risk", "suggested_response"
-            ]
-            
-            for field in required_fields:
-                if field not in result:
-                    print(f"[Nova Reasoning] Missing field '{field}', using default")
-                    result[field] = self._get_default_value(field)
-            
-            # Validate selected action
-            if result["selected_action"] not in self.available_actions:
+                    json_pattern = r'\{(?:[^{}]|\{[^{}]*\})*\}'
+                    match = re.search(json_pattern, cleaned, re.DOTALL)
+                    if match:
+                        result = json.loads(match.group(0))
+                        print(f"[Nova Reasoning] Layer 3 success: regex extraction")
+                except (json.JSONDecodeError, AttributeError):
+                    pass
+                
+                # Layer 4: Balanced brace extraction for deeply nested JSON
+                if result is None:
+                    result = self._extract_nested_json(cleaned)
+                    if result:
+                        print(f"[Nova Reasoning] Layer 4 success: balanced brace extraction")
+        
+        # Layer 5: Fallback
+        if result is None:
+            print(f"[Nova Reasoning] All parsing layers failed, using fallback")
+            return self._get_fallback_response("Could not parse JSON from response")
+        
+        # Validate required fields
+        required_fields = [
+            "intent", "confidence", "entities", "selected_action",
+            "action_reasoning", "sentiment", "escalation_risk", "suggested_response"
+        ]
+        
+        for field in required_fields:
+            if field not in result:
+                print(f"[Nova Reasoning] Missing field '{field}', using default")
+                result[field] = self._get_default_value(field)
+        
+        # Validate and normalize selected action
+        if result["selected_action"] not in self.available_actions:
+            # Map deprecated CREATE_ORDER to CONFIRM_ORDER
+            if result["selected_action"] == "CREATE_ORDER":
+                result["selected_action"] = "CONFIRM_ORDER"
+                result["action_reasoning"] = "Mapped CREATE_ORDER to CONFIRM_ORDER for consistency"
+            else:
                 result["selected_action"] = "PROVIDE_INFO"
                 result["action_reasoning"] = "Defaulted to providing information due to unclear intent"
-            
-            # Ensure types are correct
-            result["confidence"] = float(result.get("confidence", 0.5))
-            result["escalation_risk"] = float(result.get("escalation_risk", 0.1))
-            
-            # Ensure next_questions is a list
-            if "next_questions" not in result or not isinstance(result["next_questions"], list):
-                result["next_questions"] = []
-            
-            # Ensure memory_update exists
-            if "memory_update" not in result:
-                result["memory_update"] = {"key": "none", "value": None}
-            
-            return result
-            
-        except Exception as e:
-            # If parsing fails, return structured error response
-            return self._get_fallback_response(f"Parse error: {str(e)}")
+        
+        # Ensure types are correct
+        result["confidence"] = float(result.get("confidence", 0.5))
+        result["escalation_risk"] = float(result.get("escalation_risk", 0.1))
+        
+        # Ensure next_questions is a list
+        if "next_questions" not in result or not isinstance(result["next_questions"], list):
+            result["next_questions"] = []
+        
+        # Ensure memory_update exists
+        if "memory_update" not in result:
+            result["memory_update"] = {"key": "none", "value": None}
+        
+        return result
+    
+    def _extract_nested_json(self, text: str) -> Optional[Dict[str, Any]]:
+        """
+        Robustly extract nested JSON from text by finding balanced braces.
+        This handles nested objects correctly unlike simple regex.
+        """
+        # Find the first opening brace
+        start_idx = text.find('{')
+        if start_idx == -1:
+            return None
+        
+        # Track brace depth to find the matching closing brace
+        depth = 0
+        end_idx = start_idx
+        
+        for i in range(start_idx, len(text)):
+            char = text[i]
+            if char == '{':
+                depth += 1
+            elif char == '}':
+                depth -= 1
+                if depth == 0:
+                    end_idx = i + 1
+                    break
+        
+        if depth != 0:
+            # Unbalanced braces - try to parse what we have
+            return None
+        
+        json_str = text[start_idx:end_idx]
+        
+        try:
+            return json.loads(json_str)
+        except json.JSONDecodeError:
+            return None
     
     def _build_reasoning_chain(
         self,
