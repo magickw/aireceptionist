@@ -7,22 +7,15 @@ app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
 )
-from app.core.config import settings
-
-app = FastAPI(
-    title=settings.PROJECT_NAME,
-    openapi_url=f"{settings.API_V1_STR}/openapi.json",
-)
 
 # Set all CORS enabled origins
-# For production, replace with your actual Vercel frontend URL
-# For development, keep "*" or add localhost URLs
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production: ["https://your-vercel-app.vercel.app"]
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
