@@ -13,7 +13,7 @@ from dateutil.relativedelta import relativedelta
 from app.services.nova_reasoning import nova_reasoning
 from app.services.nova_sonic import nova_sonic, AudioBuffer, LatencyTracker
 from app.api.deps import get_current_business_id, get_current_active_user, get_db
-from app.models.models import User, Appointment, Order, OrderItem, MenuItem, CallSession
+from app.models.models import User, Appointment, Order, OrderItem, MenuItem, CallSession, CalendarIntegration
 from sqlalchemy.orm import Session
 
 router = APIRouter()
@@ -1730,16 +1730,16 @@ async def send_http_message(
     
     # Also check if AI response mentions scheduling (fallback) - but only if we have a time
     # OR if customer asked about availability with a specific time (e.g., "is the doctor available at 2pm tomorrow?")
-    if not appointment_created and ("scheduled" in agent_response.lower() or "booked" in agent_response.lower()):
+    availability_message = None
+    if not appointment_created and ("scheduled" in agent_response.lower() or "booked" in agent_response.lower() or "available" in agent_response.lower() or "available at" in message_lower):
         # Try to extract date/time from the response or entities
-        date_str = entities.get("date")
-        time_str = entities.get("time")
-        preferred_time_str = entities.get("preferred_time")
+        date_str = entities.get("date") or entities.get("preferred_date")
+        time_str = entities.get("time") or entities.get("preferred_time")
         
         # Check if preferred_time contains both date and time (e.g., "tomorrow at 2pm")
-        if preferred_time_str and (not date_str or not time_str):
+        if time_str and (not date_str or not time_str):
             # Try to parse preferred_time as combined datetime
-            appointment_time = parse_natural_datetime(None, preferred_time_str)
+            appointment_time = parse_natural_datetime(None, time_str)
         else:
             appointment_time = parse_natural_datetime(date_str, time_str)
         
@@ -1750,25 +1750,81 @@ async def send_http_message(
                 
                 end_time = appointment_time + timedelta(hours=1)
                 
-                result = await calendar_service.check_and_book_appointment(
-                    business_id=business_id,
-                    start_time=appointment_time,
-                    end_time=end_time,
-                    customer_name=customer_name,
-                    customer_phone=customer_phone,
-                    service=entities.get("service") or entities.get("service_type") or "General Checkup",
-                    db=db
-                )
+                # First check availability only
+                integration = db.query(CalendarIntegration).filter(
+                    CalendarIntegration.business_id == business_id,
+                    CalendarIntegration.status == "active"
+                ).first()
                 
-                if result["success"]:
-                    print(f"[Voice API] Created appointment from AI confirmation at {appointment_time}")
-                    appointment_created = True
-                    # Update agent response with confirmation
-                    date_str = appointment_time.strftime("%B %d")
-                    time_str = appointment_time.strftime("%I:%M %p")
-                    agent_response = f"Great! I've booked your appointment for {date_str} at {time_str}. {agent_response}"
+                if integration:
+                    availability = await calendar_service.check_availability(integration, appointment_time, end_time, db)
+                    is_available = availability.get("available", False)
+                    
+                    if not is_available:
+                        # Not available - inform customer
+                        date_str = appointment_time.strftime("%B %d")
+                        time_str = appointment_time.strftime("%I:%M %p")
+                        agent_response = f"I'm sorry, but {date_str} at {time_str} is not available. {availability.get('message', 'Please try a different time.')}"
+                    else:
+                        # Available - can we book it?
+                        if "available at" in message_lower or "will.*available" in message_lower:
+                            # Customer is asking about availability, not booking yet
+                            date_str = appointment_time.strftime("%B %d")
+                            time_str = appointment_time.strftime("%I:%M %p")
+                            agent_response = f"Yes, {date_str} at {time_str} is available! Would you like me to book your appointment for that time?"
+                        else:
+                            # Customer wants to book - proceed with booking
+                            result = await calendar_service.check_and_book_appointment(
+                                business_id=business_id,
+                                start_time=appointment_time,
+                                end_time=end_time,
+                                customer_name=customer_name,
+                                customer_phone=customer_phone,
+                                service=entities.get("service") or entities.get("service_type") or "General Checkup",
+                                db=db
+                            )
+                            
+                            if result["success"]:
+                                print(f"[Voice API] Created appointment from availability check at {appointment_time}")
+                                appointment_created = True
+                                date_str = appointment_time.strftime("%B %d")
+                                time_str = appointment_time.strftime("%I:%M %p")
+                                agent_response = f"Great! I've booked your appointment for {date_str} at {time_str}. {agent_response}"
+                else:
+                    # No calendar integration - check local DB conflicts
+                    from app.models.models import Appointment
+                    db_conflicts = calendar_service.check_db_conflicts(business_id, appointment_time, end_time, db)
+                    
+                    if db_conflicts:
+                        date_str = appointment_time.strftime("%B %d")
+                        time_str = appointment_time.strftime("%I:%M %p")
+                        agent_response = f"I'm sorry, but {date_str} at {time_str} is already booked. Would you like to try a different time?"
+                    else:
+                        # Available locally
+                        if "available at" in message_lower or "will.*available" in message_lower:
+                            date_str = appointment_time.strftime("%B %d")
+                            time_str = appointment_time.strftime("%I:%M %p")
+                            agent_response = f"Yes, {date_str} at {time_str} is available! Would you like me to book your appointment for that time?"
+                        else:
+                            # Book it
+                            result = await calendar_service.check_and_book_appointment(
+                                business_id=business_id,
+                                start_time=appointment_time,
+                                end_time=end_time,
+                                customer_name=customer_name,
+                                customer_phone=customer_phone,
+                                service=entities.get("service") or entities.get("service_type") or "General Checkup",
+                                db=db
+                            )
+                            
+                            if result["success"]:
+                                print(f"[Voice API] Created appointment from AI confirmation at {appointment_time}")
+                                appointment_created = True
+                                date_str = appointment_time.strftime("%B %d")
+                                time_str = appointment_time.strftime("%I:%M %p")
+                                agent_response = f"Great! I've booked your appointment for {date_str} at {time_str}. {agent_response}"
             except Exception as e:
-                print(f"[Voice API] Failed to create appointment: {e}")
+                print(f"[Voice API] Failed to check availability or create appointment: {e}")
             except Exception as e:
                 print(f"[Voice API] Failed to create appointment: {e}")
                 db.rollback()
