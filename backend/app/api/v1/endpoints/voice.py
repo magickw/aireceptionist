@@ -350,20 +350,28 @@ async def voice_websocket(
                 menu_item = entities.get("menu_item") or entities.get("service")
                 quantity = entities.get("quantity", 1) if isinstance(entities.get("quantity"), int) else 1
                 
-                # Detect if this is an order request based on intent or action
-                intent = reasoning_result.get("intent", "").lower()
-                is_order_intent = selected_action == "PLACE_ORDER" or "order" in intent or "place_order" in intent
+                # Detect clarification phrases - customer is NOT adding items
+                content_lower = content.lower() if content else ""
+                clarification_phrases = [
+                    "i just wanted", "i didn't say", "i meant", "what i meant",
+                    "i already", "already ordered", "don't add", "didn't want to add",
+                    "no i didn't", "that's not what", "i said i wanted", "clarify",
+                    "i was just saying", "just clarifying", "i meant to say"
+                ]
+                is_clarification = any(phrase in content_lower for phrase in clarification_phrases)
                 
-                # Handle PLACE_ORDER action or detected order intent
-                if selected_action == "PLACE_ORDER" or (is_order_intent and menu_item):
+                # Handle PLACE_ORDER action - ONLY when explicitly triggered by the model
+                if selected_action == "PLACE_ORDER" and not is_clarification:
                     if menu_item and business_context.get("menu"):
                         menu_lower = menu_item.lower()
                         for item in business_context.get("menu", []):
                             if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
                                 # Check if item already in order (avoid duplicates)
-                                existing = next((i for i in ws_session["order_items"] if i["name"] == item["name"]), None)
+                                existing = next((i for i in ws_session["order_items"] if i["name"].lower() == item["name"].lower()), None)
                                 if existing:
-                                    existing["quantity"] = existing.get("quantity", 1) + quantity
+                                    # Item already exists - don't add again
+                                    total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
+                                    agent_response = f"You already have {existing.get('quantity', 1)}x {item['name']} in your order. Your total is ${total:.2f}. Would you like to add more, or shall I confirm your order?"
                                 else:
                                     order_entry = {
                                         "name": item["name"],
@@ -372,11 +380,17 @@ async def voice_websocket(
                                         "menu_item_id": item.get("id")
                                     }
                                     ws_session["order_items"].append(order_entry)
-                                
-                                # Build confirmation response
-                                total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
-                                agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like to add anything else, or shall I confirm your order?"
+                                    
+                                    # Build confirmation response
+                                    total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
+                                    agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like to add anything else, or shall I confirm your order?"
                                 break
+                
+                # Handle clarification about existing order
+                elif is_clarification and ws_session.get("order_items"):
+                    total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
+                    items_list = ", ".join([f"{i.get('quantity', 1)}x {i['name']}" for i in ws_session["order_items"]])
+                    agent_response = f"I understand. You have: {items_list}. Your total is ${total:.2f}. Would you like pickup or delivery?"
                 
                 elif selected_action == "CONFIRM_ORDER":
                     # Save the order to the database
@@ -1202,31 +1216,52 @@ async def send_http_message(
                 http_session["price_mentioned"] = True
                 break
     
-    # Handle PLACE_ORDER action - add items to order
-    if selected_action == "PLACE_ORDER" or (menu_item and "order" in message_lower):
+    # Detect clarification phrases - customer is NOT adding items
+    clarification_phrases = [
+        "i just wanted", "i didn't say", "i meant", "what i meant",
+        "i already", "already ordered", "don't add", "didn't want to add",
+        "no i didn't", "that's not what", "i said i wanted", "clarify",
+        "i was just saying", "just clarifying", "i meant to say"
+    ]
+    is_clarification = any(phrase in message_lower for phrase in clarification_phrases)
+    
+    # Handle PLACE_ORDER action - ONLY when explicitly triggered by the model
+    # DO NOT auto-trigger based on "order" keyword in message (causes duplicates)
+    if selected_action == "PLACE_ORDER" and not is_clarification:
         if menu_item and business_context.get("menu") and http_session:
             menu_lower = menu_item.lower()
             for item in business_context.get("menu", []):
                 if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
+                    # Initialize order_items if needed
+                    if "order_items" not in http_session:
+                        http_session["order_items"] = []
+                    
                     # Check if item already in order (avoid duplicates)
-                    existing = next((i for i in http_session.get("order_items", []) if i["name"] == item["name"]), None)
+                    existing = next((i for i in http_session.get("order_items", []) if i["name"].lower() == item["name"].lower()), None)
                     if existing:
-                        existing["quantity"] = existing.get("quantity", 1) + quantity
+                        # Item already exists - don't add again, just acknowledge
+                        agent_response = f"You already have {existing.get('quantity', 1)}x {item['name']} in your order. Your total is ${sum(i.get('price', 0) * i.get('quantity', 1) for i in http_session['order_items']):.2f}. Would you like to add more, or shall I confirm your order?"
                     else:
+                        # Add new item
                         order_entry = {
                             "name": item["name"],
                             "price": item.get("price", 0),
                             "quantity": quantity,
                             "menu_item_id": item.get("id")
                         }
-                        if "order_items" not in http_session:
-                            http_session["order_items"] = []
                         http_session["order_items"].append(order_entry)
-                    
-                    # Build confirmation response
-                    total = sum(i.get("price", 0) * i.get("quantity", 1) for i in http_session.get("order_items", []))
-                    agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like to add anything else, or shall I confirm your order?"
+                        
+                        # Build confirmation response
+                        total = sum(i.get("price", 0) * i.get("quantity", 1) for i in http_session.get("order_items", []))
+                        agent_response = f"Got it! Added {quantity}x {item['name']} to your order. Your current total is ${total:.2f}. Would you like to add anything else, or shall I confirm your order?"
                     break
+    
+    # Handle clarification about existing order
+    elif is_clarification and http_session and http_session.get("order_items"):
+        # Customer is clarifying, not adding - acknowledge their existing order
+        total = sum(i.get("price", 0) * i.get("quantity", 1) for i in http_session.get("order_items", []))
+        items_list = ", ".join([f"{i.get('quantity', 1)}x {i['name']}" for i in http_session["order_items"]])
+        agent_response = f"I understand. You have: {items_list}. Your total is ${total:.2f}. Would you like pickup or delivery?"
     
     # Handle CONFIRM_ORDER action - save order to database
     elif selected_action == "CONFIRM_ORDER":
