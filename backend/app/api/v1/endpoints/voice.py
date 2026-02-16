@@ -1676,12 +1676,22 @@ async def send_http_message(
     appointment_created = False
     
     if selected_action == "CREATE_APPOINTMENT":
-        date_str = entities.get("date")
-        time_str = entities.get("time")
-        service = entities.get("service")
+        date_str = entities.get("date") or entities.get("preferred_date")
+        time_str = entities.get("time") or entities.get("preferred_time")
+        service = entities.get("service") or entities.get("service_type")
         
-        # Use the natural language date parser
-        appointment_time = parse_natural_datetime(date_str, time_str)
+        # Check if preferred_time contains combined date+time (e.g., "tomorrow at 2pm")
+        if time_str and (not date_str or not time_str):
+            # Try to parse time_str as combined datetime
+            appointment_time = parse_natural_datetime(None, time_str)
+            if appointment_time:
+                # Successfully parsed combined string
+                pass
+            else:
+                # Fall back to separate date/time parsing
+                appointment_time = parse_natural_datetime(date_str, time_str)
+        else:
+            appointment_time = parse_natural_datetime(date_str, time_str)
         
         if appointment_time:
             try:
@@ -1719,11 +1729,19 @@ async def send_http_message(
             print(f"[Voice API] Could not parse date/time: date='{date_str}', time='{time_str}'")
     
     # Also check if AI response mentions scheduling (fallback) - but only if we have a time
+    # OR if customer asked about availability with a specific time (e.g., "is the doctor available at 2pm tomorrow?")
     if not appointment_created and ("scheduled" in agent_response.lower() or "booked" in agent_response.lower()):
         # Try to extract date/time from the response or entities
         date_str = entities.get("date")
         time_str = entities.get("time")
-        appointment_time = parse_natural_datetime(date_str, time_str)
+        preferred_time_str = entities.get("preferred_time")
+        
+        # Check if preferred_time contains both date and time (e.g., "tomorrow at 2pm")
+        if preferred_time_str and (not date_str or not time_str):
+            # Try to parse preferred_time as combined datetime
+            appointment_time = parse_natural_datetime(None, preferred_time_str)
+        else:
+            appointment_time = parse_natural_datetime(date_str, time_str)
         
         if appointment_time:
             try:
@@ -1738,12 +1756,17 @@ async def send_http_message(
                     end_time=end_time,
                     customer_name=customer_name,
                     customer_phone=customer_phone,
-                    service=entities.get("service", "Checkup"),
+                    service=entities.get("service") or entities.get("service_type") or "General Checkup",
                     db=db
                 )
                 
                 if result["success"]:
                     print(f"[Voice API] Created appointment from AI confirmation at {appointment_time}")
+                    appointment_created = True
+                    # Update agent response with confirmation
+                    date_str = appointment_time.strftime("%B %d")
+                    time_str = appointment_time.strftime("%I:%M %p")
+                    agent_response = f"Great! I've booked your appointment for {date_str} at {time_str}. {agent_response}"
             except Exception as e:
                 print(f"[Voice API] Failed to create appointment: {e}")
             except Exception as e:
