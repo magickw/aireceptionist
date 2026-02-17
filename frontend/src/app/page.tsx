@@ -16,6 +16,7 @@ import ListItem from '@mui/material/ListItem';
 import ListItemText from '@mui/material/ListItemText';
 import ListItemAvatar from '@mui/material/ListItemAvatar';
 import Button from '@mui/material/Button';
+import Alert from '@mui/material/Alert';
 import PhoneIcon from '@mui/icons-material/Phone';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import PeopleIcon from '@mui/icons-material/People';
@@ -76,6 +77,8 @@ export default function Dashboard() {
   const [workflows, setWorkflows] = useState<WorkflowExecution[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [businessId, setBusinessId] = useState<number | null>(null);
+  const [error, setError] = useState('');
+  const [consecutiveErrors, setConsecutiveErrors] = useState(0);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -178,8 +181,18 @@ export default function Dashboard() {
           setWorkflows(workflowList.slice(0, 4));
         }
         
+        // Reset error count on successful fetch
+        setConsecutiveErrors(0);
+        setError('');
+        
       } catch (error: any) {
         console.error('Error fetching dashboard data:', error);
+        setConsecutiveErrors(prev => prev + 1);
+        
+        // Stop showing error after first occurrence to avoid console spam
+        if (consecutiveErrors === 0) {
+          setError(error?.response?.data?.detail || error?.message || 'Failed to fetch dashboard data');
+        }
       } finally {
         setIsLoading(false);
       }
@@ -188,9 +201,15 @@ export default function Dashboard() {
     fetchDashboardData();
     
     // Set up real-time updates (every 30 seconds)
-    const interval = setInterval(fetchDashboardData, 30000);
-    return () => clearInterval(interval);
-  }, [isAuthenticated]);
+    // Stop polling if there are too many consecutive errors
+    let interval: NodeJS.Timeout;
+    if (consecutiveErrors < 5) {
+      interval = setInterval(fetchDashboardData, 30000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [isAuthenticated, consecutiveErrors]);
 
   const formatTimeAgo = (dateStr: string): string => {
     if (!dateStr) return 'Unknown';
@@ -246,6 +265,17 @@ export default function Dashboard() {
 
   return (
     <Container maxWidth="xl" sx={{ mt: { xs: 2, sm: 4 }, mb: { xs: 2, sm: 4 }, px: { xs: 2, sm: 3 } }}>
+      {error && (
+        <Alert severity="warning" sx={{ mb: 3 }} onClose={() => setError('')}>
+          <Typography variant="body2">{error}</Typography>
+          {consecutiveErrors >= 5 && (
+            <Typography variant="caption" display="block" sx={{ mt: 1 }}>
+              Auto-refresh has been paused due to connection issues. Please refresh the page.
+            </Typography>
+          )}
+        </Alert>
+      )}
+      
       <Box sx={{ mb: { xs: 2, sm: 4 } }}>
         <Typography 
           variant="h4" 
