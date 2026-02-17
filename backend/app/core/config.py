@@ -23,6 +23,19 @@ class Settings(BaseSettings):
     
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
     
+    # Google Calendar Configuration
+    GOOGLE_CLIENT_ID: Optional[str] = None
+    GOOGLE_CLIENT_SECRET: Optional[str] = None
+    GOOGLE_REDIRECT_URI: str = "https://receptium.onrender.com/api/calendar/google/callback"
+    
+    # Microsoft Calendar Configuration
+    MICROSOFT_CLIENT_ID: Optional[str] = None
+    MICROSOFT_CLIENT_SECRET: Optional[str] = None
+    MICROSOFT_REDIRECT_URI: str = "https://receptium.onrender.com/api/calendar/microsoft/callback"
+    
+    # Firebase Configuration
+    FIREBASE_CREDENTIALS: Optional[str] = None
+    
     class Config:
         case_sensitive = True
         env_file = ".env"

@@ -665,6 +665,17 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
   - **DO NOT repeat information** - If price was already mentioned, do NOT mention it again
   - **DO NOT ask questions already answered** - If customer said "pickup", do NOT ask about delivery method
   - **DO NOT ask to "confirm" info** - If customer said their phone number, trust it and move on
+- **CRITICAL - Availability Checking**:
+  - When customer asks "is the doctor available at [time]?" or "will you be available at [time]?":
+    1. Extract the time from the question into the "preferred_time" entity
+    2. Set selected_action to "PROVIDE_INFO" (NOT CREATE_APPOINTMENT - they're asking, not booking yet)
+    3. The "preferred_time" entity should contain the time string (e.g., "tomorrow at 2pm", "2pm tomorrow")
+    4. Suggested response should acknowledge you're checking availability
+    5. DO NOT try to book the appointment - just answer the availability question
+  - Examples:
+    - "is the doctor available at 2pm tomorrow?" → preferred_time: "tomorrow at 2pm", action: PROVIDE_INFO
+    - "will you be open at 5pm today?" → preferred_time: "5pm today", action: PROVIDE_INFO
+    - "can I book for next Tuesday at 10am?" → preferred_time: "next Tuesday at 10am", action: CREATE_APPOINTMENT (they want to book, not just check)
 - **INTENT VALIDATION - IMPORTANT**: Before accepting orders, verify they match the business type
   - Restaurant: Accept food orders. If customer asks for appointments/services, be helpful - explain what you do offer, offer to schedule if you provide that service (e.g., restaurants may offer event catering)
   - Auto Repair: Accept service requests. If customer asks for food, be understanding - explain this is an auto shop but see if you can still help (maybe suggest nearby restaurants)
