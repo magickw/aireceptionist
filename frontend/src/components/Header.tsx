@@ -113,6 +113,21 @@ export default function Header() {
       </Typography>
       <Divider />
       <List>
+        {!isAuthenticated && (
+          <>
+            <ListItem disablePadding>
+              <ListItemButton component={Link} href="/landing" sx={{ textAlign: 'center', py: 1 }}>
+                <ListItemText primary="Home" />
+              </ListItemButton>
+            </ListItem>
+            <ListItem disablePadding>
+              <ListItemButton component={Link} href="/call-simulator" sx={{ textAlign: 'center', py: 1 }}>
+                <ListItemText primary="Demo" />
+              </ListItemButton>
+            </ListItem>
+            <Divider sx={{ my: 1 }} />
+          </>
+        )}
         {isAuthenticated && (
           <>
             {/* Main Navigation */}
@@ -207,7 +222,7 @@ export default function Header() {
           <Typography 
             variant="h6" 
             component={Link} 
-            href="/" 
+            href={isAuthenticated ? '/' : '/landing'} 
             sx={{ 
               flexGrow: 1, 
               fontWeight: 'bold', 
@@ -222,6 +237,49 @@ export default function Header() {
           
           {/* Desktop Navigation */}
           <Box sx={{ display: { xs: 'none', md: 'flex' }, gap: 0.5, alignItems: 'center' }}>
+            {!isAuthenticated && (
+              <>
+                <Button
+                  color="inherit"
+                  component={Link}
+                  href="/landing"
+                  sx={{ 
+                    textTransform: 'none',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: '8px',
+                    minWidth: 'auto',
+                    '&:hover': {
+                      bgcolor: 'rgba(255,255,255,0.15)',
+                    }
+                  }}
+                >
+                  Home
+                </Button>
+                <Button
+                  color="inherit"
+                  component={Link}
+                  href="/call-simulator"
+                  sx={{ 
+                    textTransform: 'none',
+                    fontSize: '0.8rem',
+                    fontWeight: 600,
+                    px: 1.5,
+                    py: 1,
+                    borderRadius: '8px',
+                    minWidth: 'auto',
+                    '&:hover': {
+                      bgcolor: 'rgba(255,255,255,0.15)',
+                    }
+                  }}
+                >
+                  Demo
+                </Button>
+              </>
+            )}
+            
             {isAuthenticated && (
               <>
                 {/* Primary Nav Items */}
