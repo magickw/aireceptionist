@@ -58,7 +58,7 @@ async def list_scenarios(
 ) -> List[TrainingScenarioResponse]:
     """List all training scenarios for the user's business"""
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     scenarios = await ai_training_service.list_scenarios(
         db, business_id, category, is_active
     )
@@ -88,7 +88,7 @@ async def create_scenario(
 ) -> TrainingScenarioResponse:
     """Create a new training scenario"""
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     
     new_scenario = await ai_training_service.create_scenario(
         db=db,
@@ -121,7 +121,7 @@ async def get_statistics(
 ):
     """Get training statistics"""
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     return await ai_training_service.get_statistics(db, business_id)
 
 
@@ -133,7 +133,7 @@ async def test_scenario(
 ):
     """Test a single training scenario"""
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     
     # Get business context for the AI
     business = db.query(Business).filter(Business.id == business_id).first()
@@ -156,7 +156,7 @@ async def test_all_scenarios(
 ):
     """Test all active training scenarios"""
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     
     # Get business context
     business = db.query(Business).filter(Business.id == business_id).first()
@@ -172,17 +172,84 @@ async def test_all_scenarios(
     )
 
 
+@router.post("/generate")
+async def generate_scenarios(
+    count: int = 5,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> List[TrainingScenarioResponse]:
+    """Generate synthetic training scenarios based on business context"""
+    
+    business_id = await deps.get_current_business_id(current_user, db)
+    
+    # Cap count to avoid abuse/timeout
+    count = min(max(count, 1), 10)
+    
+    scenarios = await ai_training_service.generate_synthetic_scenarios(
+        db, business_id, count
+    )
+    
+    return [
+        TrainingScenarioResponse(
+            id=s.id,
+            title=s.title,
+            description=s.description,
+            category=s.category,
+            user_input=s.user_input,
+            expected_response=s.expected_response,
+            is_active=s.is_active,
+            success_rate=None,
+            last_tested=s.last_tested.isoformat() if s.last_tested else None,
+            created_at=s.created_at.isoformat() if s.created_at else ""
+        )
+        for s in scenarios
+    ]
+
+
+@router.post("/snapshots")
+async def create_snapshot(
+    name: str,
+    description: Optional[str] = None,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Create a versioned snapshot of current training scenarios"""
+    business_id = await deps.get_current_business_id(current_user, db)
+    return await ai_training_service.create_snapshot(db, business_id, name, description)
+
+
+@router.get("/snapshots")
+async def list_snapshots(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """List all training snapshots"""
+    business_id = await deps.get_current_business_id(current_user, db)
+    return await ai_training_service.list_snapshots(db, business_id)
+
+
+@router.get("/benchmarks")
+async def get_benchmarks(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Get recent benchmark results"""
+    business_id = await deps.get_current_business_id(current_user, db)
+    return await ai_training_service.get_benchmarks(db, business_id)
+
+
 @router.post("/test-input")
 async def test_input(
     test_input: dict,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
-    """Test AI with custom input"""
-    from app.services.nova_reasoning import nova_reasoning
+    """Test AI with custom input and return full reasoning details (Playground)"""
+    from app.services.nova_reasoning import nova_reasoning, get_training_context
     from app.api.v1.endpoints.voice import _get_business_context
+    from app.services.knowledge_base import knowledge_base_service
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     business_context = await _get_business_context(business_id, db)
     customer_context = {
         "name": "Test Customer",
@@ -194,27 +261,34 @@ async def test_input(
         "complaint_count": 0
     }
     
+    # Capture the contexts being used for the playground
+    input_text = test_input.get("input", "")
+    
+    knowledge_context = await knowledge_base_service.get_relevant_context(
+        query=input_text,
+        business_id=business_id,
+        db=db
+    )
+    
+    training_context = await get_training_context(
+        business_id=business_id,
+        db=db,
+        conversation=input_text
+    )
+    
     result = await nova_reasoning.reason(
-        conversation=test_input.get("input", ""),
+        conversation=input_text,
         business_context=business_context,
         customer_context=customer_context,
         db=db
     )
     
-    # Enhance response with actual pricing if customer asked about menu item
-    entities = result.get("entities", {})
-    menu_item = entities.get("menu_item") or entities.get("service")
-    
-    if menu_item and business_context.get("menu"):
-        menu_lower = menu_item.lower()
-        for item in business_context.get("menu", []):
-            if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
-                if item.get("price"):
-                    price_str = f"${item['price']:.2f}"
-                    suggested = result.get("suggested_response", "")
-                    unit_text = f" {item.get('unit', 'per item')}" if item.get('unit') and item.get('unit') != 'per item' else ''
-                    result["suggested_response"] = f"Our {item['name']} is {price_str}{unit_text}. {suggested}"
-                    break
+    # Add debug context for the playground
+    result["playground_context"] = {
+        "knowledge_base": knowledge_context,
+        "training_examples": training_context,
+        "business_profile": business_context
+    }
     
     return result
 
@@ -233,7 +307,7 @@ async def get_scenario(
 ) -> TrainingScenarioResponse:
     """Get a specific training scenario"""
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     scenario = await ai_training_service.get_scenario(db, scenario_id, business_id)
     
     if not scenario:
@@ -262,7 +336,7 @@ async def update_scenario(
 ) -> TrainingScenarioResponse:
     """Update a training scenario"""
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     
     scenario = await ai_training_service.update_scenario(
         db, scenario_id, business_id, **scenario_update.dict(exclude_unset=True)
@@ -293,7 +367,7 @@ async def delete_scenario(
 ):
     """Delete a training scenario"""
     
-    business_id = deps.get_current_business_id(current_user, db)
+    business_id = await deps.get_current_business_id(current_user, db)
     
     success = await ai_training_service.delete_scenario(db, scenario_id, business_id)
     
@@ -301,3 +375,73 @@ async def delete_scenario(
         raise HTTPException(status_code=404, detail="Scenario not found")
     
     return {"message": "Scenario deleted successfully"}
+
+
+class CallLogCorrection(BaseModel):
+    user_input: str
+    expected_response: str
+    category: Optional[str] = "general_inquiry"
+
+
+@router.post("/convert-approval/{approval_id}")
+async def convert_approval(
+    approval_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> TrainingScenarioResponse:
+    """Convert an approval request into a training scenario"""
+    
+    business_id = await deps.get_current_business_id(current_user, db)
+    
+    scenario = await ai_training_service.create_scenario_from_approval(
+        db, business_id, approval_id
+    )
+    
+    if not scenario:
+        raise HTTPException(
+            status_code=404, 
+            detail="Approval request not found or not reviewed"
+        )
+    
+    return TrainingScenarioResponse(
+        id=scenario.id,
+        title=scenario.title,
+        description=scenario.description,
+        category=scenario.category,
+        user_input=scenario.user_input,
+        expected_response=scenario.expected_response,
+        is_active=scenario.is_active,
+        success_rate=None,
+        last_tested=None,
+        created_at=scenario.created_at.isoformat() if scenario.created_at else ""
+    )
+
+
+@router.post("/convert-call-log/{call_session_id}")
+async def convert_call_log(
+    call_session_id: str,
+    correction: CallLogCorrection,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> TrainingScenarioResponse:
+    """Convert a call log correction into a training scenario"""
+    
+    business_id = await deps.get_current_business_id(current_user, db)
+    
+    scenario = await ai_training_service.create_scenario_from_call_log(
+        db, business_id, call_session_id, correction.user_input, 
+        correction.expected_response, correction.category
+    )
+    
+    return TrainingScenarioResponse(
+        id=scenario.id,
+        title=scenario.title,
+        description=scenario.description,
+        category=scenario.category,
+        user_input=scenario.user_input,
+        expected_response=scenario.expected_response,
+        is_active=scenario.is_active,
+        success_rate=None,
+        last_tested=None,
+        created_at=scenario.created_at.isoformat() if scenario.created_at else ""
+    )

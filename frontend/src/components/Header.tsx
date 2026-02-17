@@ -46,6 +46,7 @@ const managementItems = [
 const aiItems = [
   { label: 'Knowledge Base', href: '/knowledge-base', icon: 'library' },
   { label: 'AI Training', href: '/ai-training', icon: 'school' },
+  { label: 'AI Approvals', href: '/approvals', icon: 'check_circle' },
   { label: 'Voice Greetings', href: '/voice-greetings', icon: 'record' },
   { label: 'Call Routing', href: '/call-routing', icon: 'route' },
   { label: 'Chatbot', href: '/chatbot', icon: 'bot' },

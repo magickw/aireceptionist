@@ -57,10 +57,41 @@ export default function CallLogsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedCall, setSelectedCall] = useState<CallSession | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [isTrainingOpen, setIsTrainingOpen] = useState(false);
+  const [trainingInput, setTrainingInput] = useState('');
+  const [trainingResponse, setTrainingResponse] = useState('');
+  const [trainingCategory, setTrainingCategory] = useState('general_inquiry');
+  const [isSubmittingTraining, setIsSubmittingTraining] = useState(false);
 
   useEffect(() => {
     fetchCalls();
   }, []);
+
+  const handleTrainAI = (call: CallSession) => {
+    setSelectedCall(call);
+    setTrainingInput(call.summary || '');
+    setTrainingResponse('');
+    setIsTrainingOpen(true);
+  };
+
+  const submitTraining = async () => {
+    if (!selectedCall) return;
+    setIsSubmittingTraining(true);
+    try {
+      await api.post(`/ai-training/convert-call-log/${selectedCall.id}`, {
+        user_input: trainingInput,
+        expected_response: trainingResponse,
+        category: trainingCategory
+      });
+      alert('Successfully added to AI training scenarios!');
+      setIsTrainingOpen(false);
+    } catch (error) {
+      console.error('Failed to submit training:', error);
+      alert('Failed to add training scenario.');
+    } finally {
+      setIsSubmittingTraining(false);
+    }
+  };
 
   useEffect(() => {
     filterCalls();
@@ -293,6 +324,11 @@ export default function CallLogsPage() {
                         <InfoIcon />
                       </IconButton>
                     </Tooltip>
+                    <Tooltip title="Train AI from this Call">
+                      <IconButton size="small" color="primary" onClick={() => { setSelectedCall(call); setTrainingInput(call.summary || ''); setIsTrainingOpen(true); }}>
+                        <PhoneIcon />
+                      </IconButton>
+                    </Tooltip>
                   </TableCell>
                 </TableRow>
               ))
@@ -327,6 +363,68 @@ export default function CallLogsPage() {
           )}
         </DialogContent>
         <DialogActions><Button onClick={() => setDetailsOpen(false)}>Close</Button></DialogActions>
+      </Dialog>
+
+      {/* AI Training Dialog */}
+      <Dialog open={isTrainingOpen} onClose={() => setIsTrainingOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Convert Call Log to AI Training Scenario</DialogTitle>
+        <DialogContent>
+          <Box sx={{ pt: 2, display: 'flex', flexDirection: 'column', gap: 3 }}>
+            <Typography variant="body2" color="text.secondary">
+              Correcting the AI's response here will help the model handle similar queries more effectively in the future.
+            </Typography>
+            
+            <TextField
+              label="Customer Input (from call)"
+              multiline
+              rows={3}
+              fullWidth
+              value={trainingInput}
+              onChange={(e) => setTrainingInput(e.target.value)}
+              placeholder="What did the customer say?"
+              helperText="The user query that triggered this correction"
+            />
+            
+            <TextField
+              label="Expected AI Response (your correction)"
+              multiline
+              rows={4}
+              fullWidth
+              value={trainingResponse}
+              onChange={(e) => setTrainingResponse(e.target.value)}
+              placeholder="What SHOULD the AI have said?"
+              color="success"
+              focused
+              helperText="The ideal response you want the AI to provide"
+            />
+
+            <FormControl fullWidth>
+              <InputLabel>Category</InputLabel>
+              <Select
+                value={trainingCategory}
+                label="Category"
+                onChange={(e) => setTrainingCategory(e.target.value)}
+              >
+                <MenuItem value="appointment_booking">Appointment Booking</MenuItem>
+                <MenuItem value="customer_support">Customer Support</MenuItem>
+                <MenuItem value="sales_inquiry">Sales Inquiry</MenuItem>
+                <MenuItem value="complaint_handling">Complaint Handling</MenuItem>
+                <MenuItem value="general_inquiry">General Inquiry</MenuItem>
+              </Select>
+            </FormControl>
+          </Box>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setIsTrainingOpen(false)} disabled={isSubmittingTraining}>Cancel</Button>
+          <Button 
+            onClick={submitTraining} 
+            variant="contained" 
+            color="success" 
+            disabled={!trainingInput || !trainingResponse || isSubmittingTraining}
+          >
+            {isSubmittingTraining ? 'Saving...' : 'Add to Training'}
+          </Button>
+        </DialogActions>
       </Dialog>
     </Container>
   );

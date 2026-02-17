@@ -354,6 +354,86 @@ class NovaReasoningEngine:
             # Fallback to safe defaults if reasoning fails
             return self._get_fallback_response(str(e))
     
+    async def evaluate_response_quality(
+        self,
+        user_input: str,
+        expected_response: str,
+        actual_response: str
+    ) -> float:
+        """
+        Evaluate the quality of an AI response compared to the expected response.
+        Uses LLM-as-a-Judge approach for semantic similarity.
+        Returns a score from 0.0 to 100.0.
+        """
+        prompt = f"""
+You are an expert AI evaluator. Your task is to grade the quality of an AI assistant's response.
+
+User Input: "{user_input}"
+
+Expected Response (Gold Standard): "{expected_response}"
+
+Actual AI Response: "{actual_response}"
+
+Evaluate the Actual AI Response based on:
+1. Semantic Meaning: Does it convey the same information as the Expected Response?
+2. Intent Accuracy: Does it address the user's intent correctly?
+3. Tone/Politeness: Is the tone appropriate?
+
+Ignore minor wording differences if the core meaning and helpfulness are preserved.
+
+Return ONLY a JSON object with this format:
+{{
+    "score": <0-100 integer>,
+    "reasoning": "<brief explanation>"
+}}
+"""
+        messages = [{"role": "user", "content": [{"text": prompt}]}]
+        
+        try:
+            response = await self._invoke_nova_lite(prompt, messages)
+            result = self._parse_reasoning_response(response)
+            return float(result.get("score", 0))
+        except Exception as e:
+            print(f"[Nova Evaluation] Error: {e}")
+            return 0.0
+
+    async def generate_synthetic_training_data(
+        self,
+        business_type: str,
+        services: List[str],
+        count: int = 5
+    ) -> List[Dict[str, str]]:
+        """
+        Generate synthetic training scenarios for a business.
+        """
+        prompt = f"""
+Generate {count} realistic training scenarios for a {business_type} business.
+The business offers these services: {', '.join(services)}.
+
+Each scenario should be a JSON object with:
+- "user_input": A realistic customer question or request
+- "expected_response": The ideal, helpful response from the AI receptionist
+- "category": One of [appointment_booking, customer_support, sales_inquiry, general_inquiry]
+
+Return ONLY a JSON list of objects:
+[
+  {{ "user_input": "...", "expected_response": "...", "category": "..." }},
+  ...
+]
+"""
+        messages = [{"role": "user", "content": [{"text": prompt}]}]
+        
+        try:
+            response = await self._invoke_nova_lite(prompt, messages)
+            # Clean markdown if present
+            cleaned = re.sub(r'```json\s*', '', str(response), flags=re.IGNORECASE)
+            cleaned = re.sub(r'```', '', cleaned, flags=re.IGNORECASE).strip()
+            
+            return json.loads(cleaned)
+        except Exception as e:
+            print(f"[Nova Synthetic] Error: {e}")
+            return []
+
     def _check_deterministic_triggers(
         self,
         conversation: str,

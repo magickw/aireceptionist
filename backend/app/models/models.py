@@ -224,6 +224,41 @@ class AITrainingScenario(Base):
 
     business = relationship("Business", back_populates="training_scenarios")
 
+class TrainingSnapshot(Base):
+    """A versioned snapshot of all active training scenarios for a business"""
+    __tablename__ = "training_snapshots"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    version = Column(Integer, default=1)
+    name = Column(String(255))
+    description = Column(Text)
+    scenario_count = Column(Integer, default=0)
+    avg_success_rate = Column(DECIMAL(5, 2))
+    is_production = Column(Boolean, default=False)
+    # Stores the scenario IDs that were part of this snapshot
+    scenario_data = Column(JSON) 
+    created_at = Column(DateTime, server_default=func.now())
+
+    business = relationship("Business")
+
+class BenchmarkResult(Base):
+    """Results of a benchmark run against a snapshot or current scenarios"""
+    __tablename__ = "benchmark_results"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    snapshot_id = Column(Integer, ForeignKey("training_snapshots.id"), nullable=True)
+    total_scenarios = Column(Integer)
+    passed_scenarios = Column(Integer)
+    avg_score = Column(DECIMAL(5, 2))
+    # Stores detailed pass/fail per scenario
+    detailed_results = Column(JSON) 
+    created_at = Column(DateTime, server_default=func.now())
+
+    business = relationship("Business")
+    snapshot = relationship("TrainingSnapshot")
+
 class Appointment(Base):
     __tablename__ = "appointments"
 

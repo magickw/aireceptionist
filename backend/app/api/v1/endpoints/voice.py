@@ -2,7 +2,7 @@
 Voice WebSocket Endpoint
 Handles real-time voice communication with Nova 2 Sonic and reasoning
 """
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, Query, status
 from typing import Dict, Any, AsyncGenerator, Optional
 import json
 import asyncio

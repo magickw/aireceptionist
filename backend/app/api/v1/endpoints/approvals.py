@@ -15,7 +15,7 @@ router = APIRouter()
 
 
 @router.post("/request")
-def create_approval_request(
+async def create_approval_request(
     *,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -26,15 +26,16 @@ def create_approval_request(
     context: Dict[str, Any],
 ) -> Any:
     """Create a new approval request"""
+    business_id = await deps.get_current_business_id(current_user, db)
     approval = ApprovalRequest(
-        business_id=current_user.businesses[0].id,
+        business_id=business_id,
         call_session_id=call_session_id,
         request_type=request_type,
         status="pending",
         reason=reason,
         original_response=original_response,
         context=context,
-        request_request_metadata={"created_by": current_user.email}
+        request_metadata={"created_by": current_user.email}
     )
     db.add(approval)
     db.commit()
@@ -43,7 +44,7 @@ def create_approval_request(
 
 
 @router.post("/override")
-def approve_override(
+async def approve_override(
     *,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -54,6 +55,7 @@ def approve_override(
     notes: str = ""
 ) -> Any:
     """Approve an AI override request"""
+    business_id = await deps.get_current_business_id(current_user, db)
     # Create or update approval request
     approval = db.query(ApprovalRequest).filter(
         ApprovalRequest.call_session_id == call_session_id,
@@ -63,7 +65,7 @@ def approve_override(
     
     if not approval:
         approval = ApprovalRequest(
-            business_id=current_user.businesses[0].id,
+            business_id=business_id,
             call_session_id=call_session_id,
             request_type=request_type,
             status="approved",
@@ -83,7 +85,7 @@ def approve_override(
         approval.final_response = original_response
         approval.reviewed_by = current_user.id
         approval.reviewed_at = datetime.utcnow()
-        approval.metadata = {"manager_notes": notes}
+        approval.request_metadata = {"manager_notes": notes}
     
     db.commit()
     db.refresh(approval)
@@ -91,7 +93,7 @@ def approve_override(
 
 
 @router.post("/reject")
-def reject_request(
+async def reject_request(
     *,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -101,6 +103,7 @@ def reject_request(
     notes: str = ""
 ) -> Any:
     """Reject an AI action request"""
+    business_id = await deps.get_current_business_id(current_user, db)
     # Create or update approval request
     approval = db.query(ApprovalRequest).filter(
         ApprovalRequest.call_session_id == call_session_id,
@@ -110,7 +113,7 @@ def reject_request(
     
     if not approval:
         approval = ApprovalRequest(
-            business_id=current_user.businesses[0].id,
+            business_id=business_id,
             call_session_id=call_session_id,
             request_type=request_type,
             status="rejected",
@@ -129,7 +132,7 @@ def reject_request(
         approval.action_taken = "REJECTED"
         approval.reviewed_by = current_user.id
         approval.reviewed_at = datetime.utcnow()
-        approval.metadata = {"manager_notes": notes}
+        approval.request_metadata = {"manager_notes": notes}
     
     db.commit()
     db.refresh(approval)
@@ -137,15 +140,16 @@ def reject_request(
 
 
 @router.get("/")
-def list_pending_approvals(
+async def list_pending_approvals(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
     skip: int = 0,
     limit: int = 50
 ) -> Any:
     """List pending approval requests"""
+    business_id = await deps.get_current_business_id(current_user, db)
     query = db.query(ApprovalRequest).filter(
-        ApprovalRequest.business_id == current_user.businesses[0].id,
+        ApprovalRequest.business_id == business_id,
         ApprovalRequest.status == "pending"
     ).order_by(ApprovalRequest.created_at.desc()).offset(skip).limit(limit)
     
@@ -153,15 +157,16 @@ def list_pending_approvals(
 
 
 @router.get("/{approval_id}")
-def get_approval(
+async def get_approval(
     approval_id: int,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Get a specific approval request"""
+    business_id = await deps.get_current_business_id(current_user, db)
     approval = db.query(ApprovalRequest).filter(
         ApprovalRequest.id == approval_id,
-        ApprovalRequest.business_id == current_user.businesses[0].id
+        ApprovalRequest.business_id == business_id
     ).first()
     
     if not approval:
@@ -171,14 +176,15 @@ def get_approval(
 
 
 @router.get("/history")
-def get_approval_history(
+async def get_approval_history(
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
     limit: int = 50
 ) -> Any:
     """Get approval history"""
+    business_id = await deps.get_current_business_id(current_user, db)
     approvals = db.query(ApprovalRequest).filter(
-        ApprovalRequest.business_id == current_user.businesses[0].id
+        ApprovalRequest.business_id == business_id
     ).order_by(ApprovalRequest.created_at.desc()).limit(limit).all()
     
     return approvals

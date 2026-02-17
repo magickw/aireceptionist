@@ -2,10 +2,7 @@
 AI Training Service - Manage and test training scenarios
 """
 
-from typing import List, Dict, Any, Optional
-from datetime import datetime
-from sqlalchemy.orm import Session
-from app.models.models import AITrainingScenario, Business
+from app.models.models import AITrainingScenario, Business, TrainingSnapshot, BenchmarkResult
 from app.services.nova_reasoning import nova_reasoning
 
 
@@ -151,21 +148,16 @@ class AITrainingService:
             
             ai_response = result.get("suggested_response", "")
             
-            # Calculate similarity (simple word overlap for now)
-            similarity = self._calculate_similarity(
-                ai_response, 
-                scenario.expected_response
+            # Calculate similarity using LLM-as-a-Judge for semantic meaning
+            similarity = await nova_reasoning.evaluate_response_quality(
+                user_input=scenario.user_input,
+                expected_response=scenario.expected_response,
+                actual_response=ai_response
             )
             
             # Update scenario stats
             scenario.last_tested = datetime.utcnow()
             scenario.success_rate = similarity
-            
-            # Update success rate based on threshold
-            if similarity >= 70:  # 70% threshold
-                scenario.success_rate = min(100, similarity + 5)  # Bonus for success
-            else:
-                scenario.success_rate = max(0, similarity - 10)  # Penalty for failure
             
             db.commit()
             
@@ -176,6 +168,7 @@ class AITrainingService:
                 "ai_response": ai_response,
                 "similarity_score": similarity,
                 "passed": similarity >= 70,
+                "intent": result.get("intent"),
                 "timestamp": datetime.utcnow().isoformat()
             }
             
@@ -202,6 +195,7 @@ class AITrainingService:
         results = []
         passed = 0
         failed = 0
+        total_score = 0
         
         for scenario in scenarios:
             result = await self.test_scenario(
@@ -213,41 +207,134 @@ class AITrainingService:
             
             if "error" not in result:
                 results.append(result)
+                total_score += result["similarity_score"]
                 if result["passed"]:
                     passed += 1
                 else:
                     failed += 1
+        
+        avg_score = (total_score / len(scenarios)) if scenarios else 0
+        
+        # Save benchmark result
+        benchmark = BenchmarkResult(
+            business_id=business_id,
+            total_scenarios=len(scenarios),
+            passed_scenarios=passed,
+            avg_score=avg_score,
+            detailed_results=results
+        )
+        db.add(benchmark)
+        db.commit()
         
         return {
             "total": len(scenarios),
             "passed": passed,
             "failed": failed,
             "success_rate": (passed / len(scenarios) * 100) if scenarios else 0,
+            "avg_score": round(avg_score, 2),
             "results": results
         }
     
-    def _calculate_similarity(self, text1: str, text2: str) -> float:
-        """
-        Calculate simple similarity score between two texts
-        Using word overlap approach
-        """
+    async def create_snapshot(
+        self,
+        db: Session,
+        business_id: int,
+        name: str,
+        description: Optional[str] = None
+    ) -> TrainingSnapshot:
+        """Create a versioned snapshot of current training data"""
         
-        # Normalize text
-        words1 = set(text1.lower().split())
-        words2 = set(text2.lower().split())
+        scenarios = await self.list_scenarios(db, business_id, is_active=True)
         
-        if not words1 or not words2:
-            return 0.0
+        # Get latest version number
+        latest = db.query(TrainingSnapshot).filter(
+            TrainingSnapshot.business_id == business_id
+        ).order_by(TrainingSnapshot.version.desc()).first()
         
-        # Calculate Jaccard similarity
-        intersection = words1.intersection(words2)
-        union = words1.union(words2)
+        version = (latest.version + 1) if latest else 1
         
-        jaccard = len(intersection) / len(union)
+        # Calculate current success rate
+        avg_rate = sum([float(s.success_rate or 0) for s in scenarios]) / len(scenarios) if scenarios else 0
         
-        # Convert to percentage
-        return round(jaccard * 100, 2)
-    
+        snapshot = TrainingSnapshot(
+            business_id=business_id,
+            version=version,
+            name=name,
+            description=description,
+            scenario_count=len(scenarios),
+            avg_success_rate=avg_rate,
+            scenario_data=[{
+                "id": s.id,
+                "user_input": s.user_input,
+                "expected_response": s.expected_response,
+                "category": s.category
+            } for s in scenarios]
+        )
+        
+        db.add(snapshot)
+        db.commit()
+        db.refresh(snapshot)
+        
+        return snapshot
+
+    async def list_snapshots(
+        self,
+        db: Session,
+        business_id: int
+    ) -> List[TrainingSnapshot]:
+        """List all snapshots for a business"""
+        return db.query(TrainingSnapshot).filter(
+            TrainingSnapshot.business_id == business_id
+        ).order_by(TrainingSnapshot.version.desc()).all()
+
+    async def get_benchmarks(
+        self,
+        db: Session,
+        business_id: int,
+        limit: int = 10
+    ) -> List[BenchmarkResult]:
+        """Get recent benchmark results"""
+        return db.query(BenchmarkResult).filter(
+            BenchmarkResult.business_id == business_id
+        ).order_by(BenchmarkResult.created_at.desc()).limit(limit).all()
+
+    async def generate_synthetic_scenarios(
+        self,
+        db: Session,
+        business_id: int,
+        count: int = 5
+    ) -> List[AITrainingScenario]:
+        """Generate and save synthetic training scenarios"""
+        
+        # Get business context
+        business = db.query(Business).filter(Business.id == business_id).first()
+        if not business:
+            return []
+            
+        services = business.settings.get("services", []) if business.settings else []
+        
+        # Generate data using Nova
+        synthetic_data = await nova_reasoning.generate_synthetic_training_data(
+            business_type=business.type,
+            services=services,
+            count=count
+        )
+        
+        created_scenarios = []
+        for item in synthetic_data:
+            scenario = await self.create_scenario(
+                db=db,
+                business_id=business_id,
+                title=f"Auto-Generated: {item.get('user_input', '')[:30]}...",
+                user_input=item.get("user_input", ""),
+                expected_response=item.get("expected_response", ""),
+                category=item.get("category", "general_inquiry"),
+                description="Generated by Nova AI"
+            )
+            created_scenarios.append(scenario)
+            
+        return created_scenarios
+
     async def get_statistics(
         self,
         db: Session,
@@ -298,6 +385,73 @@ class AITrainingService:
             "by_category": by_category,
             "untested": len([s for s in scenarios if s.success_rate is None])
         }
+
+    async def create_scenario_from_approval(
+        self,
+        db: Session,
+        business_id: int,
+        approval_id: int
+    ) -> Optional[AITrainingScenario]:
+        """Create a training scenario from a reviewed approval request"""
+        from app.models.models import ApprovalRequest
+        
+        approval = db.query(ApprovalRequest).filter(
+            ApprovalRequest.id == approval_id,
+            ApprovalRequest.business_id == business_id
+        ).first()
+        
+        if not approval or not approval.final_response:
+            return None
+        
+        # Get the original user input from the context
+        # In the context, we usually store the last user message or the whole conversation
+        context = approval.context or {}
+        user_input = context.get("user_input") or context.get("conversation")
+        
+        # If context doesn't have it, we might need to look up the last message in the session
+        if not user_input and approval.call_session_id:
+            from app.models.models import ConversationMessage
+            last_msg = db.query(ConversationMessage).filter(
+                ConversationMessage.call_session_id == approval.call_session_id,
+                ConversationMessage.sender == "customer"
+            ).order_by(ConversationMessage.timestamp.desc()).first()
+            
+            if last_msg:
+                user_input = last_msg.content
+        
+        if not user_input:
+            user_input = "Unknown customer query"
+            
+        return await self.create_scenario(
+            db=db,
+            business_id=business_id,
+            title=f"Feedback from Approval #{approval_id}",
+            user_input=user_input,
+            expected_response=approval.final_response,
+            description=f"Automatically created from manager review: {approval.reason}",
+            category="complaint_handling" if approval.request_type == "HUMAN_INTERVENTION" else "general_inquiry"
+        )
+
+    async def create_scenario_from_call_log(
+        self,
+        db: Session,
+        business_id: int,
+        call_session_id: str,
+        user_input: str,
+        expected_response: str,
+        category: str = "general_inquiry"
+    ) -> AITrainingScenario:
+        """Create a training scenario from a manual correction in a call log"""
+        
+        return await self.create_scenario(
+            db=db,
+            business_id=business_id,
+            title=f"Correction for Call Session {call_session_id[:8]}",
+            user_input=user_input,
+            expected_response=expected_response,
+            description=f"Manually added from call log history: {call_session_id}",
+            category=category
+        )
 
 
 # Singleton instance
