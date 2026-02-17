@@ -197,45 +197,47 @@ manager = VoiceConnectionManager()
 @router.websocket("/ws")
 async def voice_websocket(
     websocket: WebSocket,
-    business_id: int = Depends(get_current_business_id)
+    token: Optional[str] = Query(None)
 ):
     """
     WebSocket endpoint for real-time voice communication.
-    
-    Expected message format from client:
-    {
-        "type": "user_input" | "audio" | "ping" | "audio_config",
-        "content": "text or base64 audio",
-        "session_id": "unique_session_id",
-        "context": {
-            "customer_phone": "...",
-            "customer_name": "...",
-            "call_count": 0,
-            "satisfaction_score": 4.5,
-            "preferred_services": [],
-            "complaint_count": 0
-        }
-    }
-    
-    Response format:
-    {
-        "type": "thought" | "agent_response" | "audio" | "audio_config" | "error",
-        "content": "...",
-        "data": {...}
-    }
     """
-    session_id = f"session_{business_id}_{asyncio.get_event_loop().time()}"
-    # Track session state (like order items) for the duration of the WebSocket
-    ws_session = {
-        "order_items": [],
-        "created_at": datetime.utcnow(),
-        "business_id": business_id,
-        "customer_name": None,
-        "customer_phone": None
-    }
+    # Accept connection first to avoid immediate timeout/failure
+    await websocket.accept()
+    
+    # Handle authentication manually inside the WebSocket
+    from app.api.deps import get_db, get_current_user, get_current_business_id
+    
+    db_gen = get_db()
+    db = next(db_gen)
     
     try:
-        await manager.connect(websocket, session_id)
+        # Authenticate user
+        try:
+            current_user = await get_current_user(db=db, token_query=token)
+            business_id = await get_current_business_id(current_user=current_user, db=db)
+        except Exception as e:
+            await websocket.send_json({
+                "type": "error",
+                "message": f"Authentication failed: {str(e)}"
+            })
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
+
+        session_id = f"session_{business_id}_{asyncio.get_event_loop().time()}"
+        # Track session state (like order items) for the duration of the WebSocket
+        ws_session = {
+            "order_items": [],
+            "created_at": datetime.utcnow(),
+            "business_id": business_id,
+            "customer_name": None,
+            "customer_phone": None
+        }
+        
+        # Store connection in manager (already accepted)
+        manager.active_connections[session_id] = websocket
+        manager.audio_buffers[session_id] = AudioBuffer()
+        manager.latency_trackers[session_id] = LatencyTracker()
         
         # Create CallSession record in database
         _create_call_session(ws_session, session_id)
@@ -259,7 +261,8 @@ async def voice_websocket(
             data = await websocket.receive_json()
             
             message_type = data.get("type")
-            content = data.get("content", "")
+            # Support both 'content' and 'text' for flexibility
+            content = data.get("content") or data.get("text") or ""
             context = data.get("context", {})
             
             if message_type == "ping":
@@ -678,7 +681,14 @@ async def voice_websocket(
                 # End the call - save session and order
                 summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if conversation_history else ""
                 _end_call_session(ws_session, session_id, summary, final_sentiment)
-                await _save_confirmed_order(ws_session, session_id)
+                # Get a DB session for saving
+                from app.api.deps import get_db
+                db_gen = get_db()
+                db = next(db_gen)
+                try:
+                    await _save_confirmed_order(ws_session, session_id, db)
+                finally:
+                    db.close()
                 await manager.send_json(session_id, {
                     "type": "call_ended",
                     "message": "Call ended"
@@ -1077,6 +1087,9 @@ async def send_http_message(
     if not session:
         return {"error": "Session not found", "status": 404}
     
+    # Use session as http_session for compatibility with legacy code blocks
+    http_session = session
+    
     business_id = session["business_id"]
     customer_phone = session.get("customer_phone", "+1555000000")
     customer_name = "Customer"
@@ -1114,6 +1127,9 @@ async def send_http_message(
         business_context=business_context,
         customer_context=customer_context
     )
+    
+    # Define suggested response early for use in logic blocks
+    suggested = reasoning_result.get("suggested_response", "")
     
     # Add reasoning chain event
     session_store.add_event(session_id, {
@@ -1287,9 +1303,6 @@ async def send_http_message(
     entities = reasoning_result.get("entities", {})
     menu_item = entities.get("menu_item") or entities.get("service")
     selected_action = reasoning_result.get("selected_action", "")
-    
-    # Get HTTP session for state tracking
-    http_session = session_store.get_session(session_id)
     
     # Initialize confirmation tracking if not exists
     if http_session and "confirmed_info" not in http_session:

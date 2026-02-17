@@ -76,6 +76,10 @@ export default function CallSimulator() {
           if (event.data) setReasoningData(event.data);
         } else if (event.type === 'human_intervention_request') {
           setAutonomyMode('GUARDED');
+        } else if (event.type === 'error') {
+          console.error('Backend poll error:', event.message);
+          addMessage(`Error: ${event.message}`, 'ai');
+          setIsProcessing(false);
         }
       }
     } catch (error) {
@@ -164,6 +168,10 @@ export default function CallSimulator() {
             setStreamingText('');
           } else if (data.type === 'human_intervention_request') {
             setAutonomyMode('GUARDED');
+          } else if (data.type === 'error') {
+            console.error('WebSocket backend error:', data.message);
+            addMessage(`Error: ${data.message}`, 'ai');
+            setIsProcessing(false);
           }
         };
         
