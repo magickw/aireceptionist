@@ -102,6 +102,7 @@ export default function LandingPage() {
   const router = useRouter();
   const auth = useAuth();
   const isAuthenticated = auth?.isAuthenticated || false;
+  const theme = useTheme();
 
   const handleNavigate = (path: string) => {
     router.push(path);

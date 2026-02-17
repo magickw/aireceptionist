@@ -15,7 +15,7 @@ import {
   LinearProgress,
   Paper,
 } from '@mui/material';
-import { Sparkles, Lightbulb, Error as ErrorIcon, Star, StarBorder } from '@mui/icons-material';
+import { Star, Lightbulb, Error as ErrorIcon, StarBorder } from '@mui/icons-material';
 
 interface BusinessTypeSuggestion {
   business_type: string;
@@ -76,7 +76,7 @@ export default function BusinessTypeSuggestionPage() {
     <Container maxWidth="lg" sx={{ py: 8 }}>
       <Box mb={6}>
         <Typography variant="h3" gutterBottom display="flex" alignItems="center" gap={2}>
-          <Sparkles fontSize="large" />
+          <Star fontSize="large" />
           Business Type Suggestion
         </Typography>
         <Typography variant="body1" color="text.secondary">
