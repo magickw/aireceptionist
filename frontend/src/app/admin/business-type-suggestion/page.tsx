@@ -15,7 +15,7 @@ import {
   LinearProgress,
   Paper,
 } from '@mui/material';
-import { Sparkles, Lightbulb, Error as ErrorIcon } from '@mui/icons-material';
+import { Sparkles, Lightbulb, Error as ErrorIcon, Star, StarBorder } from '@mui/icons-material';
 
 interface BusinessTypeSuggestion {
   business_type: string;

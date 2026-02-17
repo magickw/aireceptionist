@@ -18,7 +18,8 @@ import {
   Settings,
   ArrowForward,
   CheckCircle,
-  Star
+  Star,
+  StarBorder
 } from '@mui/icons-material';
 import { useAuth } from '@/context/AuthContext';
 
@@ -99,7 +100,8 @@ const stats = [
 
 export default function LandingPage() {
   const router = useRouter();
-  const theme = useTheme();
+  const auth = useAuth();
+  const isAuthenticated = auth?.isAuthenticated || false;
 
   const handleNavigate = (path: string) => {
     router.push(path);
