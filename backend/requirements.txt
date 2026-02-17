@@ -19,3 +19,4 @@ playwright>=1.40.0
 stripe>=7.0.0
 simple-salesforce>=1.12.0
 hubspot-api-client>=8.0.0
+mangum>=0.17.0

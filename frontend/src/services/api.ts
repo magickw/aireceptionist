@@ -1,7 +1,10 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
-export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'https://receptium.onrender.com';
-export const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://receptium.onrender.com';
+// Auto-detect backend URL based on environment
+export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 
+  (typeof window !== 'undefined' && window.location.hostname === 'localhost' 
+    ? 'http://localhost:8000' 
+    : `${window.location.protocol}//${window.location.hostname}`);
 
 // Extend config type to include retry count
 interface ExtendedAxiosRequestConfig extends InternalAxiosRequestConfig {
@@ -84,8 +87,10 @@ if (typeof window !== 'undefined') {
 }
 
 export const getWebSocketUrl = () => {
+  const wsProtocol = BACKEND_URL.startsWith('https') ? 'wss' : 'ws';
+  const wsBaseUrl = BACKEND_URL.replace(/^https?:\/\//, '');
   const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  return `${WS_URL}/api/voice/ws${token ? `?token=${token}` : ''}`;
+  return `${wsProtocol}://${wsBaseUrl}/api/voice/ws${token ? `?token=${token}` : ''}`;
 };
 
 // Webhooks API

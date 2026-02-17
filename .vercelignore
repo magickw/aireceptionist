@@ -1,0 +1,79 @@
+# Dependencies
+node_modules
+.pnp
+.pnp.js
+
+# Testing
+coverage
+.nyc_output
+
+# Next.js
+.next/
+out/
+build
+dist
+
+# Production
+*.log
+logs
+
+# Misc
+.DS_Store
+*.pem
+
+# Debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Local env files
+.env
+.env*.local
+.env.local
+
+# Vercel
+.vercel
+
+# Backend specific
+backend/__pycache__
+backend/.pytest_cache
+backend/.venv
+backend/venv
+backend/.env
+backend/*.db
+backend/*.sqlite
+
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Documentation
+*.md
+!README.md
+
+# CI/CD
+.github
+.gitlab-ci.yml
+.travis.yml
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+*~
+
+# Database
+database/
+*.sql
+!init.sql
+
+# Scripts
+*.sh
+build.sh
+test_workflow.sh
+
+# Render
+render.yaml
+DEPLOYMENT_GUIDE.md
