@@ -30,7 +30,7 @@ def get_db() -> Generator:
         db.close()
 
 # 2. THEN define get_current_user(), which depends on get_db()
-def get_current_user(
+async def get_current_user(
     db: Session = Depends(get_db), 
     token_header: Optional[str] = Depends(reusable_oauth2),
     token_query: Optional[str] = Query(None, alias="token")
@@ -85,7 +85,7 @@ def get_current_user(
     return user
 
 # 3. Other dependencies can now use get_current_user
-def get_current_active_user(
+async def get_current_active_user(
     current_user: User = Depends(get_current_user),
 ) -> User:
     """
@@ -95,7 +95,7 @@ def get_current_active_user(
         raise HTTPException(status_code=400, detail="Inactive user")
     return current_user
 
-def get_current_business_id(
+async def get_current_business_id(
     current_user: User = Depends(get_current_active_user),
     db: Session = Depends(get_db)
 ) -> int:
