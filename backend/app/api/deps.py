@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.core import security
 from app.core.config import settings
+from app.core.firebase_auth import verify_firebase_token
 from app.db.session import SessionLocal
 from app.models.models import User, Business
 from app.schemas.user import TokenPayload
@@ -37,6 +38,7 @@ def get_current_user(
     """
     Dependency to get the current user from a token.
     Token can be in the Authorization header or as a 'token' query parameter.
+    Supports both JWT tokens and Firebase tokens.
     """
     token = token_header or token_query
     if not token:
@@ -45,6 +47,28 @@ def get_current_user(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # Try Firebase token first
+    try:
+        firebase_payload = await verify_firebase_token(token)
+        # Firebase UID matches user.email
+        user = db.query(User).filter(User.email == firebase_payload.get("email")).first()
+        if not user:
+            # Create user if doesn't exist
+            user = User(
+                email=firebase_payload.get("email"),
+                full_name=firebase_payload.get("name") or firebase_payload.get("display_name", ""),
+                is_active=True
+            )
+            db.add(user)
+            db.commit()
+            db.refresh(user)
+        return user
+    except HTTPException as firebase_error:
+        # If Firebase validation fails, try JWT
+        pass
+    
+    # Try JWT token
     try:
         payload = jwt.decode(
             token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
