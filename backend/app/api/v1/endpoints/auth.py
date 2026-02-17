@@ -75,22 +75,9 @@ def login_access_token(
             status_code=500,
             detail="An error occurred during login. Please try again later."
         )
-    user = db.query(User).filter(User.email == user_login.email).first()
-    if not user or not security.verify_password(user_login.password, user.password):
-        raise HTTPException(status_code=400, detail="Incorrect email or password")
-    elif user.status != "active":
-        raise HTTPException(status_code=400, detail="Inactive user")
-        
-    access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
-    return {
-        "access_token": security.create_access_token(
-            user.id, expires_delta=access_token_expires
-        ),
-        "token_type": "bearer",
-    }
 
 @router.get("/me", response_model=UserSchema)
-def read_users_me(
+async def read_users_me(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
