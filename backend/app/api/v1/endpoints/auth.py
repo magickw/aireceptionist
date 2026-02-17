@@ -49,6 +49,32 @@ def login_access_token(
     """
     OAuth2 compatible token login, get an access token for future requests
     """
+    try:
+        user = db.query(User).filter(User.email == user_login.email).first()
+        if not user or not security.verify_password(user_login.password, user.password):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Incorrect email or password",
+            )
+        elif not user.is_active:
+            raise HTTPException(status_code=400, detail="Inactive user")
+        
+        access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
+        access_token = security.create_access_token(
+            data={"sub": user.id}, expires_delta=access_token_expires
+        )
+        return {"access_token": access_token, "token_type": "bearer"}
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
+    except Exception as e:
+        # Log unexpected errors for debugging
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Login error: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="An error occurred during login. Please try again later."
+        )
     user = db.query(User).filter(User.email == user_login.email).first()
     if not user or not security.verify_password(user_login.password, user.password):
         raise HTTPException(status_code=400, detail="Incorrect email or password")

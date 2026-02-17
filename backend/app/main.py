@@ -52,4 +52,18 @@ app.include_router(multimodal.router, prefix=f"{settings.API_V1_STR}/multimodal"
 
 @app.get("/health")
 def health_check():
-    return {"status": "healthy"}
+    """Health check endpoint to verify backend is working"""
+    try:
+        from app.db.session import engine
+        with engine.connect() as conn:
+            return {
+                "status": "healthy",
+                "database": "connected",
+                "api_version": "1.0.0"
+            }
+    except Exception as e:
+        return {
+            "status": "unhealthy",
+            "database": "disconnected",
+            "error": str(e)
+        }
