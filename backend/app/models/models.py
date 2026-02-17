@@ -360,3 +360,106 @@ class SMSTemplate(Base):
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     business = relationship("Business")
+
+
+class BusinessTemplate(Base):
+    """Database-driven business type templates for AI agent configuration"""
+    __tablename__ = "business_templates"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_key = Column(String(50), unique=True, nullable=False, index=True)  # e.g., 'restaurant', 'medical'
+    name = Column(String(255), nullable=False)  # Display name
+    icon = Column(String(50))  # Material UI icon name
+    description = Column(Text)
+    autonomy_level = Column(String(20), nullable=False, default="MEDIUM")  # HIGH, MEDIUM, RESTRICTED
+    
+    # Risk profile
+    high_risk_intents = Column(JSON)  # List of high-risk intents
+    auto_escalate_threshold = Column(DECIMAL(3, 2), default=0.5)
+    confidence_threshold = Column(DECIMAL(3, 2), default=0.6)
+    
+    # Common intents for this business type
+    common_intents = Column(JSON)
+    
+    # Field definitions for data collection
+    fields = Column(JSON)  # Dict of field_name -> {required, validation, prompt, for_intents}
+    
+    # Booking/order flow configuration
+    booking_flow = Column(JSON)  # {type, steps, final_action, confirmation_message}
+    
+    # AI prompts
+    system_prompt_addition = Column(Text)
+    example_responses = Column(JSON)
+    
+    # Versioning and status
+    is_active = Column(Boolean, default=True)
+    is_default = Column(Boolean, default=False)  # Default template for new businesses
+    version = Column(Integer, default=1)
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    versions = relationship("TemplateVersion", back_populates="template", cascade="all, delete-orphan")
+    creator = relationship("User")
+
+
+class TemplateVersion(Base):
+    """Version history for business templates to enable A/B testing and rollbacks"""
+    __tablename__ = "template_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    template_id = Column(Integer, ForeignKey("business_templates.id"), nullable=False)
+    version_number = Column(Integer, nullable=False)
+    
+    # Snapshot of template configuration at this version
+    name = Column(String(255))
+    icon = Column(String(50))
+    description = Column(Text)
+    autonomy_level = Column(String(20))
+    high_risk_intents = Column(JSON)
+    auto_escalate_threshold = Column(DECIMAL(3, 2))
+    confidence_threshold = Column(DECIMAL(3, 2))
+    common_intents = Column(JSON)
+    fields = Column(JSON)
+    booking_flow = Column(JSON)
+    system_prompt_addition = Column(Text)
+    example_responses = Column(JSON)
+    
+    # Version metadata
+    change_description = Column(Text)  # Description of what changed
+    is_active = Column(Boolean, default=False)  # Currently in production
+    created_by = Column(Integer, ForeignKey("users.id"))
+    created_at = Column(DateTime, server_default=func.now())
+    
+    # Relationships
+    template = relationship("BusinessTemplate", back_populates="versions")
+    creator = relationship("User")
+
+
+class IntentClassification(Base):
+    """Training data and model for intent classification"""
+    __tablename__ = "intent_classifications"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_type = Column(String(50), nullable=False)  # e.g., 'restaurant', 'medical'
+    intent = Column(String(100), nullable=False)  # e.g., 'make_reservation', 'order_food'
+    user_input = Column(Text, nullable=False)  # Example user utterance
+    entities = Column(JSON)  # Extracted entities from this example
+    confidence = Column(DECIMAL(3, 2))  # Expected confidence score
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+
+class BusinessTypeSuggestion(Base):
+    """NLP-based business type detection from description"""
+    __tablename__ = "business_type_suggestions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_type = Column(String(50), nullable=False)
+    keywords = Column(JSON)  # Keywords that indicate this business type
+    phrases = Column(JSON)  # Common phrases for this business type
+    confidence_weight = Column(DECIMAL(3, 2), default=1.0)  # Weight for scoring
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, server_default=func.now())

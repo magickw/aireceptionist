@@ -20,6 +20,7 @@ from botocore.exceptions import ClientError, ReadTimeoutError, ConnectTimeoutErr
 from app.core.config import settings
 from app.services.knowledge_base import knowledge_base_service
 from app.services.business_templates import BusinessTypeTemplate
+from app.services.intent_classifier import validate_intent
 from app.services.conversation_state import (
     ReasoningError, 
     SafetyViolationError, 
@@ -275,6 +276,41 @@ class NovaReasoningEngine:
             # Check for high-risk intents from risk profile
             high_risk_intents = risk_profile.get("high_risk_intents", [])
             detected_intent = reasoning_result.get("intent", "")
+            
+            # Validate intent using intent classifier
+            try:
+                is_valid, suggested_intent, intent_confidence = validate_intent(
+                    detected_intent,
+                    conversation,
+                    business_type,
+                    db,
+                    threshold=confidence_threshold
+                )
+                
+                if not is_valid:
+                    # Intent validation failed
+                    if suggested_intent:
+                        # Use suggested intent if available
+                        reasoning_result["intent"] = suggested_intent
+                        reasoning_result["intent_validated"] = False
+                        reasoning_result["original_intent"] = detected_intent
+                        reasoning_result["intent_validation_reason"] = f"Intent '{detected_intent}' not validated, suggested '{suggested_intent}' (confidence: {intent_confidence:.2f})"
+                        detected_intent = suggested_intent
+                    else:
+                        # Low confidence - mark for review
+                        reasoning_result["intent_validated"] = False
+                        reasoning_result["intent_validation_reason"] = f"Low confidence for intent '{detected_intent}' ({intent_confidence:.2f})"
+                        requires_approval = True
+                        safety_reason = f"Low confidence intent detection ({intent_confidence:.2f} < {confidence_threshold})"
+                else:
+                    reasoning_result["intent_validated"] = True
+                    reasoning_result["intent_confidence"] = intent_confidence
+            except Exception as e:
+                # Intent classifier failed - continue with LLM intent
+                print(f"[Intent Classifier] Error validating intent: {e}")
+                reasoning_result["intent_validated"] = None
+                reasoning_result["intent_validation_reason"] = f"Intent classifier error: {str(e)}"
+            
             if detected_intent in high_risk_intents:
                 requires_approval = True
                 safety_reason = f"High-risk intent detected: {detected_intent}"

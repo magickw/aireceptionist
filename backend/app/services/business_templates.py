@@ -8,11 +8,20 @@ Architecture:
 - Autonomy level tuning
 - Field validation schemas
 - Cross-industry abstraction layer
+- Database-driven templates with runtime configuration
 """
 
 from typing import Dict, Any, List, Optional
 from enum import Enum
 import re
+
+
+# Import database service
+try:
+    from app.services.business_template_service import get_template
+    DB_INTEGRATION_AVAILABLE = True
+except ImportError:
+    DB_INTEGRATION_AVAILABLE = False
 
 
 class AutonomyLevel(str, Enum):
@@ -879,8 +888,22 @@ class BusinessTypeTemplate:
     }
     
     @classmethod
-    def get_template(cls, business_type: str) -> Dict[str, Any]:
-        """Get template for a business type"""
+    def get_template(cls, business_type: str, db=None) -> Dict[str, Any]:
+        """
+        Get template for a business type.
+        
+        Prioritizes database templates if available and db session is provided.
+        Falls back to hardcoded templates as backup.
+        """
+        # Try database first if integration is available
+        if DB_INTEGRATION_AVAILABLE and db is not None:
+            try:
+                return get_template(business_type, db)
+            except Exception:
+                # Fall back to hardcoded templates on error
+                pass
+        
+        # Fall back to hardcoded templates
         return cls.TEMPLATES.get(business_type, cls.TEMPLATES["general"])
     
     @classmethod
