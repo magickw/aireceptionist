@@ -214,7 +214,7 @@ async def voice_websocket(
     try:
         # Authenticate user
         try:
-            current_user = await get_current_user(db=db, token_query=token)
+            current_user = await get_current_user(db=db, token_header=None, token_query=token)
             business_id = await get_current_business_id(current_user=current_user, db=db)
         except Exception as e:
             await websocket.send_json({
