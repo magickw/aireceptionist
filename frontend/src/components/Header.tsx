@@ -116,7 +116,7 @@ export default function Header() {
         {!isAuthenticated && (
           <>
             <ListItem disablePadding>
-              <ListItemButton component={Link} href="/landing" sx={{ textAlign: 'center', py: 1 }}>
+              <ListItemButton component={Link} href="/" sx={{ textAlign: 'center', py: 1 }}>
                 <ListItemText primary="Home" />
               </ListItemButton>
             </ListItem>
@@ -222,7 +222,7 @@ export default function Header() {
           <Typography 
             variant="h6" 
             component={Link} 
-            href={isAuthenticated ? '/' : '/landing'} 
+            href={isAuthenticated ? '/dashboard' : '/'} 
             sx={{ 
               flexGrow: 1, 
               fontWeight: 'bold', 
@@ -242,7 +242,7 @@ export default function Header() {
                 <Button
                   color="inherit"
                   component={Link}
-                  href="/landing"
+                  href="/"
                   sx={{ 
                     textTransform: 'none',
                     fontSize: '0.8rem',

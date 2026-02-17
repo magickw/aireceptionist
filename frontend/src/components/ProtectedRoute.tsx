@@ -7,8 +7,8 @@ import { CircularProgress, Box, Container } from '@mui/material';
 
 // Public routes that don't require authentication
 const PUBLIC_ROUTES = [
+  '/',
   '/login',
-  '/landing',
   '/register',
 ];
 
