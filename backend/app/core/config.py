@@ -35,6 +35,9 @@ class Settings(BaseSettings):
     
     # Firebase Configuration
     FIREBASE_CREDENTIALS: Optional[str] = None
+
+    # Stripe Configuration
+    STRIPE_SECRET_KEY: Optional[str] = None
     
     class Config:
         case_sensitive = True

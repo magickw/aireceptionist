@@ -9,6 +9,12 @@ import {
 } from '@mui/material';
 import { TrendingUp, Phone, CalendarMonth, People, SentimentSatisfied, SentimentDissatisfied, Download } from '@mui/icons-material';
 import api, { reportsApi, sentimentApi, forecastingApi } from '@/services/api';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell, Legend, LineChart, Line
+} from 'recharts';
+
+const SENTIMENT_COLORS = ['#4caf50', '#ff9800', '#f44336'];
 
 function TabPanel(props: any) {
   const { children, value, index } = props;
@@ -67,7 +73,7 @@ export default function AnalyticsPage() {
 
   useEffect(() => {
     if (!businessId) return;
-    
+
     const fetchData = async () => {
       setLoading(true);
       try {
@@ -110,6 +116,33 @@ export default function AnalyticsPage() {
   const missedCalls = reportData?.call_metrics?.missed_calls || 0;
   const completionRate = reportData?.call_metrics?.completion_rate || analyticsData?.successRate || 0;
   const avgDuration = reportData?.call_metrics?.average_duration_seconds || analyticsData?.avgCallDuration || 0;
+
+  // Prepare sentiment pie chart data
+  const sentimentPieData = sentimentData?.sentiment_distribution
+    ? [
+        { name: 'Positive', value: sentimentData.sentiment_distribution.positive?.percentage || 0 },
+        { name: 'Neutral', value: sentimentData.sentiment_distribution.neutral?.percentage || 0 },
+        { name: 'Negative', value: sentimentData.sentiment_distribution.negative?.percentage || 0 },
+      ]
+    : [];
+
+  // Prepare forecast chart data
+  const forecastChartData = forecastData?.predictions?.map((pred: any) => ({
+    date: pred.date,
+    predicted_calls: pred.predicted_calls,
+  })) || [];
+
+  // Prepare daily trends data with formatted date labels
+  const dailyTrendsData = (analyticsData?.dailyTrends || []).map((item: any) => ({
+    ...item,
+    date: item.date?.length > 10 ? item.date.substring(5, 10) : item.date,
+  }));
+
+  // Prepare hourly distribution data with formatted hour labels
+  const peakHoursData = (analyticsData?.peakHours || []).map((item: any) => ({
+    ...item,
+    label: `${item.hour}:00`,
+  }));
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
@@ -156,14 +189,29 @@ export default function AnalyticsPage() {
         <Tab label="Customers" />
       </Tabs>
 
+      {/* Overview Tab */}
       <TabPanel value={tabValue} index={0}>
         <Grid container spacing={3}>
           <Grid item xs={12} md={8}>
             <Card>
               <CardHeader title="Call Volume Trend" />
               <CardContent>
-                <Box sx={{ height: 300, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'grey.50', borderRadius: 1 }}>
-                  <Typography color="textSecondary">Call volume chart visualization</Typography>
+                <Box sx={{ height: 300, width: '100%' }}>
+                  {dailyTrendsData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={dailyTrendsData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                        <YAxis allowDecimals={false} />
+                        <Tooltip />
+                        <Bar dataKey="count" fill="#1976d2" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'grey.50', borderRadius: 1 }}>
+                      <Typography color="textSecondary">No daily trend data available</Typography>
+                    </Box>
+                  )}
                 </Box>
               </CardContent>
             </Card>
@@ -192,36 +240,98 @@ export default function AnalyticsPage() {
         </Grid>
       </TabPanel>
 
+      {/* Sentiment Tab */}
       <TabPanel value={tabValue} index={1}>
         <Grid container spacing={3}>
-          <Grid item xs={12} md={4}>
+          <Grid item xs={12} md={6}>
             <Card>
-              <CardContent sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="h2" color="success.main">{sentimentData?.sentiment_distribution?.positive?.percentage || 0}%</Typography>
-                <Typography>Positive</Typography>
+              <CardHeader title="Sentiment Distribution" />
+              <CardContent>
+                <Box sx={{ height: 300, width: '100%' }}>
+                  {sentimentPieData.some((d) => d.value > 0) ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={sentimentPieData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={60}
+                          outerRadius={100}
+                          paddingAngle={4}
+                          dataKey="value"
+                          label={({ name, value }) => `${name}: ${value}%`}
+                        >
+                          {sentimentPieData.map((_, index) => (
+                            <Cell key={`cell-${index}`} fill={SENTIMENT_COLORS[index]} />
+                          ))}
+                        </Pie>
+                        <Tooltip formatter={(value: number) => `${value}%`} />
+                        <Legend />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'grey.50', borderRadius: 1 }}>
+                      <Typography color="textSecondary">No sentiment data available</Typography>
+                    </Box>
+                  )}
+                </Box>
               </CardContent>
             </Card>
           </Grid>
-          <Grid item xs={12} md={4}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="h2">{sentimentData?.sentiment_distribution?.neutral?.percentage || 0}%</Typography>
-                <Typography>Neutral</Typography>
-              </CardContent>
-            </Card>
-          </Grid>
-          <Grid item xs={12} md={4}>
-            <Card>
-              <CardContent sx={{ textAlign: 'center', py: 4 }}>
-                <Typography variant="h2" color="error.main">{sentimentData?.sentiment_distribution?.negative?.percentage || 0}%</Typography>
-                <Typography>Negative</Typography>
-              </CardContent>
-            </Card>
+          <Grid item xs={12} md={6}>
+            <Grid container spacing={3}>
+              <Grid item xs={12}>
+                <Card>
+                  <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography variant="h2" color="success.main">{sentimentData?.sentiment_distribution?.positive?.percentage || 0}%</Typography>
+                    <Typography>Positive</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={6}>
+                <Card>
+                  <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography variant="h3">{sentimentData?.sentiment_distribution?.neutral?.percentage || 0}%</Typography>
+                    <Typography>Neutral</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+              <Grid item xs={6}>
+                <Card>
+                  <CardContent sx={{ textAlign: 'center', py: 4 }}>
+                    <Typography variant="h3" color="error.main">{sentimentData?.sentiment_distribution?.negative?.percentage || 0}%</Typography>
+                    <Typography>Negative</Typography>
+                  </CardContent>
+                </Card>
+              </Grid>
+            </Grid>
           </Grid>
         </Grid>
       </TabPanel>
 
+      {/* Forecasting Tab */}
       <TabPanel value={tabValue} index={2}>
+        {/* Forecast Bar Chart */}
+        {forecastChartData.length > 0 && (
+          <Card sx={{ mb: 3 }}>
+            <CardHeader title="Predicted Call Volume" />
+            <CardContent>
+              <Box sx={{ height: 300, width: '100%' }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={forecastChartData} margin={{ top: 5, right: 30, left: 0, bottom: 5 }}>
+                    <CartesianGrid strokeDasharray="3 3" />
+                    <XAxis dataKey="date" tick={{ fontSize: 12 }} />
+                    <YAxis allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="predicted_calls" fill="#9c27b0" radius={[4, 4, 0, 0]} name="Predicted Calls" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </Box>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Forecast Table */}
         <Card>
           <CardHeader title="7-Day Call Volume Forecast" />
           <CardContent>
@@ -242,7 +352,7 @@ export default function AnalyticsPage() {
                       <TableCell>{pred.day_of_week}</TableCell>
                       <TableCell><Typography variant="h6">{pred.predicted_calls}</Typography></TableCell>
                       <TableCell>
-                        <Chip label={pred.confidence} size="small" 
+                        <Chip label={pred.confidence} size="small"
                           color={pred.confidence === 'high' ? 'success' : pred.confidence === 'medium' ? 'warning' : 'default'} />
                       </TableCell>
                     </TableRow>
@@ -254,6 +364,7 @@ export default function AnalyticsPage() {
         </Card>
       </TabPanel>
 
+      {/* Customers Tab */}
       <TabPanel value={tabValue} index={3}>
         <Grid container spacing={3}>
           <Grid item xs={12} md={6}>
@@ -270,8 +381,22 @@ export default function AnalyticsPage() {
             <Card>
               <CardHeader title="Hourly Distribution" />
               <CardContent>
-                <Box sx={{ height: 200, display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'grey.50', borderRadius: 1 }}>
-                  <Typography color="textSecondary">Hourly distribution chart</Typography>
+                <Box sx={{ height: 200, width: '100%' }}>
+                  {peakHoursData.length > 0 ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={peakHoursData} margin={{ top: 5, right: 20, left: 0, bottom: 5 }}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="label" tick={{ fontSize: 11 }} />
+                        <YAxis allowDecimals={false} />
+                        <Tooltip labelFormatter={(label) => `Hour: ${label}`} />
+                        <Bar dataKey="count" fill="#0288d1" radius={[3, 3, 0, 0]} name="Calls" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <Box sx={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', bgcolor: 'grey.50', borderRadius: 1 }}>
+                      <Typography color="textSecondary">No hourly distribution data available</Typography>
+                    </Box>
+                  )}
                 </Box>
               </CardContent>
             </Card>

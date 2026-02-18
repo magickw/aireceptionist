@@ -6,7 +6,8 @@ import {
   Table, TableBody, TableCell, TableContainer, TableHead, TableRow,
   Paper, IconButton, LinearProgress, TextField, InputAdornment,
   FormControl, InputLabel, Select, MenuItem, Dialog, DialogTitle,
-  DialogContent, DialogActions, Button, Avatar, Tooltip
+  DialogContent, DialogActions, Button, Avatar, Tooltip,
+  Tabs, Tab, CircularProgress
 } from '@mui/material';
 import SearchIcon from '@mui/icons-material/Search';
 import RefreshIcon from '@mui/icons-material/Refresh';
@@ -57,6 +58,9 @@ export default function CallLogsPage() {
   const [statusFilter, setStatusFilter] = useState('all');
   const [selectedCall, setSelectedCall] = useState<CallSession | null>(null);
   const [detailsOpen, setDetailsOpen] = useState(false);
+  const [detailsTab, setDetailsTab] = useState(0);
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [isTrainingOpen, setIsTrainingOpen] = useState(false);
   const [trainingInput, setTrainingInput] = useState('');
   const [trainingResponse, setTrainingResponse] = useState('');
@@ -106,23 +110,23 @@ export default function CallLogsPage() {
         const response = await api.get(`/call-logs/?business_id=${businessId}`);
         const callData = response.data || [];
         setCalls(callData);
-        
+
         // Calculate stats
         const total = callData.length;
         const active = callData.filter((c: CallSession) => c.status === 'active').length;
         const ended = callData.filter((c: CallSession) => c.status === 'ended').length;
         const missed = callData.filter((c: CallSession) => c.status === 'missed' || c.voicemail_detected).length;
-        
+
         const callsWithDuration = callData.filter((c: CallSession) => c.duration_seconds);
         const avgDuration = callsWithDuration.length > 0
           ? callsWithDuration.reduce((sum: number, c: CallSession) => sum + (c.duration_seconds || 0), 0) / callsWithDuration.length
           : 0;
-        
+
         const callsWithConfidence = callData.filter((c: CallSession) => c.ai_confidence);
         const avgConfidence = callsWithConfidence.length > 0
           ? callsWithConfidence.reduce((sum: number, c: CallSession) => sum + Number(c.ai_confidence || 0), 0) / callsWithConfidence.length
           : 0;
-        
+
         setStats({
           total, active, ended, missed,
           avgDuration: Math.round(avgDuration),
@@ -134,6 +138,27 @@ export default function CallLogsPage() {
     } finally {
       setIsLoading(false);
     }
+  };
+
+  const fetchMessages = async (callId: string) => {
+    setLoadingMessages(true);
+    try {
+      const res = await api.get(`/call-logs/${callId}/messages`);
+      setMessages(res.data);
+    } catch (e) {
+      console.warn('No transcript available');
+      setMessages([]);
+    } finally {
+      setLoadingMessages(false);
+    }
+  };
+
+  const openDetailsDialog = (call: CallSession) => {
+    setSelectedCall(call);
+    setDetailsTab(0);
+    setMessages([]);
+    setDetailsOpen(true);
+    fetchMessages(call.id);
   };
 
   const filterCalls = () => {
@@ -164,6 +189,11 @@ export default function CallLogsPage() {
     return new Date(dateStr).toLocaleString();
   };
 
+  const formatMessageTime = (dateStr: string | null | undefined) => {
+    if (!dateStr) return '';
+    return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  };
+
   const getStatusColor = (status: string) => {
     switch (status) {
       case 'active': return 'success';
@@ -181,6 +211,22 @@ export default function CallLogsPage() {
       case 'negative': return <SentimentDissatisfiedIcon color="error" fontSize="small" />;
       default: return <SentimentNeutralIcon color="info" fontSize="small" />;
     }
+  };
+
+  const getSenderLabel = (msg: any): string => {
+    const role = (msg.role || msg.sender || '').toLowerCase();
+    if (role === 'customer' || role === 'user' || role === 'human') return 'Customer';
+    if (role === 'ai' || role === 'assistant' || role === 'bot') return 'AI';
+    if (role === 'system') return 'System';
+    return role || 'Unknown';
+  };
+
+  const getSenderType = (msg: any): 'customer' | 'ai' | 'system' => {
+    const label = getSenderLabel(msg);
+    if (label === 'Customer') return 'customer';
+    if (label === 'AI') return 'ai';
+    if (label === 'System') return 'system';
+    return 'ai';
   };
 
   if (isLoading) {
@@ -320,7 +366,7 @@ export default function CallLogsPage() {
                   </TableCell>
                   <TableCell align="center">
                     <Tooltip title="View Details">
-                      <IconButton size="small" onClick={() => { setSelectedCall(call); setDetailsOpen(true); }}>
+                      <IconButton size="small" onClick={() => openDetailsDialog(call)}>
                         <InfoIcon />
                       </IconButton>
                     </Tooltip>
@@ -338,27 +384,135 @@ export default function CallLogsPage() {
       </TableContainer>
 
       {/* Details Dialog */}
-      <Dialog open={detailsOpen} onClose={() => setDetailsOpen(false)} maxWidth="sm" fullWidth>
+      <Dialog open={detailsOpen} onClose={() => setDetailsOpen(false)} maxWidth="md" fullWidth>
         <DialogTitle>Call Details</DialogTitle>
         <DialogContent>
           {selectedCall && (
             <Box sx={{ pt: 1 }}>
-              <Grid container spacing={2}>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Call ID</Typography><Typography variant="body2">{selectedCall.id}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Status</Typography><Typography variant="body2">{selectedCall.status}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Customer Phone</Typography><Typography variant="body2">{selectedCall.customer_phone || 'Unknown'}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Customer Name</Typography><Typography variant="body2">{selectedCall.customer_name || 'Unknown'}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Started At</Typography><Typography variant="body2">{formatDateTime(selectedCall.started_at)}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Ended At</Typography><Typography variant="body2">{formatDateTime(selectedCall.ended_at)}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Duration</Typography><Typography variant="body2">{formatDuration(selectedCall.duration_seconds)}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">AI Confidence</Typography><Typography variant="body2">{selectedCall.ai_confidence ? `${Math.round(Number(selectedCall.ai_confidence) * 100)}%` : 'N/A'}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Sentiment</Typography><Typography variant="body2">{selectedCall.sentiment || 'Unknown'}</Typography></Grid>
-                <Grid item xs={6}><Typography variant="overline" color="text.secondary">Voicemail</Typography><Typography variant="body2">{selectedCall.voicemail_detected ? 'Yes' : 'No'}</Typography></Grid>
-                <Grid item xs={12}><Typography variant="overline" color="text.secondary">Summary</Typography><Typography variant="body2">{selectedCall.summary || 'No summary available'}</Typography></Grid>
-                {selectedCall.recording_url && (
-                  <Grid item xs={12}><Typography variant="overline" color="text.secondary">Recording</Typography><Box sx={{ mt: 1 }}><audio controls src={selectedCall.recording_url} style={{ width: '100%' }} /></Box></Grid>
-                )}
-              </Grid>
+              <Tabs
+                value={detailsTab}
+                onChange={(_, newValue) => setDetailsTab(newValue)}
+                sx={{ borderBottom: 1, borderColor: 'divider', mb: 2 }}
+              >
+                <Tab label="Details" />
+                <Tab label="Transcript" />
+              </Tabs>
+
+              {/* Details Tab */}
+              {detailsTab === 0 && (
+                <Grid container spacing={2}>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Call ID</Typography><Typography variant="body2">{selectedCall.id}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Status</Typography><Typography variant="body2">{selectedCall.status}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Customer Phone</Typography><Typography variant="body2">{selectedCall.customer_phone || 'Unknown'}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Customer Name</Typography><Typography variant="body2">{selectedCall.customer_name || 'Unknown'}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Started At</Typography><Typography variant="body2">{formatDateTime(selectedCall.started_at)}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Ended At</Typography><Typography variant="body2">{formatDateTime(selectedCall.ended_at)}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Duration</Typography><Typography variant="body2">{formatDuration(selectedCall.duration_seconds)}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">AI Confidence</Typography><Typography variant="body2">{selectedCall.ai_confidence ? `${Math.round(Number(selectedCall.ai_confidence) * 100)}%` : 'N/A'}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Sentiment</Typography><Typography variant="body2">{selectedCall.sentiment || 'Unknown'}</Typography></Grid>
+                  <Grid item xs={6}><Typography variant="overline" color="text.secondary">Voicemail</Typography><Typography variant="body2">{selectedCall.voicemail_detected ? 'Yes' : 'No'}</Typography></Grid>
+                  <Grid item xs={12}><Typography variant="overline" color="text.secondary">Summary</Typography><Typography variant="body2">{selectedCall.summary || 'No summary available'}</Typography></Grid>
+                  {selectedCall.recording_url && (
+                    <Grid item xs={12}><Typography variant="overline" color="text.secondary">Recording</Typography><Box sx={{ mt: 1 }}><audio controls src={selectedCall.recording_url} style={{ width: '100%' }} /></Box></Grid>
+                  )}
+                </Grid>
+              )}
+
+              {/* Transcript Tab */}
+              {detailsTab === 1 && (
+                <Box sx={{ minHeight: 300, maxHeight: 500, overflowY: 'auto', px: 1 }}>
+                  {loadingMessages ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
+                      <CircularProgress />
+                    </Box>
+                  ) : messages.length === 0 ? (
+                    <Box sx={{ display: 'flex', justifyContent: 'center', alignItems: 'center', height: 300 }}>
+                      <Typography color="text.secondary">No transcript available for this call</Typography>
+                    </Box>
+                  ) : (
+                    <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1.5, py: 1 }}>
+                      {messages.map((msg, index) => {
+                        const senderType = getSenderType(msg);
+                        const senderLabel = getSenderLabel(msg);
+                        const content = msg.content || msg.text || msg.message || '';
+                        const timestamp = msg.created_at || msg.timestamp || msg.sent_at;
+
+                        if (senderType === 'system') {
+                          return (
+                            <Box key={index} sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', my: 0.5 }}>
+                              <Chip label={senderLabel} size="small" variant="outlined" sx={{ mb: 0.5, fontSize: '0.7rem' }} />
+                              <Typography
+                                variant="body2"
+                                sx={{
+                                  fontStyle: 'italic',
+                                  color: 'text.secondary',
+                                  textAlign: 'center',
+                                  maxWidth: '80%',
+                                  bgcolor: '#f5f5f5',
+                                  px: 2,
+                                  py: 1,
+                                  borderRadius: 2,
+                                }}
+                              >
+                                {content}
+                              </Typography>
+                              {timestamp && (
+                                <Typography variant="caption" color="text.disabled" sx={{ mt: 0.25 }}>
+                                  {formatMessageTime(timestamp)}
+                                </Typography>
+                              )}
+                            </Box>
+                          );
+                        }
+
+                        const isCustomer = senderType === 'customer';
+
+                        return (
+                          <Box
+                            key={index}
+                            sx={{
+                              display: 'flex',
+                              flexDirection: 'column',
+                              alignItems: isCustomer ? 'flex-end' : 'flex-start',
+                              maxWidth: '80%',
+                              alignSelf: isCustomer ? 'flex-end' : 'flex-start',
+                            }}
+                          >
+                            <Chip
+                              label={senderLabel}
+                              size="small"
+                              sx={{
+                                mb: 0.5,
+                                fontSize: '0.7rem',
+                                bgcolor: isCustomer ? '#1976d2' : '#757575',
+                                color: '#fff',
+                              }}
+                            />
+                            <Box
+                              sx={{
+                                bgcolor: isCustomer ? '#e3f2fd' : '#f5f5f5',
+                                px: 2,
+                                py: 1.25,
+                                borderRadius: 2,
+                                borderTopRightRadius: isCustomer ? 0 : 2,
+                                borderTopLeftRadius: isCustomer ? 2 : 0,
+                                wordBreak: 'break-word',
+                              }}
+                            >
+                              <Typography variant="body2">{content}</Typography>
+                            </Box>
+                            {timestamp && (
+                              <Typography variant="caption" color="text.disabled" sx={{ mt: 0.25, px: 0.5 }}>
+                                {formatMessageTime(timestamp)}
+                              </Typography>
+                            )}
+                          </Box>
+                        );
+                      })}
+                    </Box>
+                  )}
+                </Box>
+              )}
             </Box>
           )}
         </DialogContent>
@@ -373,7 +527,7 @@ export default function CallLogsPage() {
             <Typography variant="body2" color="text.secondary">
               Correcting the AI's response here will help the model handle similar queries more effectively in the future.
             </Typography>
-            
+
             <TextField
               label="Customer Input (from call)"
               multiline
@@ -384,7 +538,7 @@ export default function CallLogsPage() {
               placeholder="What did the customer say?"
               helperText="The user query that triggered this correction"
             />
-            
+
             <TextField
               label="Expected AI Response (your correction)"
               multiline
@@ -416,10 +570,10 @@ export default function CallLogsPage() {
         </DialogContent>
         <DialogActions>
           <Button onClick={() => setIsTrainingOpen(false)} disabled={isSubmittingTraining}>Cancel</Button>
-          <Button 
-            onClick={submitTraining} 
-            variant="contained" 
-            color="success" 
+          <Button
+            onClick={submitTraining}
+            variant="contained"
+            color="success"
             disabled={!trainingInput || !trainingResponse || isSubmittingTraining}
           >
             {isSubmittingTraining ? 'Saving...' : 'Add to Training'}

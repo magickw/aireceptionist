@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics
+from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments
 from app.core.config import settings
 
 app = FastAPI(
@@ -61,6 +61,7 @@ app.include_router(business_types.router, prefix=f"{settings.API_V1_STR}/busines
 app.include_router(business_templates.router, prefix=f"{settings.API_V1_STR}/admin/templates", tags=["admin-templates"])
 app.include_router(multimodal.router, prefix=f"{settings.API_V1_STR}/multimodal", tags=["multimodal"])
 app.include_router(diagnostics.router, prefix=f"{settings.API_V1_STR}", tags=["diagnostics"])
+app.include_router(payments.router, prefix=f"{settings.API_V1_STR}/payments", tags=["payments"])
 
 
 @app.get("/health")

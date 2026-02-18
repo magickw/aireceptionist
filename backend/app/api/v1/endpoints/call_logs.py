@@ -3,7 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.models.models import CallSession, User, Business
+from app.models.models import CallSession, ConversationMessage, User, Business
 from app.schemas.call_session import CallSession as CallSessionSchema
 
 router = APIRouter()
@@ -56,5 +56,45 @@ def read_call_log(
         business = db.query(Business).filter(Business.id == call_session.business_id).first()
         if not business or business.user_id != current_user.id:
             raise HTTPException(status_code=400, detail="Not enough permissions")
-            
+
     return call_session
+
+
+@router.get("/{id}/messages")
+def read_call_messages(
+    *,
+    db: Session = Depends(deps.get_db),
+    id: str,
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """
+    Get conversation messages for a call session.
+    """
+    call_session = db.query(CallSession).filter(CallSession.id == id).first()
+    if not call_session:
+        raise HTTPException(status_code=404, detail="Call session not found")
+
+    if current_user.role != "admin":
+        business = db.query(Business).filter(Business.id == call_session.business_id).first()
+        if not business or business.user_id != current_user.id:
+            raise HTTPException(status_code=400, detail="Not enough permissions")
+
+    messages = (
+        db.query(ConversationMessage)
+        .filter(ConversationMessage.call_session_id == id)
+        .order_by(ConversationMessage.timestamp.asc())
+        .all()
+    )
+
+    return [
+        {
+            "id": m.id,
+            "sender": m.sender,
+            "content": m.content,
+            "message_type": m.message_type,
+            "confidence": float(m.confidence) if m.confidence else None,
+            "intent": m.intent,
+            "timestamp": m.timestamp.isoformat() if m.timestamp else None,
+        }
+        for m in messages
+    ]
