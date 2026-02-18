@@ -7,7 +7,6 @@ from sqlalchemy.orm import Session
 
 from app.core import security
 from app.core.config import settings
-from app.core.firebase_auth import verify_firebase_token
 from app.db.session import SessionLocal
 from app.models.models import User, Business
 from app.schemas.user import TokenPayload
@@ -31,7 +30,7 @@ def get_db() -> Generator:
 
 # 2. THEN define get_current_user(), which depends on get_db()
 async def get_current_user(
-    db: Session = Depends(get_db), 
+    db: Session = Depends(get_db),
     token_header: Optional[str] = Depends(reusable_oauth2),
     token_query: Optional[str] = Query(None, alias="token")
 ) -> User:
@@ -47,11 +46,25 @@ async def get_current_user(
             detail="Not authenticated",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
-    # Try Firebase token first
+
+    # Try JWT token first (local validation, no network call)
     try:
-        firebase_payload = await verify_firebase_token(token)
-        # Firebase UID matches user.email
+        payload = jwt.decode(
+            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
+        )
+        token_data = TokenPayload(**payload)
+        user = db.query(User).filter(User.id == token_data.sub).first()
+        if user:
+            return user
+    except (JWTError, ValidationError):
+        pass
+
+    # Fall back to Firebase token (requires network call to Google)
+    try:
+        import asyncio
+        firebase_payload = await asyncio.to_thread(
+            _verify_firebase_token_sync, token
+        )
         user = db.query(User).filter(User.email == firebase_payload.get("email")).first()
         if not user:
             # Create user if doesn't exist
@@ -64,25 +77,21 @@ async def get_current_user(
             db.commit()
             db.refresh(user)
         return user
-    except HTTPException as firebase_error:
-        # If Firebase validation fails, try JWT
+    except Exception:
         pass
-    
-    # Try JWT token
-    try:
-        payload = jwt.decode(
-            token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM]
-        )
-        token_data = TokenPayload(**payload)
-    except (JWTError, ValidationError):
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Could not validate credentials",
-        )
-    user = db.query(User).filter(User.id == token_data.sub).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="User not found")
-    return user
+
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN,
+        detail="Could not validate credentials",
+    )
+
+
+def _verify_firebase_token_sync(token: str) -> dict:
+    """Synchronous Firebase token verification for use with asyncio.to_thread."""
+    from app.core.firebase_auth import get_firebase_app
+    from firebase_admin import auth as firebase_auth
+    app = get_firebase_app()
+    return firebase_auth.verify_id_token(token, app=app)
 
 # 3. Other dependencies can now use get_current_user
 async def get_current_active_user(

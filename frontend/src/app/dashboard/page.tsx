@@ -90,25 +90,21 @@ export default function Dashboard() {
         if (businessResponse.data.length > 0) {
           const bizId = businessResponse.data[0].id;
           setBusinessId(bizId);
-          
-          // Fetch analytics data
-          const analyticsResponse = await api.get(`/analytics/business/${bizId}`);
+
+          // Fetch all dashboard data in parallel
+          const [analyticsResponse, realtimeResponse, callLogsResponse, appointmentsResponse, ordersResponse] =
+            await Promise.all([
+              api.get(`/analytics/business/${bizId}`),
+              api.get(`/analytics/business/${bizId}/realtime`),
+              api.get(`/call-logs/?business_id=${bizId}`),
+              api.get(`/appointments/business/${bizId}`),
+              api.get(`/orders/?business_id=${bizId}`),
+            ]);
+
           const analyticsData = analyticsResponse.data;
-          
-          // Fetch realtime data including active calls
-          const realtimeResponse = await api.get(`/analytics/business/${bizId}/realtime`);
           const realtimeData = realtimeResponse.data;
-          
-          // Fetch call logs for recent activity
-          const callLogsResponse = await api.get(`/call-logs/?business_id=${bizId}`);
           const callLogs = callLogsResponse.data || [];
-          
-          // Fetch appointments
-          const appointmentsResponse = await api.get(`/appointments/business/${bizId}`);
           const appointments = appointmentsResponse.data || [];
-          
-          // Fetch orders for workflow-like activity
-          const ordersResponse = await api.get(`/orders/?business_id=${bizId}`);
           const orders = ordersResponse.data || [];
           
           // Process metrics from real data
