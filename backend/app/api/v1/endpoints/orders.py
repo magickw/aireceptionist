@@ -1,5 +1,5 @@
-from typing import Any, List
-from fastapi import APIRouter, Depends, HTTPException, status
+from typing import Any, List, Optional
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.orm import Session
 
 from app.api import deps
@@ -10,21 +10,21 @@ router = APIRouter()
 
 @router.get("/", response_model=List[OrderResponse])
 def read_orders(
+    business_id: Optional[int] = Query(None),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """
-    Retrieve orders for the current user's business.
+    Retrieve orders for a business. Accepts business_id as query param,
+    falls back to the current user's first business.
     """
-    # Assuming a user can only see orders for their own business
-    # In a more complex scenario, you might filter by business_id based on user roles
-    if not current_user.businesses:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="User does not own any businesses.",
-        )
-    
-    business_id = current_user.businesses[0].id # Get the first business owned by the user
+    if business_id is None:
+        if not current_user.businesses:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="User does not own any businesses.",
+            )
+        business_id = current_user.businesses[0].id
 
     orders = db.query(Order).filter(Order.business_id == business_id).all()
     return orders

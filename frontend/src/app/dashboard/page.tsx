@@ -78,7 +78,6 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [businessId, setBusinessId] = useState<number | null>(null);
   const [error, setError] = useState('');
-  const [consecutiveErrors, setConsecutiveErrors] = useState(0);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -91,9 +90,9 @@ export default function Dashboard() {
           const bizId = businessResponse.data[0].id;
           setBusinessId(bizId);
 
-          // Fetch all dashboard data in parallel
-          const [analyticsResponse, realtimeResponse, callLogsResponse, appointmentsResponse, ordersResponse] =
-            await Promise.all([
+          // Fetch all dashboard data in parallel — use allSettled so one failure doesn't kill the whole dashboard
+          const [analyticsResult, realtimeResult, callLogsResult, appointmentsResult, ordersResult] =
+            await Promise.allSettled([
               api.get(`/analytics/business/${bizId}`),
               api.get(`/analytics/business/${bizId}/realtime`),
               api.get(`/call-logs/?business_id=${bizId}`),
@@ -101,11 +100,18 @@ export default function Dashboard() {
               api.get(`/orders/?business_id=${bizId}`),
             ]);
 
-          const analyticsData = analyticsResponse.data;
-          const realtimeData = realtimeResponse.data;
-          const callLogs = callLogsResponse.data || [];
-          const appointments = appointmentsResponse.data || [];
-          const orders = ordersResponse.data || [];
+          const analyticsData = analyticsResult.status === 'fulfilled' ? analyticsResult.value.data : {};
+          const realtimeData = realtimeResult.status === 'fulfilled' ? realtimeResult.value.data : {};
+          const callLogs = callLogsResult.status === 'fulfilled' ? (callLogsResult.value.data || []) : [];
+          const appointments = appointmentsResult.status === 'fulfilled' ? (appointmentsResult.value.data || []) : [];
+          const orders = ordersResult.status === 'fulfilled' ? (ordersResult.value.data || []) : [];
+
+          // Log individual failures for debugging without crashing the dashboard
+          const results = [analyticsResult, realtimeResult, callLogsResult, appointmentsResult, ordersResult];
+          const names = ['analytics', 'realtime', 'call-logs', 'appointments', 'orders'];
+          results.forEach((r, i) => {
+            if (r.status === 'rejected') console.warn(`Dashboard: ${names[i]} failed:`, r.reason?.message);
+          });
           
           // Process metrics from real data
           const totalCalls = analyticsData.totalCalls || realtimeData.todayStats?.calls_today || 0;
@@ -177,35 +183,24 @@ export default function Dashboard() {
           setWorkflows(workflowList.slice(0, 4));
         }
         
-        // Reset error count on successful fetch
-        setConsecutiveErrors(0);
+        // Reset error on successful fetch
         setError('');
         
       } catch (error: any) {
         console.error('Error fetching dashboard data:', error);
-        setConsecutiveErrors(prev => prev + 1);
-        
-        // Stop showing error after first occurrence to avoid console spam
-        if (consecutiveErrors === 0) {
-          setError(error?.response?.data?.detail || error?.message || 'Failed to fetch dashboard data');
-        }
+        setError(error?.response?.data?.detail || error?.message || 'Failed to fetch dashboard data');
       } finally {
         setIsLoading(false);
       }
     };
 
     fetchDashboardData();
-    
+
     // Set up real-time updates (every 30 seconds)
-    // Stop polling if there are too many consecutive errors
-    let interval: NodeJS.Timeout;
-    if (consecutiveErrors < 5) {
-      interval = setInterval(fetchDashboardData, 30000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [isAuthenticated, consecutiveErrors]);
+    const interval = setInterval(fetchDashboardData, 30000);
+    return () => clearInterval(interval);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated]);
 
   const formatTimeAgo = (dateStr: string): string => {
     if (!dateStr) return 'Unknown';
@@ -264,11 +259,6 @@ export default function Dashboard() {
       {error && (
         <Alert severity="warning" sx={{ mb: 3 }} onClose={() => setError('')}>
           <Typography variant="body2">{error}</Typography>
-          {consecutiveErrors >= 5 && (
-            <Typography variant="caption" display="block" sx={{ mt: 1 }}>
-              Auto-refresh has been paused due to connection issues. Please refresh the page.
-            </Typography>
-          )}
         </Alert>
       )}
       
