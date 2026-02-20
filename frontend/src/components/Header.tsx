@@ -110,7 +110,7 @@ export default function Header() {
   const drawer = (
     <Box onClick={handleDrawerToggle} sx={{ textAlign: 'center' }}>
       <Typography variant="h6" sx={{ my: 2, fontWeight: 'bold', color: 'primary.main' }}>
-        Nova Voice Agent
+        Receptium
       </Typography>
       <Divider />
       <List>
@@ -233,7 +233,7 @@ export default function Header() {
               fontSize: { xs: '1rem', sm: '1.25rem' }
             }}
           >
-            Nova Voice Agent
+            Receptium
           </Typography>
           
           {/* Desktop Navigation */}

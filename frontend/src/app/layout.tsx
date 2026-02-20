@@ -8,8 +8,11 @@ import ProtectedRoute from "@/components/ProtectedRoute";
 // API interceptors are handled in services/api.ts
 
 export const metadata = {
-  title: "AI Receptionist Pro",
-  description: "Premium AI-powered business phone management platform",
+  title: "Receptium",
+  description: "Receptium - The Intelligent Frontline for your Business",
+  icons: {
+    icon: "/logo.svg",
+  },
 };
 
 export default function RootLayout({

@@ -416,9 +416,17 @@ class NovaSonicStreamSession:
 
     def _open_stream(self):
         """Synchronous: open the bidirectional stream."""
-        return self._bedrock.invoke_model_with_bidirectional_stream(
-            modelId=self.model_id,
-        )
+        try:
+            return self._bedrock.invoke_model_with_bidirectional_stream(
+                modelId=self.model_id,
+            )
+        except AttributeError:
+            raise RuntimeError(
+                "invoke_model_with_bidirectional_stream not available. "
+                "Upgrade boto3 to >=1.35.80: pip install 'boto3>=1.35.80'"
+            )
+        except self._bedrock.exceptions.ClientError as e:
+            raise RuntimeError(f"Bedrock bidirectional stream failed: {e}")
 
     def _next_prompt_name(self) -> str:
         self._prompt_name_counter += 1
@@ -430,10 +438,14 @@ class NovaSonicStreamSession:
             return
         loop = asyncio.get_event_loop()
         encoded = json.dumps(event).encode("utf-8")
-        await loop.run_in_executor(
-            _executor,
-            lambda: self._input_stream.send({"chunk": {"bytes": encoded}}),
-        )
+        try:
+            await loop.run_in_executor(
+                _executor,
+                lambda: self._input_stream.send({"chunk": {"bytes": encoded}}),
+            )
+        except Exception as e:
+            print(f"[Nova Sonic Stream] Send error, deactivating: {e}")
+            self.is_active = False
 
     async def start_user_turn(self):
         """Mark the beginning of a user audio turn."""

@@ -1,6 +1,6 @@
-# Nova Autonomous Business Agent Platform
+# Receptium
 
-A production-ready, Nova-native autonomous agent system that handles live voice calls, reasons through complex customer intents, and executes real-world business workflows.
+An autonomous, AI-powered business operations platform that handles voice calls, reasons through complex customer intents, and executes real-world workflows.
 
 Built for the **Amazon Nova Hackathon**.
 

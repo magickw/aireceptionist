@@ -1,12 +1,17 @@
 'use client';
 import * as React from 'react';
-import { useState, useEffect, useRef } from 'react';
-import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper, Alert, Chip } from '@mui/material';
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper, Chip, ToggleButtonGroup, ToggleButton, Tooltip } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
+import MicIcon from '@mui/icons-material/Mic';
+import MicOffIcon from '@mui/icons-material/MicOff';
+import KeyboardIcon from '@mui/icons-material/Keyboard';
+import GraphicEqIcon from '@mui/icons-material/GraphicEq';
 import AgentThoughts from '@/components/AgentThoughts';
 import VoiceVisualizer from '@/components/VoiceVisualizer';
 import { getWebSocketUrl } from '@/services/api';
 import api from '@/services/api';
+import { useVoiceStreaming } from '@/hooks/useVoiceStreaming';
 
 export default function CallSimulator() {
   const [currentCall, setCurrentCall] = useState<any>(null);
@@ -18,11 +23,37 @@ export default function CallSimulator() {
   const [streamingText, setStreamingText] = useState('');
   const [connectionStatus, setConnectionStatus] = useState<'connecting' | 'connected' | 'disconnected' | 'http_fallback'>('connecting');
   const [autonomyMode, setAutonomyMode] = useState<'AUTONOMOUS' | 'GUARDED'>('AUTONOMOUS');
+  const [inputMode, setInputMode] = useState<'text' | 'voice'>('text');
+  const [isStreamingReady, setIsStreamingReady] = useState(false);
+  const [latencyMetrics, setLatencyMetrics] = useState<any>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string>('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const connectionStatusRef = useRef<'connecting' | 'connected' | 'disconnected' | 'http_fallback'>('connecting');
+
+  // Stable addMessage using ref to avoid stale closure
+  const addMessageRef = useRef<(content: string, sender: 'customer' | 'ai') => void>(() => {});
+  const addMessage = useCallback((content: string, sender: 'customer' | 'ai') => {
+    const message = { id: Date.now(), sender, content };
+    setCurrentCall((prev: any) => prev ? { ...prev, messages: [...(prev.messages || []), message] } : prev);
+  }, []);
+  addMessageRef.current = addMessage;
+
+  // Voice streaming hook
+  const {
+    isRecording,
+    isPlaying,
+    startRecording,
+    stopRecording,
+    playAudioChunk,
+    stopPlayback,
+    micLevel,
+  } = useVoiceStreaming({
+    wsRef,
+    onPlaybackStart: () => setIsSpeaking(true),
+    onPlaybackEnd: () => setIsSpeaking(false),
+  });
 
   // Create HTTP session
   const createHttpSession = async () => {
@@ -42,11 +73,11 @@ export default function CallSimulator() {
   // Poll for HTTP events
   const pollHttpEvents = async () => {
     if (!sessionIdRef.current) return;
-    
+
     try {
       const response = await api.get(`/voice/session/${sessionIdRef.current}/events`);
       const events = response.data.events || [];
-      
+
       for (const event of events) {
         if (event.type === 'thought') {
           setThoughts(prev => [...prev, { step: event.step, message: event.message, timestamp: new Date() }]);
@@ -56,30 +87,23 @@ export default function CallSimulator() {
           if (event.is_last) {
             setIsProcessing(false);
             setIsSpeaking(false);
-            // Only add if full_text is provided to avoid duplicate with agent_response
             if (event.full_text) {
-              addMessage(event.full_text, 'ai');
+              addMessageRef.current(event.full_text, 'ai');
             }
             setStreamingText('');
           }
         } else if (event.type === 'agent_response') {
           setIsProcessing(false);
           setIsSpeaking(false);
-          // Only add if streaming didn't already add the message
-          const msgs = currentCall?.messages || [];
-          const lastAiMsg = msgs.filter((m: any) => m.sender === 'ai').pop();
-          if (!lastAiMsg || lastAiMsg.content !== event.text) {
-            addMessage(event.text, 'ai');
-          }
+          addMessageRef.current(event.text, 'ai');
           if (event.reasoning) setReasoningData(event.reasoning);
         } else if (event.type === 'reasoning_chain' || event.type === 'reasoning_complete') {
-          // Handle reasoning data
           if (event.data) setReasoningData(event.data);
         } else if (event.type === 'human_intervention_request') {
           setAutonomyMode('GUARDED');
         } else if (event.type === 'error') {
           console.error('Backend poll error:', event.message);
-          addMessage(`Error: ${event.message}`, 'ai');
+          addMessageRef.current(`Error: ${event.message}`, 'ai');
           setIsProcessing(false);
         }
       }
@@ -90,14 +114,9 @@ export default function CallSimulator() {
 
   // Send message via HTTP
   const sendHttpMessage = async (text: string) => {
-    if (!sessionIdRef.current) {
-      console.error('No session ID');
-      return;
-    }
+    if (!sessionIdRef.current) return;
     try {
-      console.log('[CallSim] Sending message:', text, 'to session:', sessionIdRef.current);
-      const response = await api.post(`/voice/session/${sessionIdRef.current}/message`, { text });
-      console.log('[CallSim] Message sent, response:', response);
+      await api.post(`/voice/session/${sessionIdRef.current}/message`, { text });
     } catch (error: any) {
       console.error('[CallSim] Failed to send HTTP message:', error?.response?.data || error?.message || error);
     }
@@ -116,71 +135,93 @@ export default function CallSimulator() {
     }
   };
 
+  // Ref for playAudioChunk to use inside WS handler without stale closure
+  const playAudioChunkRef = useRef(playAudioChunk);
+  playAudioChunkRef.current = playAudioChunk;
+
   useEffect(() => {
     const connect = async () => {
-      console.log('🔌 Connecting to WebSocket:', getWebSocketUrl().replace(/\?token=.*$/, '?token=REDACTED'));
-      
+      console.log('[CallSim] Connecting to WebSocket...');
+
       try {
         const ws = new WebSocket(getWebSocketUrl());
         wsRef.current = ws;
 
         ws.onopen = () => {
-          console.log('🔌 WebSocket connection established');
+          console.log('[CallSim] WebSocket connected');
           connectionStatusRef.current = 'connected';
           setConnectionStatus('connected');
         };
-        
+
         ws.onclose = () => {
-          console.log('🔌 WebSocket connection closed');
+          console.log('[CallSim] WebSocket closed');
           setConnectionStatus('disconnected');
+          setIsStreamingReady(false);
         };
-        
+
         ws.onerror = () => {
-          console.error('WebSocket error');
+          console.error('[CallSim] WebSocket error');
           setConnectionStatus('disconnected');
         };
 
         ws.onmessage = (event) => {
           const data = JSON.parse(event.data);
-          
-          if (data.type === 'thought') {
+
+          if (data.type === 'connected') {
+            // Server acknowledged connection
+            console.log('[CallSim] Server connected:', data.session_id);
+          } else if (data.type === 'streaming_ready') {
+            // Nova Sonic bidirectional streaming is active
+            setIsStreamingReady(true);
+            console.log('[CallSim] Streaming ready');
+          } else if (data.type === 'thought') {
             setThoughts(prev => [...prev, { step: data.step, message: data.message, timestamp: new Date() }]);
+          } else if (data.type === 'transcript') {
+            // User speech transcript from streaming STT
+            addMessageRef.current(data.text, 'customer');
+            setIsProcessing(true);
           } else if (data.type === 'text_chunk') {
             setStreamingText(prev => prev + data.chunk);
             setIsSpeaking(true);
             if (data.is_last) {
               setIsProcessing(false);
               setIsSpeaking(false);
-              // Only add if full_text is provided
               if (data.full_text) {
-                addMessage(data.full_text, 'ai');
+                addMessageRef.current(data.full_text, 'ai');
               }
               setStreamingText('');
             }
           } else if (data.type === 'agent_response') {
             setIsProcessing(false);
             setIsSpeaking(false);
-            // Only add if not already added via text_chunk
-            const msgs = currentCall?.messages || [];
-            const lastAiMsg = msgs.filter((m: any) => m.sender === 'ai').pop();
-            if (!lastAiMsg || lastAiMsg.content !== data.text) {
-              addMessage(data.text, 'ai');
-            }
+            addMessageRef.current(data.text, 'ai');
             if (data.reasoning) setReasoningData(data.reasoning);
             setStreamingText('');
+          } else if (data.type === 'audio') {
+            // Play audio response (streaming: 24kHz, batch: 16kHz)
+            const sampleRate = data.sample_rate || 16000;
+            playAudioChunkRef.current(data.audio, sampleRate);
+          } else if (data.type === 'reasoning_chain' || data.type === 'reasoning_complete') {
+            if (data.data) setReasoningData(data.data);
           } else if (data.type === 'human_intervention_request') {
             setAutonomyMode('GUARDED');
+            addMessageRef.current(`[Transfer requested: ${data.reason || 'Human agent needed'}]`, 'ai');
+          } else if (data.type === 'latency_metrics') {
+            setLatencyMetrics(data.metrics);
+            console.log('[CallSim] Latency:', data.metrics);
+          } else if (data.type === 'call_ended') {
+            console.log('[CallSim] Call ended by server');
           } else if (data.type === 'error') {
-            console.error('WebSocket backend error:', data.message);
-            addMessage(`Error: ${data.message}`, 'ai');
+            console.error('[CallSim] Backend error:', data.message);
+            addMessageRef.current(`Error: ${data.message}`, 'ai');
             setIsProcessing(false);
           }
         };
-        
+
         // Fallback to HTTP if WebSocket fails within 5 seconds
         setTimeout(() => {
           if (connectionStatusRef.current === 'connecting') {
-            console.log('🔄 WebSocket timed out, switching to HTTP fallback');
+            console.log('[CallSim] WebSocket timed out, switching to HTTP fallback');
             ws.close();
             connectionStatusRef.current = 'http_fallback';
             setConnectionStatus('http_fallback');
@@ -191,7 +232,7 @@ export default function CallSimulator() {
             });
           }
         }, 5000);
-        
+
       } catch (error) {
         console.error('WebSocket failed, using HTTP fallback:', error);
         setConnectionStatus('http_fallback');
@@ -202,7 +243,7 @@ export default function CallSimulator() {
         });
       }
     };
-    
+
     if (typeof window !== 'undefined') {
       connect();
     }
@@ -219,43 +260,55 @@ export default function CallSimulator() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentCall?.messages, streamingText]);
 
-  const addMessage = (content: string, sender: 'customer' | 'ai') => {
-    const message = { id: Date.now(), sender, content };
-    setCurrentCall((prev: any) => ({ ...prev, messages: [...(prev?.messages || []), message] }));
-  };
-
   const startCall = () => {
     setCurrentCall({ messages: [] });
     setThoughts([]);
     setStreamingText('');
     setAutonomyMode('AUTONOMOUS');
+    setLatencyMetrics(null);
     setTimeout(() => addMessage("Hello! How can I help you today?", 'ai'), 500);
   };
-  
+
   const sendMessage = () => {
     if (!messageInput.trim()) return;
-    
+
     addMessage(messageInput, 'customer');
-    
+
     if (connectionStatus === 'http_fallback') {
       sendHttpMessage(messageInput);
     } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'user_input', text: messageInput }));
     } else {
-      console.warn("Connection not ready, message queued");
+      console.warn("Connection not ready");
       return;
     }
-    
+
     setMessageInput('');
     setIsProcessing(true);
   };
 
+  const toggleRecording = async () => {
+    if (isRecording) {
+      stopRecording();
+    } else {
+      // Stop any playback before recording
+      stopPlayback();
+      await startRecording();
+    }
+  };
+
   const endCall = () => {
+    // Stop recording/playback
+    if (isRecording) stopRecording();
+    stopPlayback();
+
     setCurrentCall(null);
     setThoughts([]);
     setStreamingText('');
     setIsSpeaking(false);
-    
+    setLatencyMetrics(null);
+    setIsStreamingReady(false);
+
     if (connectionStatus === 'http_fallback') {
       endHttpSession();
     } else if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -266,54 +319,90 @@ export default function CallSimulator() {
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           <Typography variant="h4">AI Call Simulator</Typography>
-          <Chip 
-            label={connectionStatus === 'connected' ? 'WebSocket' : connectionStatus === 'http_fallback' ? 'HTTP Polling' : 'Connecting...'} 
+          <Chip
+            label={connectionStatus === 'connected' ? 'WebSocket' : connectionStatus === 'http_fallback' ? 'HTTP Polling' : 'Connecting...'}
             color={connectionStatus === 'connected' ? 'success' : connectionStatus === 'http_fallback' ? 'warning' : 'default'}
             size="small"
           />
+          {isStreamingReady && (
+            <Chip
+              label="Streaming"
+              color="info"
+              size="small"
+              variant="outlined"
+              icon={<GraphicEqIcon />}
+            />
+          )}
           {currentCall && (
-            <Chip 
-              label={`MODE: ${autonomyMode}`} 
+            <Chip
+              label={`MODE: ${autonomyMode}`}
               color={autonomyMode === 'AUTONOMOUS' ? 'success' : 'error'}
               variant="outlined"
               size="small"
-              sx={{ 
-                fontWeight: 'bold', 
+              sx={{
+                fontWeight: 'bold',
                 borderWidth: 2,
                 animation: autonomyMode === 'GUARDED' ? 'blink 1s infinite' : 'none'
               }}
             />
           )}
+          {latencyMetrics && latencyMetrics.time_to_first_byte_ms !== undefined && (
+            <Tooltip title={`Transcript: ${latencyMetrics.time_to_transcript_ms?.toFixed(0) || '?'}ms | First byte: ${latencyMetrics.time_to_first_byte_ms?.toFixed(0) || '?'}ms | Total: ${latencyMetrics.total_turn_ms?.toFixed(0) || '?'}ms`}>
+              <Chip
+                label={`${latencyMetrics.time_to_first_byte_ms?.toFixed(0)}ms`}
+                size="small"
+                variant="outlined"
+                color={latencyMetrics.time_to_first_byte_ms < 1000 ? 'success' : 'warning'}
+              />
+            </Tooltip>
+          )}
         </Box>
-        {currentCall && (
-          <Button variant="outlined" color="error" onClick={endCall}>
-            End Call
-          </Button>
-        )}
+        <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+          {currentCall && (
+            <>
+              <ToggleButtonGroup
+                value={inputMode}
+                exclusive
+                onChange={(_e, val) => { if (val) setInputMode(val); }}
+                size="small"
+              >
+                <ToggleButton value="text">
+                  <Tooltip title="Text input"><KeyboardIcon fontSize="small" /></Tooltip>
+                </ToggleButton>
+                <ToggleButton value="voice" disabled={connectionStatus === 'http_fallback'}>
+                  <Tooltip title="Voice input (streaming)"><MicIcon fontSize="small" /></Tooltip>
+                </ToggleButton>
+              </ToggleButtonGroup>
+              <Button variant="outlined" color="error" onClick={endCall}>
+                End Call
+              </Button>
+            </>
+          )}
+        </Box>
       </Box>
-      
+
       {/* Voice Visualizer */}
       <Box sx={{ mb: 3 }}>
-        <VoiceVisualizer 
-          isActive={!!currentCall} 
-          isSpeaking={isSpeaking} 
+        <VoiceVisualizer
+          isActive={!!currentCall}
+          isSpeaking={isSpeaking || isPlaying}
         />
       </Box>
-      
+
       <Grid container spacing={3}>
         <Grid item xs={12} lg={8}>
           <Card sx={{ height: '600px', display: 'flex', flexDirection: 'column' }}>
-            <CardHeader 
-              title={currentCall ? "Call in Progress" : "Ready to Start"} 
-              action={!currentCall && <Button onClick={startCall}>Start Call</Button>} 
+            <CardHeader
+              title={currentCall ? "Call in Progress" : "Ready to Start"}
+              action={!currentCall && <Button onClick={startCall}>Start Call</Button>}
             />
             <CardContent sx={{ flexGrow: 1, overflowY: 'auto' }}>
               <List>
                 {currentCall?.messages.map((m: any) => (
                   <ListItem key={m.id} sx={{ justifyContent: m.sender === 'ai' ? 'flex-start' : 'flex-end' }}>
-                    <Paper sx={{ p: 1.5, bgcolor: m.sender === 'ai' ? '#f1f5f9' : 'primary.main', color: m.sender === 'ai' ? 'inherit' : 'white' }}>{m.content}</Paper>
+                    <Paper sx={{ p: 1.5, maxWidth: '80%', bgcolor: m.sender === 'ai' ? '#f1f5f9' : 'primary.main', color: m.sender === 'ai' ? 'inherit' : 'white' }}>{m.content}</Paper>
                   </ListItem>
                 ))}
                 {/* Show streaming text */}
@@ -329,15 +418,67 @@ export default function CallSimulator() {
               </List>
             </CardContent>
             {currentCall && (
-              <Box sx={{ p: 2, display: 'flex' }} component="form" onSubmit={(e) => { e.preventDefault(); sendMessage(); }}>
-                <TextField 
-                  fullWidth 
-                  value={messageInput} 
-                  onChange={(e) => setMessageInput(e.target.value)} 
-                  placeholder="Type message..."
-                  disabled={isProcessing}
-                />
-                <IconButton type="submit" disabled={Boolean(!messageInput.trim())}><SendIcon /></IconButton>
+              <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                {inputMode === 'text' ? (
+                  <Box component="form" onSubmit={(e) => { e.preventDefault(); sendMessage(); }} sx={{ display: 'flex', flex: 1 }}>
+                    <TextField
+                      fullWidth
+                      value={messageInput}
+                      onChange={(e) => setMessageInput(e.target.value)}
+                      placeholder="Type message..."
+                      disabled={isProcessing}
+                      size="small"
+                    />
+                    <IconButton type="submit" disabled={Boolean(!messageInput.trim())}><SendIcon /></IconButton>
+                  </Box>
+                ) : (
+                  <Box sx={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+                    <IconButton
+                      onClick={toggleRecording}
+                      sx={{
+                        width: 56,
+                        height: 56,
+                        bgcolor: isRecording ? 'error.main' : 'primary.main',
+                        color: 'white',
+                        '&:hover': { bgcolor: isRecording ? 'error.dark' : 'primary.dark' },
+                        animation: isRecording ? 'pulse 1.5s infinite' : 'none',
+                      }}
+                    >
+                      {isRecording ? <MicOffIcon /> : <MicIcon />}
+                    </IconButton>
+                    {isRecording && (
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                        <Box
+                          sx={{
+                            width: 100,
+                            height: 8,
+                            borderRadius: 4,
+                            bgcolor: 'grey.200',
+                            overflow: 'hidden',
+                          }}
+                        >
+                          <Box
+                            sx={{
+                              width: `${micLevel * 100}%`,
+                              height: '100%',
+                              bgcolor: micLevel > 0.6 ? 'error.main' : micLevel > 0.3 ? 'warning.main' : 'success.main',
+                              transition: 'width 0.05s',
+                              borderRadius: 4,
+                            }}
+                          />
+                        </Box>
+                        <Typography variant="caption" color="text.secondary">
+                          Recording...
+                        </Typography>
+                      </Box>
+                    )}
+                    {!isRecording && (
+                      <Typography variant="caption" color="text.secondary">
+                        {isStreamingReady ? 'Tap to speak (streaming)' : 'Tap to speak'}
+                      </Typography>
+                    )}
+                  </Box>
+                )}
               </Box>
             )}
           </Card>
@@ -351,7 +492,7 @@ export default function CallSimulator() {
           </Card>
         </Grid>
       </Grid>
-      
+
       <style jsx global>{`
         @keyframes pulse {
           0%, 100% { opacity: 1; }

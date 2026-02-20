@@ -1,7 +1,7 @@
 {
-  "name": "ai-receptionist-pro",
+  "name": "receptium",
   "version": "2.0.0",
-  "description": "AI-powered business phone management platform",
+  "description": "Receptium - Autonomous Business Operations Platform",
   "private": true,
   "scripts": {
     "dev": "concurrently \"cd frontend && npm run dev\" \"cd backend && uvicorn app.main:app --reload\"",
