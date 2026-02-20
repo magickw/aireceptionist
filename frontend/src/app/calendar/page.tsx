@@ -9,9 +9,13 @@ import {
   Tooltip
 } from '@mui/material';
 import { Add, Delete, CalendarMonth, Google, Microsoft, Edit, CloudDownload } from '@mui/icons-material';
-import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
-import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
-import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
+import dynamic from 'next/dynamic'; // Import dynamic
+
+// Dynamically import date-related components to ensure they are client-side only
+const LocalizationProvider = dynamic(() => import('@mui/x-date-pickers/LocalizationProvider').then(mod => mod.LocalizationProvider), { ssr: false });
+const AdapterDayjs = dynamic(() => import('@mui/x-date-pickers/AdapterDayjs').then(mod => mod.AdapterDayjs), { ssr: false });
+const DateTimePicker = dynamic(() => import('@mui/x-date-pickers/DateTimePicker').then(mod => mod.DateTimePicker), { ssr: false });
+
 import dayjs, { Dayjs } from 'dayjs';
 import api, { calendarApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext'; // Assuming AuthContext provides user/business info
