@@ -212,10 +212,20 @@ async def voice_websocket(
     db = next(db_gen)
     
     try:
-        # Authenticate user
+        # Authenticate user with timeout to prevent hanging
         try:
-            current_user = await get_current_user(db=db, token_header=None, token_query=token)
+            current_user = await asyncio.wait_for(
+                get_current_user(db=db, token_header=None, token_query=token),
+                timeout=5.0  # 5 second timeout for authentication
+            )
             business_id = await get_current_business_id(current_user=current_user, db=db)
+        except asyncio.TimeoutError:
+            await websocket.send_json({
+                "type": "error",
+                "message": "Authentication timeout"
+            })
+            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+            return
         except Exception as e:
             await websocket.send_json({
                 "type": "error",
