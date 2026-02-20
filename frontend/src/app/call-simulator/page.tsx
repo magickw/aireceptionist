@@ -22,6 +22,7 @@ export default function CallSimulator() {
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string>('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const connectionStatusRef = useRef<'connecting' | 'connected' | 'disconnected' | 'http_fallback'>('connecting');
 
   // Create HTTP session
   const createHttpSession = async () => {
@@ -125,6 +126,7 @@ export default function CallSimulator() {
 
         ws.onopen = () => {
           console.log('🔌 WebSocket connection established');
+          connectionStatusRef.current = 'connected';
           setConnectionStatus('connected');
         };
         
@@ -177,9 +179,10 @@ export default function CallSimulator() {
         
         // Fallback to HTTP if WebSocket fails within 5 seconds
         setTimeout(() => {
-          if (connectionStatus === 'connecting') {
+          if (connectionStatusRef.current === 'connecting') {
             console.log('🔄 WebSocket timed out, switching to HTTP fallback');
             ws.close();
+            connectionStatusRef.current = 'http_fallback';
             setConnectionStatus('http_fallback');
             createHttpSession().then(sessionId => {
               if (sessionId) {
