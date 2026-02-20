@@ -125,7 +125,7 @@ def delete_builtin_appointment(
 
     db.delete(appointment)
     db.commit()
-    return {"message": "Appointment deleted successfully"}
+    return None
 
 
 @router.get("/availability", response_model=List[dict])

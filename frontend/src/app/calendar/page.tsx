@@ -9,16 +9,11 @@ import {
   Tooltip
 } from '@mui/material';
 import { Add, Delete, CalendarMonth, Google, Microsoft, Edit, CloudDownload } from '@mui/icons-material';
-import dynamic from 'next/dynamic'; // Import dynamic
-
-// Dynamically import date-related components to ensure they are client-side only
-const LocalizationProvider = dynamic(() => import('@mui/x-date-pickers/LocalizationProvider').then(mod => mod.LocalizationProvider), { ssr: false });
-const AdapterDayjs = dynamic(() => import('@mui/x-date-pickers/AdapterDayjs').then(mod => mod.AdapterDayjs), { ssr: false });
-const DateTimePicker = dynamic(() => import('@mui/x-date-pickers/DateTimePicker').then(mod => mod.DateTimePicker), { ssr: false });
 
 import dayjs, { Dayjs } from 'dayjs';
 import api, { calendarApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext'; // Assuming AuthContext provides user/business info
+import CalendarDatePicker from '@/components/CalendarDatePicker'; // Import the new component
 
 interface CalendarIntegration {
   id: number;
@@ -240,6 +235,10 @@ export default function CalendarPage() {
   };
 
   // Handlers for Built-in Appointments
+  const handleDateChange = (newDate: Dayjs | null) => {
+    if (newDate) setSelectedDate(newDate);
+  };
+
   const handleOpenAddBuiltInDialog = (slotTime?: Dayjs) => {
     setCurrentBuiltInAppointment(null);
     setFormValues({
@@ -363,19 +362,8 @@ export default function CalendarPage() {
         <Grid item xs={12} md={4}>
           <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
             <Typography variant="h6" gutterBottom>Date Selector</Typography>
-            <LocalizationProvider dateAdapter={AdapterDayjs}>
-              <DateTimePicker
-                label="Select Date"
-                value={selectedDate}
-                onChange={handleDateChange}
-                renderInput={(params) => <TextField {...params} fullWidth />}
-                slotProps={{
-                  actionBar: {
-                    actions: ['clear', 'today'],
-                  },
-                }}
-              />
-            </LocalizationProvider>
+            {/* Use the new CalendarDatePicker component */}
+            <CalendarDatePicker selectedDate={selectedDate} handleDateChange={handleDateChange} />
 
             <Box sx={{ mt: 3 }}>
               <Typography variant="h6" gutterBottom>Available Slots</Typography>
