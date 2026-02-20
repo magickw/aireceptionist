@@ -5,7 +5,7 @@ from app.api import deps
 from app.schemas.appointment import Appointment, AppointmentCreate, AppointmentUpdate
 from app.models.models import Appointment as DBAppointment
 from app.models.models import Business
-from app.core.security import get_current_active_user
+from app.api.deps import get_current_active_user # Corrected import path
 from app.services.calendar_service import calendar_service
 from datetime import date, datetime
 
