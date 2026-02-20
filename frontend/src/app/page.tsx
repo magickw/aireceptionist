@@ -146,7 +146,7 @@ export default function LandingPage() {
                   mb: 3
                 }}
               >
-                AI Receptionist
+                Receptium
                 <br />
                 for Your Business
               </Typography>
@@ -501,7 +501,7 @@ export default function LandingPage() {
           Ready to Transform Your Business?
         </Typography>
         <Typography variant="h6" color="text.secondary" sx={{ mb: 4 }}>
-          Join hundreds of businesses using AI Receptionist to automate customer interactions
+          Join hundreds of businesses using Receptium to automate customer interactions
         </Typography>
         <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} justifyContent="center">
           <Button
@@ -535,7 +535,7 @@ export default function LandingPage() {
           <Grid container spacing={4}>
             <Grid item xs={12} md={4}>
               <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                AI Receptionist
+                Receptium
               </Typography>
               <Typography variant="body2" color="text.secondary">
                 Transform your customer interactions with intelligent AI automation.
@@ -601,7 +601,7 @@ export default function LandingPage() {
           </Grid>
           <Divider sx={{ my: 4 }} />
           <Typography variant="body2" color="text.secondary" align="center">
-            © 2026 AI Receptionist. All rights reserved. Powered by Nova AI Engine.
+            © 2026 Receptium. All rights reserved. Powered by Nova AI Engine.
           </Typography>
         </Container>
       </Box>

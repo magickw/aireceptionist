@@ -48,6 +48,7 @@ class Business(Base):
     call_sessions = relationship("CallSession", back_populates="business")
     logs = relationship("SystemLog", back_populates="business")
     audit_logs = relationship("AuditLog", back_populates="business")
+    customers = relationship("Customer", back_populates="business")
     integrations = relationship("Integration", back_populates="business")
     training_scenarios = relationship("AITrainingScenario", back_populates="business")
     appointments = relationship("Appointment", back_populates="business")
@@ -84,6 +85,7 @@ class Order(Base):
     id = Column(Integer, primary_key=True, index=True)
     business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
     call_session_id = Column(String(100), ForeignKey("call_sessions.id"))
+    customer_id = Column(Integer, ForeignKey("customers.id"))  # Link to Customer 360
     customer_name = Column(String(255))
     customer_phone = Column(String(20))
     status = Column(String(20), default="pending")  # pending, confirmed, preparing, ready, completed, cancelled
@@ -96,6 +98,7 @@ class Order(Base):
 
     business = relationship("Business", back_populates="orders")
     call_session = relationship("CallSession", back_populates="orders")
+    customer = relationship("Customer", back_populates="orders")
     items = relationship("OrderItem", back_populates="order", cascade="all, delete-orphan")
 
 
@@ -131,14 +134,65 @@ class CallSession(Base):
     summary = Column(Text)
     sentiment = Column(String(20)) # positive, neutral, negative
     language = Column(String(10), default="en") # en, es, fr, de, etc.
+    detected_language = Column(String(10)) # Language detected from customer speech
     recording_url = Column(Text) # URL to stored recording
     recording_duration = Column(Integer) # Duration in seconds
     voicemail_detected = Column(Boolean, default=False)
+    quality_score = Column(DECIMAL(5, 2)) # Call quality score 0-100
+    satisfaction_prediction = Column(DECIMAL(3, 2)) # Predicted satisfaction 0-1
+    customer_id = Column(Integer, ForeignKey("customers.id")) # Link to Customer 360
     created_at = Column(DateTime, server_default=func.now())
 
     business = relationship("Business", back_populates="call_sessions")
     messages = relationship("ConversationMessage", back_populates="session")
     orders = relationship("Order", back_populates="call_session")
+    customer = relationship("Customer", back_populates="calls")
+
+
+class Customer(Base):
+    """Customer 360 view - unified customer profile"""
+    __tablename__ = "customers"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    phone = Column(String(20), index=True)
+    email = Column(String(255))
+    name = Column(String(255))
+    preferred_language = Column(String(10), default="en")
+    
+    # Engagement metrics
+    total_calls = Column(Integer, default=0)
+    total_orders = Column(Integer, default=0)
+    total_appointments = Column(Integer, default=0)
+    total_spent = Column(DECIMAL(10, 2), default=0.0)
+    
+    # Satisfaction metrics
+    avg_sentiment = Column(DECIMAL(3, 2))
+    avg_quality_score = Column(DECIMAL(5, 2))
+    last_satisfaction_prediction = Column(DECIMAL(3, 2))
+    
+    # Loyalty & Risk
+    customer_since = Column(DateTime)
+    last_interaction = Column(DateTime)
+    loyalty_tier = Column(String(20), default="standard") # standard, silver, gold, platinum
+    churn_risk = Column(DECIMAL(3, 2)) # 0-1, higher = more likely to churn
+    is_vip = Column(Boolean, default=False)
+    
+    # Preferences
+    preferred_contact_method = Column(String(20)) # phone, sms, email
+    communication_preferences = Column(JSON)
+    
+    # Notes
+    notes = Column(Text)
+    tags = Column(JSON) # ["vip", "frequent_complainer", "prefers_morning"]
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    business = relationship("Business", back_populates="customers")
+    calls = relationship("CallSession", back_populates="customer")
+    appointments = relationship("Appointment", back_populates="customer")
+    orders = relationship("Order", back_populates="customer")
 
 class ConversationMessage(Base):
     __tablename__ = "conversation_messages"
@@ -264,15 +318,20 @@ class Appointment(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     business_id = Column(Integer, ForeignKey("businesses.id"))
+    customer_id = Column(Integer, ForeignKey("customers.id"))  # Link to Customer 360
     customer_name = Column(String(255), nullable=False)
     customer_phone = Column(String(20), nullable=False)
     appointment_time = Column(DateTime, nullable=False)
     service_type = Column(String(100))
     status = Column(String(20), default="scheduled") # scheduled, completed, cancelled, no_show
+    no_show_probability = Column(DECIMAL(3, 2))  # Predicted no-show likelihood 0-1
+    reminder_sent = Column(Boolean, default=False)
+    notes = Column(Text)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
     business = relationship("Business", back_populates="appointments")
+    customer = relationship("Customer", back_populates="appointments")
 
 
 # Add pgvector to SQLAlchemy
