@@ -557,3 +557,70 @@ class BusinessTypeSuggestion(Base):
     confidence_weight = Column(DECIMAL(3, 2), default=1.0)  # Weight for scoring
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime, server_default=func.now())
+
+
+class CallRecording(Base):
+    """Call recording storage and compliance tracking"""
+    __tablename__ = "call_recordings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    call_session_id = Column(String(100), ForeignKey("call_sessions.id"))
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    recording_key = Column(String(255))  # S3 key for the recording
+    status = Column(String(20), default="pending")  # pending, recording, completed, failed, deleted
+    started_at = Column(DateTime)
+    ended_at = Column(DateTime)
+    duration_seconds = Column(Integer)
+    file_size_bytes = Column(Integer)
+    
+    # Transcription
+    transcript_key = Column(String(255))  # S3 key for transcript
+    transcript_job_name = Column(String(255))
+    transcript_status = Column(String(20))  # pending, processing, completed, failed
+    
+    # Compliance
+    consent_type = Column(String(20), default="none")  # explicit, implied, notification, none
+    consent_obtained_at = Column(DateTime)
+    consent_method = Column(String(20))  # verbal, written, digital
+    compliance_region = Column(String(10), default="US")
+    encryption_enabled = Column(Boolean, default=True)
+    
+    # Deletion tracking
+    deleted_at = Column(DateTime)
+    deletion_reason = Column(Text)
+    
+    error_message = Column(Text)
+    created_at = Column(DateTime, server_default=func.now())
+    
+    call_session = relationship("CallSession", backref="recordings")
+    business = relationship("Business", backref="recordings")
+
+
+class TeamMember(Base):
+    """Team members for staff management"""
+    __tablename__ = "team_members"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    name = Column(String(255), nullable=False)
+    email = Column(String(255))
+    phone = Column(String(20))
+    role = Column(String(50), default="staff")  # owner, manager, staff
+    department = Column(String(50))
+    status = Column(String(20), default="active")  # active, inactive, on_leave
+    
+    # Performance metrics
+    calls_handled = Column(Integer, default=0)
+    avg_quality_score = Column(DECIMAL(5, 2))
+    avg_satisfaction = Column(DECIMAL(3, 2))
+    
+    # Schedule
+    weekly_hours = Column(JSON)  # {"monday": {"start": "09:00", "end": "17:00"}, ...}
+    timezone = Column(String(50), default="UTC")
+    
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    business = relationship("Business", backref="team_members")
+    user = relationship("User", backref="team_profile")
