@@ -1,7 +1,7 @@
 import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments, customer_360, revenue_analytics, smart_scheduling
+from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments, customer_360, revenue_analytics, smart_scheduling, builtin_calendar
 from app.core.config import settings
 
 app = FastAPI(
