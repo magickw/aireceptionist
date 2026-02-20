@@ -9,11 +9,17 @@ import {
   Tooltip
 } from '@mui/material';
 import { Add, Delete, CalendarMonth, Google, Microsoft, Edit, CloudDownload } from '@mui/icons-material';
+import dynamic from 'next/dynamic'; // Import dynamic for date pickers in dialogs
+
+// Dynamically import date-related components for dialogs as well
+const LocalizationProvider = dynamic(() => import('@mui/x-date-pickers/LocalizationProvider').then(mod => mod.LocalizationProvider), { ssr: false });
+const AdapterDayjs = dynamic(() => import('@mui/x-date-pickers/AdapterDayjs').then(mod => mod.AdapterDayjs), { ssr: false });
+const DateTimePicker = dynamic(() => import('@mui/x-date-pickers/DateTimePicker').then(mod => mod.DateTimePicker), { ssr: false });
+
 
 import dayjs, { Dayjs } from 'dayjs';
 import api, { calendarApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext'; // Assuming AuthContext provides user/business info
-import CalendarDatePicker from '@/components/CalendarDatePicker'; // Import the new component
 
 interface CalendarIntegration {
   id: number;
@@ -362,8 +368,22 @@ export default function CalendarPage() {
         <Grid item xs={12} md={4}>
           <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
             <Typography variant="h6" gutterBottom>Date Selector</Typography>
-            {/* Use the new CalendarDatePicker component */}
-            <CalendarDatePicker selectedDate={selectedDate} handleDateChange={handleDateChange} />
+            {/* Direct usage of dynamically imported DateTimePicker for main date selector */}
+            {typeof window !== 'undefined' && (
+              <LocalizationProvider dateAdapter={AdapterDayjs}>
+                <DateTimePicker
+                  label="Select Date"
+                  value={selectedDate}
+                  onChange={handleDateChange}
+                  renderInput={(params) => <TextField {...params} fullWidth />}
+                  slotProps={{
+                    actionBar: {
+                      actions: ['clear', 'today'],
+                    },
+                  }}
+                />
+              </LocalizationProvider>
+            )}
 
             <Box sx={{ mt: 3 }}>
               <Typography variant="h6" gutterBottom>Available Slots</Typography>
@@ -523,6 +543,7 @@ export default function CalendarPage() {
             onChange={handleBuiltInFormChange}
             sx={{ mb: 2 }}
           />
+          {/* Direct import here as this is a client-side only form */}
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <DateTimePicker
               label="Appointment Time"
@@ -545,6 +566,7 @@ export default function CalendarPage() {
           {error && <Alert severity="error" sx={{ mb: 2 }}>{error}</Alert>}
           <TextField fullWidth label="Title" value={externalEventFormData.summary} onChange={(e) => setExternalEventFormData({ ...externalEventFormData, summary: e.target.value })} sx={{ mt: 2, mb: 2 }} />
           <TextField fullWidth label="Description" value={externalEventFormData.description} onChange={(e) => setExternalEventFormData({ ...externalEventFormData, description: e.target.value })} sx={{ mb: 2 }} />
+          {/* Direct import here as this is a client-side only form */}
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <DateTimePicker
               label="Start Time"
@@ -586,6 +608,7 @@ export default function CalendarPage() {
               </MenuItem>
             ))}
           </TextField>
+          {/* Direct import here as this is a client-side only form */}
           <LocalizationProvider dateAdapter={AdapterDayjs}>
             <DateTimePicker
               label="Import Start Date"
@@ -597,7 +620,7 @@ export default function CalendarPage() {
               label="Import End Date"
               value={importDateRange.end}
               onChange={(newValue) => setImportDateRange(prev => ({ ...prev, end: newValue || dayjs() }))}
-              renderInput={(params) => <TextField {...params} fullWidth variant="standard" sx={{ mb: 2 }} />}
+              renderInput={(params) => <TextField {...params} fullWidth variant="standard" />}
             />
           </LocalizationProvider>
         </DialogContent>

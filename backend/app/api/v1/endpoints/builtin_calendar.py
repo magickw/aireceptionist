@@ -104,7 +104,7 @@ def delete_builtin_appointment(
     db: Session = Depends(deps.get_db),
     appointment_id: int,
     current_user: Any = Depends(get_current_active_user)
-) -> Any:
+):
     """
     Delete a built-in appointment.
     """
@@ -125,7 +125,7 @@ def delete_builtin_appointment(
 
     db.delete(appointment)
     db.commit()
-    return None
+    # Return nothing for 204 No Content
 
 
 @router.get("/availability", response_model=List[dict])
