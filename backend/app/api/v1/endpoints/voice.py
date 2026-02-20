@@ -562,6 +562,124 @@ async def voice_websocket(
                     else:
                         agent_response = "I don't have any items in your order. What would you like to get?"
                 
+                elif selected_action == "CREATE_APPOINTMENT":
+                    # Handle appointment booking in WebSocket
+                    date_str = entities.get("date") or entities.get("preferred_date")
+                    time_str = entities.get("time") or entities.get("preferred_time")
+                    service = entities.get("service") or entities.get("service_type")
+                    
+                    # Parse date/time
+                    appointment_time = parse_natural_datetime(date_str, time_str)
+                    
+                    if appointment_time:
+                        try:
+                            from app.services.calendar_service import calendar_service
+                            from app.models.models import CalendarIntegration, Appointment
+                            
+                            end_time = appointment_time + timedelta(hours=1)
+                            
+                            # Check for calendar integration
+                            integration = db.query(CalendarIntegration).filter(
+                                CalendarIntegration.business_id == business_id,
+                                CalendarIntegration.status == "active"
+                            ).first()
+                            
+                            is_available = True
+                            if integration:
+                                availability = await calendar_service.check_availability(integration, appointment_time, end_time, db)
+                                is_available = availability.get("available", False)
+                            else:
+                                # No calendar integration - check local DB conflicts
+                                db_conflicts = calendar_service.check_db_conflicts(business_id, appointment_time, end_time, db)
+                                is_available = not db_conflicts
+                            
+                            if not is_available:
+                                date_fmt = appointment_time.strftime("%B %d")
+                                time_fmt = appointment_time.strftime("%I:%M %p")
+                                agent_response = f"I'm sorry, but {date_fmt} at {time_fmt} is not available. Would you like me to check another time?"
+                            else:
+                                # Book the appointment
+                                result = await calendar_service.check_and_book_appointment(
+                                    business_id=business_id,
+                                    start_time=appointment_time,
+                                    end_time=end_time,
+                                    customer_name=ws_session.get("customer_name", "Unknown"),
+                                    customer_phone=ws_session.get("customer_phone", "Unknown"),
+                                    service=service or "General Checkup",
+                                    db=db
+                                )
+                                
+                                if result["success"]:
+                                    date_fmt = appointment_time.strftime("%B %d")
+                                    time_fmt = appointment_time.strftime("%I:%M %p")
+                                    agent_response = f"Great! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                                    print(f"[Voice WS] Created appointment {result['appointment'].id} for {ws_session.get('customer_phone')} at {appointment_time}")
+                                else:
+                                    agent_response = f"I'm sorry, I couldn't book that appointment. {result.get('message', 'Please try a different time.')}"
+                        except Exception as e:
+                            print(f"[Voice WS] Appointment booking error: {e}")
+                            agent_response = f"I'm having trouble booking that appointment right now. Could you please try again or call us directly?"
+                    else:
+                        agent_response = "I'd be happy to book an appointment for you. What date and time would you prefer?"
+                
+                # Also handle when customer asks about availability (not just CREATE_APPOINTMENT action)
+                # Check if message mentions availability or booking with a specific time
+                elif "available" in content_lower or "book" in content_lower or "appointment" in content_lower:
+                    date_str = entities.get("date") or entities.get("preferred_date")
+                    time_str = entities.get("time") or entities.get("preferred_time")
+                    
+                    appointment_time = parse_natural_datetime(date_str, time_str)
+                    
+                    if appointment_time and ("available" in content_lower or time_str):
+                        try:
+                            from app.services.calendar_service import calendar_service
+                            from app.models.models import CalendarIntegration
+                            
+                            end_time = appointment_time + timedelta(hours=1)
+                            
+                            # Check availability
+                            integration = db.query(CalendarIntegration).filter(
+                                CalendarIntegration.business_id == business_id,
+                                CalendarIntegration.status == "active"
+                            ).first()
+                            
+                            is_available = True
+                            if integration:
+                                availability = await calendar_service.check_availability(integration, appointment_time, end_time, db)
+                                is_available = availability.get("available", False)
+                            else:
+                                db_conflicts = calendar_service.check_db_conflicts(business_id, appointment_time, end_time, db)
+                                is_available = not db_conflicts
+                            
+                            date_fmt = appointment_time.strftime("%B %d")
+                            time_fmt = appointment_time.strftime("%I:%M %p")
+                            
+                            if is_available:
+                                # Check if customer wants to book or just checking
+                                if "book" in content_lower or "schedule" in content_lower or "make an appointment" in content_lower:
+                                    # Book it
+                                    result = await calendar_service.check_and_book_appointment(
+                                        business_id=business_id,
+                                        start_time=appointment_time,
+                                        end_time=end_time,
+                                        customer_name=ws_session.get("customer_name", "Unknown"),
+                                        customer_phone=ws_session.get("customer_phone", "Unknown"),
+                                        service=entities.get("service") or "General Checkup",
+                                        db=db
+                                    )
+                                    
+                                    if result["success"]:
+                                        agent_response = f"Perfect! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                                    else:
+                                        agent_response = f"I'm sorry, I couldn't complete the booking. Would you like to try a different time?"
+                                else:
+                                    # Just checking availability
+                                    agent_response = f"Yes, {date_fmt} at {time_fmt} is available! Would you like me to book that for you?"
+                            else:
+                                agent_response = f"I'm sorry, {date_fmt} at {time_fmt} is not available. Would you like me to check another time?"
+                        except Exception as e:
+                            print(f"[Voice WS] Availability check error: {e}")
+                
                 # Stream the response in chunks
                 chunk_size = 20  # characters per chunk
                 for i in range(0, len(agent_response), chunk_size):
