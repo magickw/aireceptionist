@@ -555,6 +555,10 @@ async def voice_websocket(
         # Track final sentiment for CallSession
         final_sentiment = "neutral"
 
+        # === Audio Buffer for Batch Mode ===
+        audio_buffer = b""  # Buffer to accumulate audio chunks in batch mode
+        audio_buffer_threshold = 16000 * 2 * 2  # ~2 seconds of 16kHz PCM16 audio
+
         # === Nova Sonic Streaming Setup ===
         use_streaming = app_settings.NOVA_SONIC_STREAMING_ENABLED
         sonic_session = None
@@ -622,10 +626,18 @@ async def voice_websocket(
                     "type": "streaming_ready",
                     "message": "Nova Sonic bidirectional streaming active",
                 })
+                print(f"[Voice WS] Streaming mode initialized successfully for session {session_id}")
             except Exception as e:
+                import traceback
                 print(f"[Voice WS] Streaming init failed, falling back to batch: {e}")
+                print(f"[Voice WS] Traceback: {traceback.format_exc()}")
                 use_streaming = False
                 sonic_session = None
+                # Notify client about fallback
+                await manager.send_json(session_id, {
+                    "type": "mode_fallback",
+                    "message": "Streaming mode unavailable, using batch processing"
+                })
 
         while True:
             # Receive message from client
@@ -1114,19 +1126,37 @@ async def voice_websocket(
                             "message": f"Streaming audio error: {str(e)}"
                         })
                 else:
-                    # BATCH FALLBACK: original pipeline
+                    # BATCH FALLBACK: buffer audio and process when enough accumulated
                     try:
+                        # Decode base64 audio
+                        audio_data = nova_sonic.decode_audio_base64(content)
+                        
+                        # Add to buffer
+                        audio_buffer += audio_data
+                        print(f"[Voice WS] Audio buffer: {len(audio_buffer)} bytes (threshold: {audio_buffer_threshold})")
+                        
+                        # Only process when we have enough audio
+                        if len(audio_buffer) < audio_buffer_threshold:
+                            # Send acknowledgment that we're listening
+                            await manager.send_json(session_id, {
+                                "type": "listening",
+                                "buffer_size": len(audio_buffer),
+                                "threshold": audio_buffer_threshold
+                            })
+                            continue
+                        
                         # Start latency tracking
                         tracker = manager.latency_trackers.get(session_id)
                         if tracker:
                             tracker.start()
 
-                        # Decode base64 audio
-                        audio_data = nova_sonic.decode_audio_base64(content)
+                        # Process buffered audio
+                        buffered_audio = audio_buffer
+                        audio_buffer = b""  # Clear buffer after processing
 
                         # Process audio stream
                         async for response in nova_sonic.process_audio_stream(
-                            _generate_audio_chunks([audio_data]),
+                            _generate_audio_chunks([buffered_audio]),
                             {
                                 "business_context": await _get_business_context(business_id),
                                 "customer_context": context
@@ -1177,6 +1207,7 @@ async def voice_websocket(
                                 })
 
                     except Exception as e:
+                        print(f"[Voice WS] Batch audio processing error: {e}")
                         await manager.send_json(session_id, {
                             "type": "error",
                             "message": f"Audio processing error: {str(e)}"
