@@ -70,8 +70,9 @@ async def get_current_user(
             # Create user if doesn't exist
             user = User(
                 email=firebase_payload.get("email"),
-                full_name=firebase_payload.get("name") or firebase_payload.get("display_name", ""),
-                is_active=True
+                name=firebase_payload.get("name") or firebase_payload.get("display_name", "") or firebase_payload.get("email", "").split("@")[0],
+                password="",  # Firebase users don't have local password
+                status="active"
             )
             db.add(user)
             db.commit()
