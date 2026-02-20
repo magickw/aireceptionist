@@ -13,7 +13,7 @@ app = FastAPI(
 cors_origins = [
     "http://localhost:3000",
     "http://localhost:3001",
-    "https://aireceptionist-mocha.vercel.app",
+    "https://receptium.vercel.app",
     "https://receptium.onrender.com",
 ]
 # Allow additional origins via environment variable (comma-separated)
