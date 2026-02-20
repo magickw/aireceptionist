@@ -1,6 +1,10 @@
 """
 Nova 2 Sonic Speech-to-Speech Handler
 Autonomous Business Operations Agent - Voice Layer
+
+Contains:
+- NovaSonicHandler: Legacy batch pipeline (STT -> Reasoning -> TTS)
+- create_streaming_session(): Factory for real-time bidirectional streaming
 """
 import boto3
 import json
@@ -45,7 +49,61 @@ class NovaSonicHandler:
         self.input_buffer: list[bytes] = []
         self.output_buffer: list[bytes] = []
         self.is_processing = False
-    
+
+    async def create_streaming_session(
+        self,
+        session_id: str,
+        business_context: Dict[str, Any],
+        customer_context: Dict[str, Any],
+        knowledge_context: str = "",
+        training_context: str = "",
+        db=None,
+    ):
+        """
+        Factory method: creates a NovaSonicStreamSession with proper context.
+
+        Builds the system prompt, safety checker closure, and tool definitions,
+        then returns an initialized streaming session ready for audio.
+
+        Falls back to None if streaming initialization fails
+        (caller should fall back to batch pipeline).
+        """
+        from app.services.nova_sonic_stream import (
+            NovaSonicStreamSession,
+            build_nova_sonic_system_prompt,
+            build_tool_definitions,
+        )
+        from app.services.nova_reasoning import nova_reasoning
+
+        business_type = business_context.get("type", "general")
+
+        # Build system prompt (voice-adapted version)
+        system_prompt = build_nova_sonic_system_prompt(
+            business_context=business_context,
+            customer_context=customer_context,
+            knowledge_context=knowledge_context,
+            training_context=training_context,
+        )
+
+        # Build tool definitions
+        tool_defs = build_tool_definitions(business_type, business_context)
+
+        # Safety checker closure — reuses the deterministic triggers from nova_reasoning
+        def safety_checker(transcript: str) -> Optional[Dict[str, Any]]:
+            return nova_reasoning._check_deterministic_triggers(
+                transcript, customer_context, business_type
+            )
+
+        session = NovaSonicStreamSession(
+            session_id=session_id,
+            system_prompt=system_prompt,
+            tool_definitions=tool_defs,
+            safety_checker=safety_checker,
+        )
+
+        await session.initialize()
+        return session
+
     async def process_audio_stream(
         self,
         audio_stream: AsyncGenerator[bytes, None],

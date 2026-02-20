@@ -38,6 +38,11 @@ class Settings(BaseSettings):
 
     # Stripe Configuration
     STRIPE_SECRET_KEY: Optional[str] = None
+
+    # Nova Sonic Streaming Configuration
+    NOVA_SONIC_STREAMING_ENABLED: bool = True
+    NOVA_SONIC_VOICE_ID: str = "matthew"
+    NOVA_SONIC_OUTPUT_SAMPLE_RATE: int = 24000
     
     class Config:
         case_sensitive = True

@@ -12,6 +12,7 @@ from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
 from app.services.nova_reasoning import nova_reasoning
 from app.services.nova_sonic import nova_sonic, AudioBuffer, LatencyTracker
+from app.core.config import settings as app_settings
 from app.api.deps import get_current_business_id, get_current_active_user, get_db
 from app.models.models import User, Appointment, Order, OrderItem, MenuItem, CallSession, CalendarIntegration
 from sqlalchemy.orm import Session
@@ -194,6 +195,294 @@ class VoiceConnectionManager:
 manager = VoiceConnectionManager()
 
 
+async def handle_tool_use(
+    tool_name: str,
+    tool_input: Dict[str, Any],
+    ws_session: Dict[str, Any],
+    business_id: int,
+    business_context: Dict[str, Any],
+    db: Session,
+) -> Dict[str, Any]:
+    """
+    Execute business logic when Nova Sonic invokes a tool.
+    Maps streaming tool calls to existing business operations.
+    """
+    if tool_name == "bookAppointment":
+        date_str = tool_input.get("date")
+        time_str = tool_input.get("time")
+        customer_name = tool_input.get("customer_name", ws_session.get("customer_name", "Unknown"))
+        customer_phone = tool_input.get("customer_phone", ws_session.get("customer_phone", "Unknown"))
+        service = tool_input.get("service", "General")
+
+        ws_session["customer_name"] = customer_name
+        ws_session["customer_phone"] = customer_phone
+
+        appointment_time = parse_natural_datetime(date_str, time_str)
+        if not appointment_time:
+            return {"success": False, "message": "Could not parse the date and time."}
+
+        try:
+            from app.services.calendar_service import calendar_service
+            end_time = appointment_time + timedelta(hours=1)
+
+            result = await calendar_service.check_and_book_appointment(
+                business_id=business_id,
+                start_time=appointment_time,
+                end_time=end_time,
+                customer_name=customer_name,
+                customer_phone=customer_phone,
+                service=service,
+                db=db,
+            )
+            if result["success"]:
+                date_fmt = appointment_time.strftime("%B %d")
+                time_fmt = appointment_time.strftime("%I:%M %p")
+                return {"success": True, "message": f"Appointment booked for {date_fmt} at {time_fmt}."}
+            else:
+                return {"success": False, "message": result.get("message", "Time slot not available.")}
+        except Exception as e:
+            print(f"[Tool] bookAppointment error: {e}")
+            return {"success": False, "message": "Failed to book appointment."}
+
+    elif tool_name == "checkAvailability":
+        date_str = tool_input.get("date")
+        time_str = tool_input.get("time")
+        appointment_time = parse_natural_datetime(date_str, time_str)
+        if not appointment_time:
+            return {"available": False, "message": "Could not parse the date and time."}
+
+        try:
+            from app.services.calendar_service import calendar_service
+            end_time = appointment_time + timedelta(hours=1)
+
+            integration = db.query(CalendarIntegration).filter(
+                CalendarIntegration.business_id == business_id,
+                CalendarIntegration.status == "active",
+            ).first()
+
+            is_available = True
+            if integration:
+                availability = await calendar_service.check_availability(
+                    integration, appointment_time, end_time, db
+                )
+                is_available = availability.get("available", False)
+            else:
+                from app.services.calendar_service import calendar_service as cal_svc
+                db_conflicts = cal_svc.check_db_conflicts(business_id, appointment_time, end_time, db)
+                is_available = not db_conflicts
+
+            date_fmt = appointment_time.strftime("%B %d")
+            time_fmt = appointment_time.strftime("%I:%M %p")
+            if is_available:
+                return {"available": True, "message": f"{date_fmt} at {time_fmt} is available."}
+            else:
+                return {"available": False, "message": f"{date_fmt} at {time_fmt} is not available."}
+        except Exception as e:
+            print(f"[Tool] checkAvailability error: {e}")
+            return {"available": False, "message": "Could not check availability."}
+
+    elif tool_name == "placeOrder":
+        items = tool_input.get("items", [])
+        delivery_method = tool_input.get("delivery_method")
+        if delivery_method:
+            ws_session["delivery_method"] = delivery_method
+
+        menu = business_context.get("menu", [])
+        added = []
+        for req_item in items:
+            req_name = req_item.get("name", "").lower()
+            qty = req_item.get("quantity", 1)
+            for menu_entry in menu:
+                if req_name in menu_entry.get("name", "").lower() or menu_entry.get("name", "").lower() in req_name:
+                    existing = next(
+                        (i for i in ws_session["order_items"] if i["name"].lower() == menu_entry["name"].lower()),
+                        None,
+                    )
+                    if not existing:
+                        ws_session["order_items"].append({
+                            "name": menu_entry["name"],
+                            "price": menu_entry.get("price", 0),
+                            "quantity": qty,
+                            "menu_item_id": menu_entry.get("id"),
+                        })
+                        added.append(f"{qty}x {menu_entry['name']}")
+                    break
+
+        total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
+        return {
+            "success": True,
+            "added": added,
+            "total": total,
+            "message": f"Added {', '.join(added)}. Total: ${total:.2f}.",
+        }
+
+    elif tool_name == "confirmOrder":
+        if not ws_session.get("order_items"):
+            return {"success": False, "message": "No items in order."}
+
+        total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
+        items_list = ", ".join(
+            [f"{i.get('quantity', 1)}x {i['name']}" for i in ws_session["order_items"]]
+        )
+        await _create_order_from_session(ws_session, ws_session.get("_session_id", ""), db)
+        ws_session["order_confirmed"] = True
+        ws_session["last_order_summary"] = {
+            "items": items_list,
+            "total": total,
+            "delivery_method": ws_session.get("delivery_method", "pickup"),
+        }
+        ws_session["order_items"] = []
+        return {
+            "success": True,
+            "message": f"Order confirmed: {items_list}. Total: ${total:.2f}.",
+        }
+
+    elif tool_name == "transferToHuman":
+        return {
+            "success": True,
+            "transferred": True,
+            "reason": tool_input.get("reason", "Customer requested human agent"),
+        }
+
+    elif tool_name == "sendDirections":
+        address = business_context.get("address", "our location")
+        return {"success": True, "address": address}
+
+    elif tool_name == "processPayment":
+        amount = tool_input.get("amount", 0)
+        return {"success": True, "message": f"Payment link sent for ${amount:.2f}."}
+
+    return {"success": False, "message": f"Unknown tool: {tool_name}"}
+
+
+async def _run_streaming_relay(
+    sonic_session,
+    websocket: WebSocket,
+    session_id: str,
+    ws_session: Dict[str, Any],
+    business_id: int,
+    business_context: Dict[str, Any],
+    conversation_history: list,
+    db: Session,
+):
+    """
+    Background task that reads from NovaSonicStreamSession queues
+    and relays events to the WebSocket client.
+    """
+    async def _relay_transcripts():
+        while sonic_session.is_active:
+            item = await sonic_session.transcript_queue.get()
+            if item is None:
+                break
+            text = item.get("text", "")
+            safety_trigger = item.get("safety_trigger")
+
+            conversation_history.append({"role": "customer", "content": text})
+
+            try:
+                await websocket.send_json({"type": "transcript", "text": text})
+            except Exception:
+                break
+
+            if safety_trigger:
+                # Safety triggered — send canned response via Polly TTS fallback
+                safety_response = safety_trigger.get("reason", "Transferring to human agent.")
+                # Synthesize safety response with Polly
+                audio_data = await nova_sonic._synthesize_speech(safety_response)
+                try:
+                    await websocket.send_json({
+                        "type": "human_intervention_request",
+                        "reason": safety_trigger.get("reason", "Safety trigger"),
+                        "context": {"trigger_type": safety_trigger.get("trigger_type")},
+                    })
+                    await websocket.send_json({
+                        "type": "text_chunk",
+                        "chunk": safety_response,
+                        "is_last": True,
+                        "full_text": safety_response,
+                    })
+                    if audio_data:
+                        await websocket.send_json({
+                            "type": "audio",
+                            "audio": nova_sonic.encode_audio_base64(audio_data),
+                            "format": "pcm16",
+                            "sample_rate": 16000,
+                        })
+                except Exception:
+                    break
+
+    async def _relay_audio():
+        while sonic_session.is_active:
+            item = await sonic_session.audio_queue.get()
+            if item is None:
+                break
+            try:
+                await websocket.send_json({
+                    "type": "audio",
+                    "audio": item.get("audio", ""),
+                    "format": "pcm16",
+                    "sample_rate": item.get("sample_rate", 24000),
+                })
+            except Exception:
+                break
+
+    async def _relay_text():
+        while sonic_session.is_active:
+            item = await sonic_session.text_queue.get()
+            if item is None:
+                break
+            chunk = item.get("chunk", "")
+            try:
+                await websocket.send_json({
+                    "type": "text_chunk",
+                    "chunk": chunk,
+                    "is_last": False,
+                })
+            except Exception:
+                break
+
+    async def _relay_tools():
+        while sonic_session.is_active:
+            item = await sonic_session.tool_queue.get()
+            if item is None:
+                break
+            tool_name = item.get("name", "")
+            tool_input = item.get("input", {})
+            tool_use_id = item.get("tool_use_id", "")
+
+            result = await handle_tool_use(
+                tool_name=tool_name,
+                tool_input=tool_input,
+                ws_session=ws_session,
+                business_id=business_id,
+                business_context=business_context,
+                db=db,
+            )
+
+            # Send tool result back to the model so it can continue
+            await sonic_session.send_tool_result(tool_use_id, result)
+
+            # If transferToHuman, notify WebSocket client
+            if tool_name == "transferToHuman":
+                try:
+                    await websocket.send_json({
+                        "type": "human_intervention_request",
+                        "reason": tool_input.get("reason", "Transfer requested"),
+                        "context": {"tool": tool_name},
+                    })
+                except Exception:
+                    break
+
+    # Run all relays concurrently
+    await asyncio.gather(
+        _relay_transcripts(),
+        _relay_audio(),
+        _relay_text(),
+        _relay_tools(),
+        return_exceptions=True,
+    )
+
+
 @router.websocket("/ws")
 async def voice_websocket(
     websocket: WebSocket,
@@ -262,10 +551,82 @@ async def voice_websocket(
         
         # Store conversation history for context
         conversation_history = []
-        
+
         # Track final sentiment for CallSession
         final_sentiment = "neutral"
-        
+
+        # === Nova Sonic Streaming Setup ===
+        use_streaming = app_settings.NOVA_SONIC_STREAMING_ENABLED
+        sonic_session = None
+        relay_task = None
+
+        if use_streaming:
+            try:
+                business_context = await _get_business_context(business_id, db)
+
+                # Fetch knowledge + training context for the prompt
+                _knowledge_ctx = ""
+                _training_ctx = ""
+                if business_context.get("business_id") or business_id:
+                    try:
+                        from app.services.knowledge_base import knowledge_base_service
+                        _knowledge_ctx = await knowledge_base_service.get_relevant_context(
+                            query="", business_id=business_id, db=db, max_chars=1500
+                        )
+                    except Exception:
+                        pass
+                    try:
+                        from app.services.nova_reasoning import get_training_context
+                        _training_ctx = await get_training_context(
+                            business_id=business_id, db=db
+                        )
+                    except Exception:
+                        pass
+
+                customer_context = {
+                    "name": "Unknown",
+                    "phone": "Unknown",
+                    "call_count": 0,
+                    "last_contact": "Never",
+                    "satisfaction_score": 0,
+                    "preferred_services": [],
+                    "complaint_count": 0,
+                }
+
+                sonic_session = await nova_sonic.create_streaming_session(
+                    session_id=session_id,
+                    business_context=business_context,
+                    customer_context=customer_context,
+                    knowledge_context=_knowledge_ctx,
+                    training_context=_training_ctx,
+                    db=db,
+                )
+
+                ws_session["_session_id"] = session_id
+
+                # Start relay task
+                relay_task = asyncio.create_task(
+                    _run_streaming_relay(
+                        sonic_session=sonic_session,
+                        websocket=websocket,
+                        session_id=session_id,
+                        ws_session=ws_session,
+                        business_id=business_id,
+                        business_context=business_context,
+                        conversation_history=conversation_history,
+                        db=db,
+                    )
+                )
+
+                await manager.send_json(session_id, {
+                    "type": "streaming_ready",
+                    "message": "Nova Sonic bidirectional streaming active",
+                })
+            except Exception as e:
+                print(f"[Voice WS] Streaming init failed, falling back to batch: {e}")
+                use_streaming = False
+                sonic_session = None
+
         while True:
             # Receive message from client
             data = await websocket.receive_json()
@@ -723,80 +1084,103 @@ async def voice_websocket(
                         "sample_rate": 16000
                     })
                 
+            elif message_type == "audio_start":
+                # Mark beginning of user voice turn (streaming mode)
+                if use_streaming and sonic_session and sonic_session.is_active:
+                    await sonic_session.start_user_turn()
+
+            elif message_type == "audio_stop":
+                # Mark end of user voice turn (streaming mode)
+                if use_streaming and sonic_session and sonic_session.is_active:
+                    await sonic_session.end_user_turn()
+                    # Send latency metrics after turn completes
+                    await asyncio.sleep(0.5)  # brief wait for metrics to populate
+                    metrics = sonic_session.latency.get_metrics()
+                    if metrics:
+                        await manager.send_json(session_id, {
+                            "type": "latency_metrics",
+                            "metrics": metrics,
+                        })
+
             elif message_type == "audio":
-                # Process audio input (speech-to-speech with Nova Sonic)
-                try:
-                    # Start latency tracking
-                    tracker = manager.latency_trackers.get(session_id)
-                    if tracker:
-                        tracker.start()
-                    
-                    # Decode base64 audio
-                    audio_data = nova_sonic.decode_audio_base64(content)
-                    
-                    # Process audio stream
-                    async for response in nova_sonic.process_audio_stream(
-                        _generate_audio_chunks([audio_data]),
-                        {
-                            "business_context": await _get_business_context(business_id),
-                            "customer_context": context
-                        }
-                    ):
-                        if response["type"] == "transcript":
-                            # Customer transcript
-                            conversation_history.append({
-                                "role": "customer",
-                                "content": response["text"]
-                            })
-                            
-                            await manager.send_json(session_id, {
-                                "type": "transcript",
-                                "text": response["text"]
-                            })
-                        
-                        elif response["type"] == "text_response":
-                            # AI text response
-                            conversation_history.append({
-                                "role": "ai",
-                                "content": response["text"]
-                            })
-                            
-                            await manager.send_json(session_id, {
-                                "type": "agent_response",
-                                "text": response["text"]
-                            })
-                        
-                        elif response["type"] == "audio":
-                            # AI audio response
-                            audio_base64 = nova_sonic.encode_audio_base64(response["data"])
-                            await manager.send_json(session_id, {
-                                "type": "audio",
-                                "audio": audio_base64,
-                                "format": "pcm16",
-                                "sample_rate": 16000
-                            })
-                        
-                        elif response["type"] == "complete":
-                            # Processing complete
-                            if tracker:
-                                tracker.end()
-                                metrics = tracker.get_metrics()
-                                await manager.send_json(session_id, {
-                                    "type": "latency_metrics",
-                                    "metrics": metrics
+                if use_streaming and sonic_session and sonic_session.is_active:
+                    # STREAMING PATH: forward audio chunk immediately
+                    try:
+                        audio_data = nova_sonic.decode_audio_base64(content)
+                        await sonic_session.send_audio_chunk(audio_data)
+                    except Exception as e:
+                        await manager.send_json(session_id, {
+                            "type": "error",
+                            "message": f"Streaming audio error: {str(e)}"
+                        })
+                else:
+                    # BATCH FALLBACK: original pipeline
+                    try:
+                        # Start latency tracking
+                        tracker = manager.latency_trackers.get(session_id)
+                        if tracker:
+                            tracker.start()
+
+                        # Decode base64 audio
+                        audio_data = nova_sonic.decode_audio_base64(content)
+
+                        # Process audio stream
+                        async for response in nova_sonic.process_audio_stream(
+                            _generate_audio_chunks([audio_data]),
+                            {
+                                "business_context": await _get_business_context(business_id),
+                                "customer_context": context
+                            }
+                        ):
+                            if response["type"] == "transcript":
+                                conversation_history.append({
+                                    "role": "customer",
+                                    "content": response["text"]
                                 })
-                        
-                        elif response["type"] == "error":
-                            await manager.send_json(session_id, {
-                                "type": "error",
-                                "message": response["message"]
-                            })
-                
-                except Exception as e:
-                    await manager.send_json(session_id, {
-                        "type": "error",
-                        "message": f"Audio processing error: {str(e)}"
-                    })
+                                await manager.send_json(session_id, {
+                                    "type": "transcript",
+                                    "text": response["text"]
+                                })
+
+                            elif response["type"] == "text_response":
+                                conversation_history.append({
+                                    "role": "ai",
+                                    "content": response["text"]
+                                })
+                                await manager.send_json(session_id, {
+                                    "type": "agent_response",
+                                    "text": response["text"]
+                                })
+
+                            elif response["type"] == "audio":
+                                audio_base64 = nova_sonic.encode_audio_base64(response["data"])
+                                await manager.send_json(session_id, {
+                                    "type": "audio",
+                                    "audio": audio_base64,
+                                    "format": "pcm16",
+                                    "sample_rate": 16000
+                                })
+
+                            elif response["type"] == "complete":
+                                if tracker:
+                                    tracker.end()
+                                    metrics = tracker.get_metrics()
+                                    await manager.send_json(session_id, {
+                                        "type": "latency_metrics",
+                                        "metrics": metrics
+                                    })
+
+                            elif response["type"] == "error":
+                                await manager.send_json(session_id, {
+                                    "type": "error",
+                                    "message": response["message"]
+                                })
+
+                    except Exception as e:
+                        await manager.send_json(session_id, {
+                            "type": "error",
+                            "message": f"Audio processing error: {str(e)}"
+                        })
             
             elif message_type == "audio_config":
                 # Send audio configuration
@@ -807,6 +1191,11 @@ async def voice_websocket(
             
             elif message_type == "end_call":
                 # End the call - save session and order
+                # Clean up streaming session
+                if sonic_session:
+                    await sonic_session.close()
+                if relay_task and not relay_task.done():
+                    relay_task.cancel()
                 summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if conversation_history else ""
                 _end_call_session(ws_session, session_id, summary, final_sentiment)
                 # Get a DB session for saving
@@ -824,6 +1213,11 @@ async def voice_websocket(
                 break
     
     except WebSocketDisconnect:
+        # Clean up streaming session
+        if sonic_session:
+            await sonic_session.close()
+        if relay_task and not relay_task.done():
+            relay_task.cancel()
         # Get a new DB session for cleanup
         db = next(get_db())
         summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
@@ -832,6 +1226,11 @@ async def voice_websocket(
         manager.disconnect(session_id)
         db.close()
     except Exception as e:
+        # Clean up streaming session
+        if sonic_session:
+            await sonic_session.close()
+        if relay_task and not relay_task.done():
+            relay_task.cancel()
         # Get a new DB session for cleanup
         db = next(get_db())
         await manager.send_json(session_id, {
