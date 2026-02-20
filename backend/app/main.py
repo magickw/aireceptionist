@@ -65,6 +65,7 @@ app.include_router(payments.router, prefix=f"{settings.API_V1_STR}/payments", ta
 app.include_router(customer_360.router, prefix=f"{settings.API_V1_STR}/customers", tags=["customers"])
 app.include_router(revenue_analytics.router, prefix=f"{settings.API_V1_STR}/revenue", tags=["revenue"])
 app.include_router(smart_scheduling.router, prefix=f"{settings.API_V1_STR}/smart-scheduling", tags=["smart-scheduling"])
+app.include_router(builtin_calendar.router, prefix=f"{settings.API_V1_STR}/calendar/builtin", tags=["builtin-calendar"])
 
 
 @app.get("/health")

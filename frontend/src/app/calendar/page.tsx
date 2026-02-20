@@ -84,7 +84,12 @@ export default function CalendarPage() {
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
-      <Typography variant="h4" gutterBottom>Calendar Integrations</Typography>
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" gutterBottom>Calendar Integrations</Typography>
+        <Button variant="contained" startIcon={<CalendarMonth />} href="/calendar/builtin">
+          Manage Built-in Calendar
+        </Button>
+      </Box>
       <Typography variant="body2" color="text.secondary" sx={{ mb: 3 }}>
         Connect your calendar to sync appointments automatically.
       </Typography>

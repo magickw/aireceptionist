@@ -8,6 +8,7 @@ class AppointmentBase(BaseModel):
     appointment_time: datetime
     service_type: Optional[str] = None
     status: Optional[str] = "scheduled"
+    source: Optional[str] = "internal"
 
 class AppointmentCreate(AppointmentBase):
     business_id: int

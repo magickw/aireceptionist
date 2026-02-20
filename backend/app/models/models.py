@@ -324,6 +324,7 @@ class Appointment(Base):
     appointment_time = Column(DateTime, nullable=False)
     service_type = Column(String(100))
     status = Column(String(20), default="scheduled") # scheduled, completed, cancelled, no_show
+    source = Column(String(50), default="internal", nullable=False) # internal, google, outlook, etc.
     no_show_probability = Column(DECIMAL(3, 2))  # Predicted no-show likelihood 0-1
     reminder_sent = Column(Boolean, default=False)
     notes = Column(Text)
