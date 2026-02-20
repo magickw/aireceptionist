@@ -24,8 +24,8 @@ class OrderItemResponse(OrderItemBase):
         from_attributes = True
 
 class OrderBase(BaseModel):
-    customer_name: str
-    customer_phone: str
+    customer_name: Optional[str] = None
+    customer_phone: Optional[str] = None
     status: str = "pending"
     notes: Optional[str] = None
     call_session_id: Optional[str] = None
