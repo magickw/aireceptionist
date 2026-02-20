@@ -196,7 +196,7 @@ export default function LandingPage() {
                 }}
               >
                 <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold' }}>
-                  Powered by Nova AI
+                  Powered by Amazon Nova AI
                 </Typography>
                 <Typography variant="body1" sx={{ mb: 3, opacity: 0.9 }}>
                   Advanced reasoning engine with intent detection, entity extraction, and autonomous action execution.
