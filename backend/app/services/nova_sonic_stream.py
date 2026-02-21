@@ -1,13 +1,239 @@
 """
 Nova Sonic Streaming Session Manager
 
-Architecture:
-- Audio input -> Buffer -> Amazon Transcribe STT -> Text
-- Text -> AWS Bedrock Nova Lite (converse_stream) -> Streaming text response
-- Text response -> Amazon Polly TTS -> Audio output
+================================================================================
+ARCHITECTURE OVERVIEW
+================================================================================
 
-The converse_stream API is text-only so audio I/O is handled externally:
-  STT via Amazon Transcribe, TTS via Amazon Polly.
+This service manages real-time bidirectional voice conversations using a hybrid
+architecture that maximizes browser capabilities while keeping AI reasoning
+server-side.
+
+DATA FLOW:
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                              CLIENT (Browser)                               │
+│  ┌──────────────┐                    ┌──────────────┐                      │
+│  │  Microphone  │──Audio (PCM16)────│  Speaker     │                      │
+│  └──────────────┘                    └──────────────┘                      │
+│         │                                     ▲                             │
+│         ▼                                     │                             │
+│  ┌─────────────────────────────────────────────────────────┐              │
+│  │         Web Speech API (Browser Native STT)              │              │
+│  │  - Zero server cost                                      │              │
+│  │  - No audio upload latency                               │              │
+│  │  - Chrome/Edge/Safari support                            │              │
+│  └──────────────────────┬──────────────────────────────────┘              │
+│                         │ Text Transcript                                         │
+└─────────────────────────┼────────────────────────────────────────────────────┘
+                          │ WebSocket (text)
+┌─────────────────────────┼────────────────────────────────────────────────────┐
+│                         ▼                                                     │
+│              SERVER (FastAPI + Python)                                         │
+│  ┌──────────────────────────────────────────────────────────┐               │
+│  │         NovaSonicStreamSession                            │               │
+│  │                                                            │               │
+│  │  1. Safety Checker (Deterministic Triggers)                │               │
+│  │     - Critical keywords (911, emergency, lawsuit)          │               │
+│  │     - VIP customer detection                               │               │
+│  │     - Industry-specific triggers (medical, HVAC, legal)    │               │
+│  │                                                            │               │
+│  │  2. Reasoning Engine (AWS Bedrock Nova Lite)               │               │
+│  │     - Intent classification                                │               │
+│  │     - Entity extraction                                    │               │
+│  │     - Action selection (15+ available actions)             │               │
+│  │     - Tool calls (bookAppointment, placeOrder, etc.)       │               │
+│  │                                                            │               │
+│  │  3. Streaming Response (converse_stream API)               │               │
+│  │     - Real-time text generation                            │               │
+│  │     - Thinking block filtering                            │               │
+│  │     - Tool call handling                                  │               │
+│  │     - Event queuing (text, tools, transcripts, audio)      │               │
+│  │                                                            │               │
+│  │  4. TTS Synthesis (Amazon Polly)                          │               │
+│  │     - Neural voice (16kHz PCM16)                          │               │
+│  │     - Base64 encoding for WebSocket                        │               │
+│  └──────────────────────┬─────────────────────────────────────┘               │
+│                         │ Audio (Base64)                                             │
+└─────────────────────────┼────────────────────────────────────────────────────┘
+                          │ WebSocket (audio)
+                          ▼
+                    ┌──────────────┐
+                    │  Speaker     │
+                    └──────────────┘
+
+================================================================================
+KEY COMPONENTS
+================================================================================
+
+1. StreamLatencyTracker
+   - Tracks time_to_first_chunk_ms and total_latency_ms
+   - Monitors streaming performance
+
+2. NovaSonicStreamSession
+   - Manages one complete voice conversation session
+   - Handles audio buffering and transcript generation
+   - Implements safety checks before model invocation
+   - Manages conversation history for context
+   - Provides async generators for real-time streaming
+
+3. Queues (4 parallel event streams)
+   - text_queue: Streaming text chunks from Nova
+   - tool_queue: Tool calls requiring execution
+   - transcript_queue: User speech transcripts
+   - audio_queue: Synthesized audio for playback
+
+================================================================================
+SESSION LIFECYCLE
+================================================================================
+
+1. Initialization:
+   session = NovaSonicStreamSession(
+       session_id="unique-id",
+       system_prompt=build_prompt(...),
+       tool_definitions=[...],
+       safety_checker=check_deterministic_triggers
+   )
+   await session.initialize()
+
+2. Voice Turn:
+   await session.start_user_turn()
+   await session.send_audio_chunk(chunk1)  # Multiple chunks
+   await session.send_audio_chunk(chunk2)
+   await session.end_user_turn()  # Triggers STT + reasoning
+
+3. Text Turn:
+   await session.send_text_message("Hello")  # Direct text input
+
+4. Tool Result:
+   await session.send_tool_result(tool_use_id, result)
+
+5. Cleanup:
+   await session.close()
+
+================================================================================
+THINKING BLOCK FILTERING
+================================================================================
+
+Nova models may emit <thinking>...</thinking> blocks that should be hidden from
+end users. The filter handles:
+
+- Complete blocks within a single chunk
+- Blocks spanning multiple chunks
+- Partial tags at chunk boundaries
+- Buffer flushing at turn end
+
+State machine:
+  OUTSIDE_BLOCK → sees "<thinking>" → INSIDE_BLOCK → sees "</thinking>" → OUTSIDE_BLOCK
+
+================================================================================
+THREAD POOL EXECUTION
+================================================================================
+
+The boto3 converse_stream() call is synchronous (blocking). To avoid blocking
+the async event loop, we execute it in a ThreadPoolExecutor:
+
+  loop.run_in_executor(_executor, _read_stream)
+
+The thread reads stream events and pushes them to an asyncio.Queue via
+loop.call_soon_threadsafe(). The main async loop then processes events from
+the queue.
+
+================================================================================
+SAFETY ARCHITECTURE
+================================================================================
+
+Layer 1: Deterministic Triggers (Pre-Model)
+  - Runs BEFORE any model invocation
+  - Keyword-based (emergency, lawsuit, 911, etc.)
+  - Customer history (repeat complaints, VIP status)
+  - Industry-specific (medical symptoms, gas leaks, urgent legal)
+
+Layer 2: Model-Based Safety (Post-Model)
+  - Confidence thresholds (industry-specific)
+  - Escalation risk scoring
+  - High-risk intent detection
+  - Intent validation with classifier
+
+Layer 3: Approval Workflow
+  - Human review for high-risk actions
+  - ApprovalRequest tracking
+  - Manager notification
+
+================================================================================
+ERROR HANDLING & FALLBACKS
+================================================================================
+
+1. STT Failure:
+   - Returns error message: "I couldn't understand that. Could you try again?"
+   - Sends turn_complete signal
+
+2. Safety Trigger:
+   - Stops model invocation
+   - Sends predetermined safety response
+   - Emits safety_trigger event
+
+3. Stream Error:
+   - Sends error event to client
+   - Sends turn_complete signal
+   - Session remains active for retry
+
+4. Tool Call:
+   - Pauses generation
+   - Emits tool event
+   - Waits for send_tool_result()
+   - Continues generation
+
+================================================================================
+PERFORMANCE OPTIMIZATIONS
+================================================================================
+
+1. Streaming: converse_stream for real-time text generation
+2. Thinking Filter: Reduces latency by blocking internal reasoning
+3. Async Queues: Non-blocking event relay
+4. Thread Pool: Offloads blocking boto3 calls
+5. Lazy Loading: Bedrock client created on first use
+
+================================================================================
+USAGE EXAMPLE
+================================================================================
+
+from app.services.nova_sonic_stream import (
+    NovaSonicStreamSession,
+    build_nova_sonic_system_prompt,
+    build_tool_definitions
+)
+
+# Build context
+system_prompt = build_nova_sonic_system_prompt(
+    business_context=business_info,
+    customer_context=customer_info
+)
+
+tool_defs = build_tool_definitions("restaurant", business_info)
+
+# Create session
+session = NovaSonicStreamSession(
+    session_id="call-123",
+    system_prompt=system_prompt,
+    tool_definitions=tool_defs,
+    safety_checker=check_triggers
+)
+
+await session.initialize()
+
+# Process voice
+await session.start_user_turn()
+await session.send_audio_chunk(audio_chunk1)
+await session.send_audio_chunk(audio_chunk2)
+await session.end_user_turn()
+
+# Stream responses
+async for event in session.text_queue:
+    if event and "chunk" in event:
+        print(event["chunk"])
+
+# Cleanup
+await session.close()
 """
 import boto3
 import json

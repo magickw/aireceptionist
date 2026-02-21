@@ -2,11 +2,335 @@
 Nova 2 Lite Reasoning Core
 Autonomous Business Operations Agent - Reasoning Engine
 
-Architecture:
-- Model invocation layer with retry logic
-- Safety gate layer with deterministic triggers
-- Structured response validator with multi-layer JSON parsing
-- Industry-specific governance
+================================================================================
+GOVERNANCE ARCHITECTURE
+================================================================================
+
+The reasoning engine implements a multi-layered safety governance system that
+balances automation capability with risk mitigation.
+
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           LAYER 1: DETERMINISTIC TRIGGERS                    │
+│                           (Runs BEFORE model invocation)                     │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Critical Keywords                                                  │  │
+│  │  - Emergency: 911, emergency, dying, unconscious                    │  │
+│  │  - Legal: sue, lawsuit, lawyer, attorney, legal action              │  │
+│  │  - Safety: gas leak, fire, explosion, carbon monoxide               │  │
+│  │  - Harassment: sexual harassment, discrimination, threat            │  │
+│  │  - Police: police, arrest, criminal                                 │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Customer History                                                    │  │
+│  │  - Repeat complaints (≥2) + escalation keywords                     │  │
+│  │  - VIP customers (satisfaction ≥4.5) + negative sentiment           │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Industry-Specific Triggers                                          │  │
+│  │  Medical: chest pain, difficulty breathing, severe pain, bleeding    │  │
+│  │  HVAC: gas smell, gas leak, carbon monoxide, smoke, fire             │  │
+│  │  Law Firm: arrested, court tomorrow, deadline today                  │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Result: If ANY trigger matches → IMMEDIATE ESCALATION (bypass model)      │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼ (No deterministic triggers)
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           LAYER 2: MODEL-BASED REASONING                     │
+│                           (AWS Bedrock Nova Lite)                           │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Intent Classification                                                │  │
+│  │  - Primary intent detection (15+ intents)                            │  │
+│  │  - Entity extraction (service, date, time, customer info)            │  │
+│  │  - Confidence scoring (0.0-1.0)                                      │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Action Selection                                                     │  │
+│  │  - CREATE_APPOINTMENT, PROVIDE_INFO, TRANSFER_HUMAN, etc.            │  │
+│  │  - Action reasoning (why this action was selected)                   │  │
+│  │  - Next questions to ask user                                        │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Risk Assessment                                                      │  │
+│  │  - Escalation risk score (0.0-1.0)                                   │  │
+│  │  - Sentiment analysis (positive/neutral/negative)                    │  │
+│  │  - Urgency detection (low/medium/high)                              │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           LAYER 3: COMBINED GOVERNANCE                       │
+│                           (Model output + deterministic factors)            │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Confidence Threshold Check                                           │  │
+│  │  - Compare model confidence vs industry threshold                     │  │
+│  │  - Restaurant: ≥0.6 (HIGH autonomy)                                  │  │
+│  │  - Medical: ≥0.85 (RESTRICTED)                                       │  │
+│  │  - Law Firm: ≥0.8 (MEDIUM with legal urgency)                        │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Escalation Risk Check                                                │  │
+│  │  - Compare escalation risk vs industry threshold                      │  │
+│  │  - Restaurant: ≤0.7 (high auto-escalate threshold)                   │  │
+│  │  - Medical: ≤0.4 (low auto-escalate threshold)                       │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Intent Validation                                                    │  │
+│  │  - Validate detected intent using intent classifier                  │  │
+│  │  - Suggest alternative if validation fails                           │  │
+│  │  - Require human review if low confidence                            │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  High-Risk Intent Check                                               │  │
+│  │  - Restaurant: food_poisoning, severe_allergy                        │  │
+│  │  - Medical: medical_emergency                                        │  │
+│  │  - HVAC: gas leak, carbon monoxide                                   │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  VIP Customer Handling                                                │  │
+│  │  - VIP + negative sentiment → human review                           │  │
+│  │  - VIP + complaint → priority handling                               │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│                                                                              │
+│  Result: If ANY check fails → HUMAN_INTERVENTION (override action)          │
+└─────────────────────────────────────────────────────────────────────────────┘
+                                    │
+                                    ▼
+┌─────────────────────────────────────────────────────────────────────────────┐
+│                           LAYER 4: APPROVAL WORKFLOW                         │
+│                           (For high-risk actions)                           │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Create ApprovalRequest                                               │  │
+│  │  - business_id, customer_id, request_type                            │  │
+│  │  - request_data (full context)                                       │  │
+│  │  - risk_score, triggered_by                                          │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Notify Manager                                                       │  │
+│  │  - Webhook / Email notification                                      │  │
+│  │  - Pending review queue                                               │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+│  ┌──────────────────────────────────────────────────────────────────────┐  │
+│  │  Wait for Approval/Rejection                                          │  │
+│  │  - Manager reviews in dashboard                                     │  │
+│  │  - Can approve with modifications                                   │  │
+│  └──────────────────────────────────────────────────────────────────────┘  │
+└─────────────────────────────────────────────────────────────────────────────┘
+
+================================================================================
+GOVERNANCE TIERS
+================================================================================
+
+TIER: AUTO
+  - High confidence (≥ threshold)
+  - Low escalation risk (≤ threshold)
+  - No high-risk intents
+  - Action executes immediately
+
+TIER: CONFIRM
+  - Medium confidence
+  - User confirmation required
+  - "Please confirm: [action]"
+
+TIER: PRIORITY
+  - VIP customer
+  - High-value interaction
+  - Expedited human review
+
+TIER: HUMAN_REVIEW
+  - Low confidence
+  - High escalation risk
+  - High-risk intent
+  - Requires approval before execution
+
+TIER: ESCALATE
+  - Deterministic trigger
+  - Immediate transfer to human
+  - Bypasses all automated processing
+
+================================================================================
+INDUSTRY-SPECIFIC RISK PROFILES
+================================================================================
+
+RESTAURANT (HIGH Autonomy)
+  confidence_threshold: 0.6
+  auto_escalate_threshold: 0.7
+  high_risk_intents: [food_poisoning, severe_allergy]
+  - Fast order processing
+  - Minimal human intervention
+
+MEDICAL (RESTRICTED)
+  confidence_threshold: 0.85
+  auto_escalate_threshold: 0.4
+  high_risk_intents: [medical_emergency, chest_pain, breathing_difficulty]
+  - Conservative approach
+  - Immediate escalation for symptoms
+
+LAW FIRM (MEDIUM)
+  confidence_threshold: 0.8
+  auto_escalate_threshold: 0.5
+  high_risk_intents: [legal_action, lawsuit, attorney_consultation]
+  - Legal urgency handling
+  - High accuracy required
+
+HVAC/PLUMBING (HIGH with Safety)
+  confidence_threshold: 0.65
+  auto_escalate_threshold: 0.6
+  high_risk_intents: [gas_leak, carbon_monoxide, fire_hazard]
+  - Safety-critical triggers
+  - Fast emergency response
+
+HOTEL (MEDIUM)
+  confidence_threshold: 0.7
+  auto_escalate_threshold: 0.5
+  high_risk_intents: [security_issue, lost_property, emergency]
+  - Guest experience focus
+  - Moderate automation
+
+SALON/SPA (HIGH)
+  confidence_threshold: 0.6
+  auto_escalate_threshold: 0.7
+  high_risk_intents: [allergic_reaction, service_complaint]
+  - Customer service focus
+  - Fast booking
+
+RETAIL (HIGH)
+  confidence_threshold: 0.6
+  auto_escalate_threshold: 0.7
+  high_risk_intents: [product_issue, return_dispute]
+  - Sales optimization
+  - Fast checkout
+
+================================================================================
+RESPONSE FORMAT
+================================================================================
+
+{
+  "intent": "order_food",
+  "confidence": 0.85,
+  "entities": {
+    "service": "dine-in",
+    "menu_item": "Burger",
+    "quantity": 1,
+    "date": null,
+    "time": null,
+    "customer_name": "John",
+    "customer_phone": "555-1234",
+    "delivery_method": null,
+    "urgency": "medium",
+    "issue_type": null,
+    "order_items": ["Burger"]
+  },
+  "selected_action": "PLACE_ORDER",
+  "action_reasoning": "Customer wants to order a burger for dine-in",
+  "next_questions": ["Would you like any drinks?", "Any special requests?"],
+  "sentiment": "positive",
+  "escalation_risk": 0.2,
+  "memory_update": {"key": "preferred_menu", "value": "Burger"},
+  "suggested_response": "Great choice! I'll add a burger to your order...",
+  "requires_approval": false,
+  "intent_validated": true,
+  "intent_confidence": 0.88,
+  "reasoning_chain": [...],
+  "governance": {
+    "business_type": "restaurant",
+    "confidence_threshold": 0.6,
+    "risk_threshold": 0.7,
+    "deterministic_check": {"should_escalate": false},
+    "final_tier": "auto"
+  }
+}
+
+================================================================================
+KEY METHODS
+================================================================================
+
+reason(conversation, business_context, customer_context, db, multimodal_data)
+  - Main entry point
+  - Executes all governance layers
+  - Returns structured reasoning result
+
+_check_deterministic_triggers(conversation, customer_context, business_type)
+  - Layer 1: Pre-model safety check
+  - Returns escalation decision immediately if trigger matches
+
+_create_deterministic_escalation_response(trigger_info, business_context, customer_context)
+  - Creates predetermined response for safety triggers
+  - Bypasses model entirely
+
+_parse_reasoning_response(response)
+  - Validates and extracts structured JSON from model
+  - Multi-layer parsing for robustness
+
+_build_reasoning_chain(reasoning_result, business_context, customer_context)
+  - Builds visualization of reasoning process
+  - For debugging and transparency
+
+evaluate_response_quality(user_input, expected_response, actual_response)
+  - LLM-as-a-Judge evaluation
+  - Scores response quality (0-100)
+
+generate_synthetic_training_data(business_type, services, count)
+  - Generates training scenarios
+  - For improving model performance
+
+================================================================================
+INTEGRATION POINTS
+================================================================================
+
+Knowledge Base:
+  - RAG lookup for relevant documents
+  - In-context injection into system prompt
+
+Training Scenarios:
+  - Few-shot examples for specific business
+  - Response pattern guidance
+
+Business Templates:
+  - Industry-specific prompts
+  - Risk profile configuration
+  - Flow context for data collection
+
+Intent Classifier:
+  - Validation of detected intent
+  - Suggestion of alternatives
+  - Confidence scoring
+
+CRM Integration:
+  - Customer history lookup
+  - Interaction tracking
+  - Customer 360 context
+
+Calendar Service:
+  - Appointment availability checking
+  - Booking execution
+  - Conflict detection
+
+================================================================================
+ERROR HANDLING
+================================================================================
+
+Model Invocation Error:
+  - Retry with exponential backoff
+  - Max 3 retries
+  - Fallback to HUMAN_INTERVENTION
+
+Parse Error:
+  - Multiple JSON extraction strategies
+  - Fallback to simple heuristic
+  - Returns error with stalling response
+
+Knowledge Base Error:
+  - Continues without KB context
+  - Logs error
+  - Do not affect the core functionality.
+
+Intent Classifier Error:
+  - Continues with LLM intent
+  - Marks validation as None
+  - Logs error for investigation
 """
 import boto3
 import json

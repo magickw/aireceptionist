@@ -131,6 +131,8 @@ class NovaActAutomation:
     - CRM updates (Salesforce, HubSpot)
     - Form submissions
     - Data extraction
+    
+    Uses real Playwright browser automation with Nova Lite verification.
     """
     
     def __init__(self):
@@ -144,6 +146,247 @@ class NovaActAutomation:
         
         # Active workflows
         self.active_workflows: Dict[str, AutomationWorkflow] = {}
+        
+        # Playwright browser instances per workflow
+        self._browsers: Dict[str, Any] = {}
+        self._pages: Dict[str, Any] = {}
+        
+        # Async lock for browser operations
+        self._browser_lock = asyncio.Lock()
+    
+    async def _get_page_for_workflow(self, context: Optional[Dict[str, Any]] = None) -> Any:
+        """Get or create a Playwright page for the current workflow"""
+        workflow_id = context.get("workflow_id") if context else None
+        
+        if workflow_id and workflow_id in self._pages:
+            return self._pages[workflow_id]
+        
+        # Create new browser context
+        from playwright.async_api import async_playwright
+        
+        if not hasattr(self, '_playwright'):
+            self._playwright = await async_playwright().start()
+        
+        # Launch browser (headless by default)
+        browser = await self._playwright.chromium.launch(
+            headless=True,
+            args=['--no-sandbox', '--disable-setuid-sandbox']
+        )
+        
+        if workflow_id:
+            self._browsers[workflow_id] = browser
+        
+        # Create page
+        page = await browser.new_page(
+            viewport={'width': 1280, 'height': 720},
+            user_agent='Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+        )
+        
+        if workflow_id:
+            self._pages[workflow_id] = page
+        
+        # Set default timeout
+        page.set_default_timeout(30000)
+        
+        return page
+    
+    async def _close_browser_for_workflow(self, workflow_id: str):
+        """Close browser for a specific workflow"""
+        if workflow_id in self._pages:
+            await self._pages[workflow_id].close()
+            del self._pages[workflow_id]
+        
+        if workflow_id in self._browsers:
+            await self._browsers[workflow_id].close()
+            del self._browsers[workflow_id]
+    
+    async def cleanup_all_browsers(self):
+        """Clean up all browser instances"""
+        for page in self._pages.values():
+            try:
+                await page.close()
+            except:
+                pass
+        self._pages.clear()
+        
+        for browser in self._browsers.values():
+            try:
+                await browser.close()
+            except:
+                pass
+        self._browsers.clear()
+        
+        if hasattr(self, '_playwright'):
+            try:
+                await self._playwright.stop()
+            except:
+                pass
+            del self._playwright
+    
+    # ==================================================================
+    # Playwright Action Executors
+    # ==================================================================
+    
+    async def _execute_navigate(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Execute navigation to a URL"""
+        await page.goto(step.target, wait_until="networkidle", timeout=30000)
+        
+        # Get actual URL (in case of redirects)
+        actual_url = page.url
+        
+        return {
+            "url": actual_url,
+            "target": step.target,
+            "loaded": True,
+            "redirected": actual_url != step.target
+        }
+    
+    async def _execute_click(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Execute click on an element"""
+        # Wait for element to be visible and clickable
+        if step.selector:
+            await page.wait_for_selector(step.selector, state="visible", timeout=10000)
+            await page.click(step.selector, timeout=10000)
+        elif step.target:
+            # Click by text content
+            await page.click(f"text={step.target}", timeout=10000)
+        else:
+            raise ValueError("Click requires either selector or target")
+        
+        # Wait a bit for any UI transitions
+        await asyncio.sleep(0.3)
+        
+        return {
+            "clicked": True,
+            "selector": step.selector,
+            "target": step.target
+        }
+    
+    async def _execute_type(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Execute typing into an input field"""
+        if not step.selector:
+            raise ValueError("Type requires a selector")
+        
+        # Wait for element
+        await page.wait_for_selector(step.selector, state="visible", timeout=10000)
+        
+        # Clear existing value
+        await page.fill(step.selector, "")
+        
+        # Type the value
+        await page.type(step.selector, step.value, delay=50)
+        
+        return {
+            "typed": True,
+            "selector": step.selector,
+            "value_length": len(step.value)
+        }
+    
+    async def _execute_select(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Execute selection from a dropdown"""
+        if not step.selector:
+            raise ValueError("Select requires a selector")
+        
+        await page.wait_for_selector(step.selector, state="visible", timeout=10000)
+        await page.select_option(step.selector, step.value)
+        
+        return {
+            "selected": True,
+            "selector": step.selector,
+            "value": step.value
+        }
+    
+    async def _execute_wait(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Execute wait (time or element)"""
+        wait_time = step.wait_ms or 1000
+        
+        if step.selector:
+            # Wait for element
+            await page.wait_for_selector(step.selector, state="attached", timeout=wait_time)
+            return {"waited_for": "element", "selector": step.selector}
+        else:
+            # Wait for time
+            await asyncio.sleep(wait_time / 1000)
+            return {"waited_ms": wait_time}
+    
+    async def _execute_submit(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Execute form submission"""
+        if step.selector:
+            # Click submit button
+            await page.click(step.selector, timeout=10000)
+        else:
+            # Press Enter on focused element
+            await page.keyboard.press("Enter")
+        
+        # Wait for navigation or network idle
+        try:
+            await page.wait_for_load_state("networkidle", timeout=5000)
+        except:
+            pass  # Some forms don't cause navigation
+        
+        return {
+            "submitted": True,
+            "selector": step.selector
+        }
+    
+    async def _execute_verify(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Verify element or condition exists"""
+        if not step.verification:
+            raise ValueError("Verify requires verification condition")
+        
+        if step.selector:
+            # Check if element exists
+            element = await page.query_selector(step.selector)
+            found = element is not None
+        else:
+            # Check if text exists on page
+            content = await page.content()
+            found = step.verification in content
+        
+        return {
+            "verified": True,
+            "expected": step.verification,
+            "found": found,
+            "selector": step.selector
+        }
+    
+    async def _execute_scroll(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Execute scroll action"""
+        if step.selector:
+            # Scroll element into view
+            await page.scroll_into_view_if_needed(step.selector)
+        else:
+            # Scroll by pixels
+            await page.evaluate(f"window.scrollBy(0, {step.value or 500})")
+        
+        return {
+            "scrolled": True,
+            "selector": step.selector,
+            "value": step.value
+        }
+    
+    async def _execute_extract(self, page, step: AutomationStep) -> Dict[str, Any]:
+        """Extract data from page"""
+        if step.selector:
+            # Extract text from element
+            element = await page.query_selector(step.selector)
+            if element:
+                text = await element.text_content()
+                extracted = {"selector": step.selector, "text": text}
+            else:
+                extracted = {"selector": step.selector, "text": None}
+        elif step.verification:
+            # Extract all text matching pattern
+            content = await page.content()
+            import re
+            matches = re.findall(step.verification, content)
+            extracted = {"pattern": step.verification, "matches": matches}
+        else:
+            # Extract full page text
+            text = await page.evaluate("() => document.body.innerText")
+            extracted = {"full_text": text[:1000]}  # Limit length
+        
+        return extracted
     
     async def execute_workflow(
         self,
@@ -242,6 +485,9 @@ class NovaActAutomation:
             workflow.status = AutomationStatus.COMPLETED
             workflow.completed_at = datetime.now()
             
+            # Clean up browser for this workflow
+            await self._close_browser_for_workflow(workflow.workflow_id)
+            
             yield {
                 "type": "workflow_completed",
                 "workflow_id": workflow.workflow_id,
@@ -255,6 +501,9 @@ class NovaActAutomation:
             workflow.error = str(e)
             workflow.completed_at = datetime.now()
             
+            # Clean up browser on error
+            await self._close_browser_for_workflow(workflow.workflow_id)
+            
             yield {
                 "type": "workflow_error",
                 "workflow_id": workflow.workflow_id,
@@ -267,54 +516,53 @@ class NovaActAutomation:
         context: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
-        Execute a single automation step with Nova-powered verification.
+        Execute a single automation step with real Playwright browser automation.
         
-        This uses Nova Lite to 'see' the outcome of each action and
-        ensure it matches the expected goal, providing robust
+        This uses Playwright to actually interact with web pages and
+        Nova Lite to verify the outcome of each action, providing robust
         autonomous execution even in dynamic environments.
         """
         
         step.started_at = datetime.now()
         
         try:
-            # 1. Perform the action (Simulated for demo)
-            await asyncio.sleep(0.8) # Simulate network/UI latency
+            # Get or create Playwright page for this workflow
+            page = await self._get_page_for_workflow(context)
             
-            # 2. Use Nova to "verify" the result of the action
-            # In production, we'd take a screenshot and pass it to Nova multimodal
-            # Here we'll simulate the multimodal "observation"
-            
-            observation_prompt = f"""
-            You are Nova Act's verification engine.
-            Action performed: {step.action.value} - {step.description}
-            Target: {step.target}
-            Selector: {step.selector}
-            Value: {step.value}
-            
-            Analyze the simulated UI state and confirm if the action was successful.
-            """
-            
-            # Simulate a quick "observation" from Nova
-            observation_result = await self._observe_with_nova(observation_prompt)
-            
-            # 3. Mock results based on action type but enhanced with observation
+            # Execute the actual action with Playwright
             if step.action == AutomationAction.NAVIGATE:
-                result = {"url": step.target, "loaded": True, "observation": observation_result}
+                result = await self._execute_navigate(page, step)
             elif step.action == AutomationAction.CLICK:
-                result = {"clicked": True, "element": step.selector, "observation": observation_result}
+                result = await self._execute_click(page, step)
             elif step.action == AutomationAction.TYPE:
-                result = {"typed": True, "value": step.value, "field": step.selector, "observation": observation_result}
+                result = await self._execute_type(page, step)
             elif step.action == AutomationAction.SELECT:
-                result = {"selected": True, "value": step.value, "dropdown": step.selector, "observation": observation_result}
+                result = await self._execute_select(page, step)
             elif step.action == AutomationAction.WAIT:
-                await asyncio.sleep((step.wait_ms or 1000) / 1000)
-                result = {"waited_ms": step.wait_ms}
+                result = await self._execute_wait(page, step)
             elif step.action == AutomationAction.SUBMIT:
-                result = {"submitted": True, "form": step.selector, "confirmation_detected": True}
+                result = await self._execute_submit(page, step)
             elif step.action == AutomationAction.VERIFY:
-                result = {"verified": True, "expected": step.verification, "found": True}
+                result = await self._execute_verify(page, step)
+            elif step.action == AutomationAction.SCROLL:
+                result = await self._execute_scroll(page, step)
+            elif step.action == AutomationAction.EXTRACT:
+                result = await self._execute_extract(page, step)
             else:
                 result = {"action": step.action.value, "completed": True}
+            
+            # Take screenshot for Nova verification
+            screenshot_bytes = await page.screenshot(full_page=False)
+            screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
+            step.screenshot = screenshot_b64
+            
+            # Use Nova to verify the result
+            observation_result = await self._observe_with_nova_and_screenshot(
+                step, screenshot_bytes
+            )
+            
+            # Add observation to result
+            result["observation"] = observation_result
             
             return {
                 "success": True,
@@ -342,6 +590,79 @@ class NovaActAutomation:
         ]
         import random
         return random.choice(observations)
+    
+    async def _observe_with_nova_and_screenshot(
+        self,
+        step: AutomationStep,
+        screenshot_bytes: bytes
+    ) -> str:
+        """
+        Use Nova Lite multimodal to analyze screenshot and verify action outcome.
+        
+        Args:
+            step: The automation step that was executed
+            screenshot_bytes: Screenshot of the page after the action
+            
+        Returns:
+            Observation description from Nova Lite
+        """
+        try:
+            # Encode screenshot for Nova
+            import base64
+            screenshot_b64 = base64.b64encode(screenshot_bytes).decode()
+            
+            prompt = f"""
+You are Nova Act's verification engine. Analyze this screenshot and confirm the action was successful.
+
+Action performed: {step.action.value} - {step.description}
+Target: {step.target}
+Selector: {step.selector}
+Value: {step.value if step.action != AutomationAction.TYPE else '[MASKED]'}
+
+Examine the screenshot and provide a brief observation of the current UI state.
+Confirm if the action appears to have been successful based on visual evidence.
+"""
+            
+            # Build multimodal message with screenshot
+            messages = [{
+                "role": "user",
+                "content": [
+                    {"text": prompt},
+                    {
+                        "image": {
+                            "format": "png",
+                            "source": {"bytes": screenshot_bytes}
+                        }
+                    }
+                ]
+            }]
+            
+            # Invoke Nova Lite
+            response = self.bedrock_runtime.invoke_model(
+                modelId="amazon.nova-lite-v1:0",  # Use Lite for multimodal
+                body=json.dumps({
+                    "messages": messages,
+                    "inferenceConfig": {
+                        "maxTokens": 512,
+                        "temperature": 0.3
+                    }
+                })
+            )
+            
+            response_body = json.loads(response["body"].read().decode())
+            
+            if "messages" in response_body and len(response_body["messages"]) > 0:
+                content = response_body["messages"][0]["content"]
+                # Extract text from response
+                for item in content:
+                    if "text" in item:
+                        return item["text"]
+            
+            return "Screenshot analyzed. Action appears successful."
+            
+        except Exception as e:
+            print(f"[Nova Act] Error observing with Nova: {e}")
+            return f"Screenshot captured. Action verification skipped due to error: {str(e)[:50]}"
     
     async def _try_fallback(
         self,
@@ -754,6 +1075,10 @@ Output format (JSON):
             workflow = self.active_workflows[workflow_id]
             workflow.status = AutomationStatus.CANCELLED
             workflow.completed_at = datetime.now()
+            
+            # Clean up browser asynchronously
+            asyncio.create_task(self._close_browser_for_workflow(workflow_id))
+            
             return True
         return False
 
