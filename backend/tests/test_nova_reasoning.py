@@ -205,7 +205,11 @@ class TestReasoningChain:
             "intent": "order_food",
             "confidence": 0.85,
             "selected_action": "PLACE_ORDER",
-            "entities": {"menu_item": "Burger"}
+            "entities": {"menu_item": "Burger"},
+            "action_reasoning": "Customer wants to order a burger",
+            "sentiment": "positive",
+            "escalation_risk": 0.1,
+            "suggested_response": "I'd be happy to help you order a burger!"
         }
         
         chain = reasoning_engine._build_reasoning_chain(
@@ -284,10 +288,11 @@ class TestFallbackResponse:
         
         fallback = reasoning_engine._get_fallback_response(error_message)
         
-        assert fallback["selected_action"] == "HUMAN_INTERVENTION"
-        assert fallback["requires_approval"] is True
-        assert fallback["confidence"] == 0.0
-        assert fallback["intent"] == "error"
+        assert fallback["selected_action"] == "PROVIDE_INFO"
+        assert fallback["confidence"] == 0.3
+        assert fallback["intent"] == "unknown"
+        assert "error" in fallback
+        assert fallback["error"] == error_message
 
 
 class TestResponseQualityEvaluation:

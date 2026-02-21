@@ -645,7 +645,7 @@ class NovaSonicStreamSession:
                     self._partial_text = self._partial_text[idx + 10:]
                     self._in_thinking_block = True
                     continue
-                elif "<thinking" in self._partial_text:
+                elif self._partial_text and self._is_partial_tag(self._partial_text, "<thinking>"):
                     # Might be a partial tag; hold back
                     break
                 else:
@@ -658,7 +658,7 @@ class NovaSonicStreamSession:
                     self._partial_text = self._partial_text[idx + 12:]
                     self._in_thinking_block = False
                     continue
-                elif "</thinking" in self._partial_text:
+                elif self._partial_text and self._is_partial_tag(self._partial_text, "</thinking>"):
                     break
                 else:
                     # Still inside thinking; discard
@@ -666,6 +666,13 @@ class NovaSonicStreamSession:
                     break
 
         return output
+    
+    def _is_partial_tag(self, text: str, full_tag: str) -> bool:
+        """Check if text could be a partial version of full_tag"""
+        if not text:
+            return False
+        # Check if text is a prefix of full_tag
+        return full_tag.startswith(text)
 
     def _flush_thinking_buffer(self) -> str:
         """Flush remaining partial text (called at content block end)."""

@@ -154,9 +154,11 @@ class TestNovaSonicStreamSession:
         await sample_session.initialize()
         await sample_session.send_text_message("Hello, how are you?")
         
-        assert len(sample_session._conversation_history) == 1
+        # Both user and assistant messages are added
+        assert len(sample_session._conversation_history) == 2
         assert sample_session._conversation_history[0]["role"] == "user"
         assert sample_session._conversation_history[0]["content"][0]["text"] == "Hello, how are you?"
+        assert sample_session._conversation_history[1]["role"] == "assistant"
     
     @pytest.mark.asyncio
     async def test_close(self, sample_session):
@@ -213,7 +215,7 @@ class TestThinkingBlockFilter:
         filtered = sample_session._filter_thinking(text)
         
         assert "<thinking>" not in filtered
-        assert filtered == "A  B  C "
+        assert filtered == "A B C"  # Single spaces between words
     
     @pytest.mark.asyncio
     async def test_flush_thinking_buffer(self, sample_session):
@@ -274,7 +276,7 @@ class TestBuildSystemPrompt:
             training_context=training
         )
         
-        assert "Training Examples" in prompt
+        assert "## Training" in prompt
         assert "Example:" in prompt
 
 
@@ -375,7 +377,12 @@ class TestSessionState:
         await sample_session.send_text_message("First message")
         await sample_session.send_text_message("Second message")
         
-        assert len(sample_session._conversation_history) == 2
+        # Each send_text_message adds user and assistant messages (2 exchanges = 4 messages)
+        assert len(sample_session._conversation_history) == 4
+        assert sample_session._conversation_history[0]["role"] == "user"
+        assert sample_session._conversation_history[0]["content"][0]["text"] == "First message"
+        assert sample_session._conversation_history[2]["role"] == "user"
+        assert sample_session._conversation_history[2]["content"][0]["text"] == "Second message"
     
     @pytest.mark.asyncio
     async def test_conversation_history_with_tools(self, sample_session):

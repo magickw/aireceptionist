@@ -208,14 +208,58 @@ async def handle_tool_use(
     Maps streaming tool calls to existing business operations.
     """
     if tool_name == "bookAppointment":
-        date_str = tool_input.get("date")
-        time_str = tool_input.get("time")
         customer_name = tool_input.get("customer_name", ws_session.get("customer_name", "Unknown"))
         customer_phone = tool_input.get("customer_phone", ws_session.get("customer_phone", "Unknown"))
-        service = tool_input.get("service", "General")
-
+        
         ws_session["customer_name"] = customer_name
         ws_session["customer_phone"] = customer_phone
+
+        # Handle Hotel-specific booking
+        if business_context.get("type") == "hotel":
+            check_in_date_str = tool_input.get("check_in_date")
+            check_out_date_str = tool_input.get("check_out_date")
+            room_type = tool_input.get("room_type", "Standard")
+            number_of_guests = tool_input.get("number_of_guests", "1")
+
+            check_in_date = parse_natural_datetime(check_in_date_str, "12:00 PM") # Assume check-in at noon
+            check_out_date = parse_natural_datetime(check_out_date_str, "11:00 AM") # Assume check-out at 11 AM
+
+            if not check_in_date or not check_out_date:
+                return {"success": False, "message": "Could not parse check-in or check-out dates."}
+
+            try:
+                from app.services.calendar_service import calendar_service
+                # For hotels, check_and_book_appointment will need to handle date ranges.
+                # Assuming check_and_book_appointment can interpret these as start/end of a multi-day booking.
+                # Or, a dedicated hotel booking service/function might be needed.
+                
+                # For now, let's adapt to existing check_and_book_appointment, treating it as an "appointment"
+                # spanning from check-in to check-out. The "service" will describe the room booking.
+                hotel_service_description = f"{room_type} Room for {number_of_guests} guests"
+
+                result = await calendar_service.check_and_book_appointment(
+                    business_id=business_id,
+                    start_time=check_in_date,
+                    end_time=check_out_date, # End date for multi-day booking
+                    customer_name=customer_name,
+                    customer_phone=customer_phone,
+                    service=hotel_service_description,
+                    db=db,
+                )
+                if result["success"]:
+                    check_in_fmt = check_in_date.strftime("%B %d, %Y")
+                    check_out_fmt = check_out_date.strftime("%B %d, %Y")
+                    return {"success": True, "message": f"Booking confirmed for a {room_type} room from {check_in_fmt} to {check_out_fmt}."}
+                else:
+                    return {"success": False, "message": result.get("message", "Failed to book hotel room.")}
+            except Exception as e:
+                print(f"[Tool] bookAppointment (Hotel) error: {e}")
+                return {"success": False, "message": "Failed to book hotel room due to an internal error."}
+        
+        # Original appointment booking logic for other business types
+        date_str = tool_input.get("date")
+        time_str = tool_input.get("time")
+        service = tool_input.get("service", "General")
 
         appointment_time = parse_natural_datetime(date_str, time_str)
         if not appointment_time:
@@ -245,6 +289,48 @@ async def handle_tool_use(
             return {"success": False, "message": "Failed to book appointment."}
 
     elif tool_name == "checkAvailability":
+        if business_context.get("type") == "hotel":
+            check_in_date_str = tool_input.get("check_in_date")
+            check_out_date_str = tool_input.get("check_out_date")
+            room_type = tool_input.get("room_type", "Standard")
+
+            check_in_date = parse_natural_datetime(check_in_date_str, "12:00 PM")
+            check_out_date = parse_natural_datetime(check_out_date_str, "11:00 AM")
+
+            if not check_in_date or not check_out_date:
+                return {"available": False, "message": "Could not parse check-in or check-out dates."}
+
+            try:
+                from app.services.calendar_service import calendar_service
+                hotel_service_description = f"{room_type} Room"
+
+                integration = db.query(CalendarIntegration).filter(
+                    CalendarIntegration.business_id == business_id,
+                    CalendarIntegration.status == "active",
+                ).first()
+
+                is_available = True
+                if integration:
+                    availability = await calendar_service.check_availability(
+                        integration, check_in_date, check_out_date, db, service=hotel_service_description
+                    )
+                    is_available = availability.get("available", False)
+                else:
+                    from app.services.calendar_service import calendar_service as cal_svc
+                    db_conflicts = cal_svc.check_db_conflicts(business_id, check_in_date, check_out_date, db, service=hotel_service_description)
+                    is_available = not db_conflicts
+
+                check_in_fmt = check_in_date.strftime("%B %d, %Y")
+                check_out_fmt = check_out_date.strftime("%B %d, %Y")
+                if is_available:
+                    return {"available": True, "message": f"A {room_type} room from {check_in_fmt} to {check_out_fmt} is available."}
+                else:
+                    return {"available": False, "message": f"A {room_type} room from {check_in_fmt} to {check_out_fmt} is not available."}
+            except Exception as e:
+                print(f"[Tool] checkAvailability (Hotel) error: {e}")
+                return {"available": False, "message": "Could not check hotel room availability."}
+        
+        # Original appointment booking logic for other business types
         date_str = tool_input.get("date")
         time_str = tool_input.get("time")
         appointment_time = parse_natural_datetime(date_str, time_str)
@@ -1072,70 +1158,120 @@ async def voice_websocket(
                         agent_response = "I don't have any items in your order. What would you like to get?"
                 
                 elif selected_action == "CREATE_APPOINTMENT":
-                    # Handle appointment booking in WebSocket
-                    date_str = entities.get("date") or entities.get("preferred_date")
-                    time_str = entities.get("time") or entities.get("preferred_time")
-                    service = entities.get("service") or entities.get("service_type")
-                    
-                    # Parse date/time
-                    appointment_time = parse_natural_datetime(date_str, time_str)
-                    
-                    if appointment_time:
-                        try:
-                            from app.services.calendar_service import calendar_service
-                            from app.models.models import CalendarIntegration, Appointment
-                            
-                            end_time = appointment_time + timedelta(hours=1)
-                            
-                            # Check for calendar integration
-                            integration = db.query(CalendarIntegration).filter(
-                                CalendarIntegration.business_id == business_id,
-                                CalendarIntegration.status == "active"
-                            ).first()
-                            
-                            is_available = True
-                            if integration:
-                                availability = await calendar_service.check_availability(integration, appointment_time, end_time, db)
-                                is_available = availability.get("available", False)
-                            else:
-                                # No calendar integration - check local DB conflicts
-                                db_conflicts = calendar_service.check_db_conflicts(business_id, appointment_time, end_time, db)
-                                is_available = not db_conflicts
-                            
-                            if not is_available:
-                                date_fmt = appointment_time.strftime("%B %d")
-                                time_fmt = appointment_time.strftime("%I:%M %p")
-                                agent_response = f"I'm sorry, but {date_fmt} at {time_fmt} is not available. Would you like me to check another time?"
-                            else:
-                                # Book the appointment
+                    # Determine business type
+                    business_type = business_context.get("type")
+
+                    if business_type == "hotel":
+                        # Handle hotel room booking
+                        check_in_date_str = entities.get("check_in_date")
+                        check_out_date_str = entities.get("check_out_date")
+                        room_type = entities.get("room_type", "Standard")
+                        number_of_guests = entities.get("number_of_guests", "1")
+                        
+                        check_in_date = parse_natural_datetime(check_in_date_str, "12:00 PM") # Default check-in time
+                        check_out_date = parse_natural_datetime(check_out_date_str, "11:00 AM") # Default check-out time
+
+                        if not check_in_date or not check_out_date:
+                            agent_response = "I'd be happy to book a room for you. What are your preferred check-in and check-out dates?"
+                        else:
+                            try:
+                                from app.services.calendar_service import calendar_service
+                                # The 'service' here represents the room type and number of guests
+                                hotel_service = f"{room_type} Room for {number_of_guests} guests"
+                                
                                 result = await calendar_service.check_and_book_appointment(
                                     business_id=business_id,
-                                    start_time=appointment_time,
-                                    end_time=end_time,
+                                    start_time=check_in_date,
+                                    end_time=check_out_date,
                                     customer_name=ws_session.get("customer_name", "Unknown"),
                                     customer_phone=ws_session.get("customer_phone", "Unknown"),
-                                    service=service or "General Checkup",
+                                    service=hotel_service,
                                     db=db
                                 )
                                 
                                 if result["success"]:
-                                    date_fmt = appointment_time.strftime("%B %d")
-                                    time_fmt = appointment_time.strftime("%I:%M %p")
-                                    agent_response = f"Great! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                                    check_in_fmt = check_in_date.strftime("%B %d")
+                                    check_out_fmt = check_out_date.strftime("%B %d")
+                                    agent_response = f"Great! I've booked your {room_type} room from {check_in_fmt} to {check_out_fmt}. We look forward to seeing you!"
                                     ws_session["appointment_confirmed"] = True
                                     ws_session["last_appointment_summary"] = {
-                                        "start_time": appointment_time,
-                                        "end_time": end_time,
-                                        "service": service or "General Checkup"
+                                        "start_time": check_in_date,
+                                        "end_time": check_out_date,
+                                        "service": hotel_service,
+                                        "room_type": room_type,
+                                        "number_of_guests": number_of_guests
                                     }
-                                    print(f"[Voice WS] Created appointment {result['appointment'].id} for {ws_session.get('customer_phone')} at {appointment_time}")
+                                    print(f"[Voice WS] Created hotel booking {result['appointment'].id} for {ws_session.get('customer_phone')} from {check_in_date} to {check_out_date}")
                                 else:
-                                    agent_response = f"I'm sorry, I couldn't book that appointment. {result.get('message', 'Please try a different time.')}"
-                        except Exception as e:
-                            print(f"[Voice WS] Appointment booking error: {e}")
-                            agent_response = f"I'm having trouble booking that appointment right now. Could you please try again or call us directly?"
+                                    agent_response = f"I'm sorry, I couldn't book that room. {result.get('message', 'Please try different dates or room type.')}"
+                            except Exception as e:
+                                print(f"[Voice WS] Hotel booking error: {e}")
+                                agent_response = f"I'm having trouble booking your room right now. Could you please try again or call us directly?"
                     else:
-                        agent_response = "I'd be happy to book an appointment for you. What date and time would you prefer?"
+                        # Original appointment booking logic for non-hotel business types
+                        date_str = entities.get("date") or entities.get("preferred_date")
+                        time_str = entities.get("time") or entities.get("preferred_time")
+                        service = entities.get("service") or entities.get("service_type")
+                        
+                        # Parse date/time
+                        appointment_time = parse_natural_datetime(date_str, time_str)
+                        
+                        if appointment_time:
+                            try:
+                                from app.services.calendar_service import calendar_service
+                                from app.models.models import CalendarIntegration, Appointment
+                                
+                                end_time = appointment_time + timedelta(hours=1)
+                                
+                                # Check for calendar integration
+                                integration = db.query(CalendarIntegration).filter(
+                                    CalendarIntegration.business_id == business_id,
+                                    CalendarIntegration.status == "active"
+                                ).first()
+                                
+                                is_available = True
+                                if integration:
+                                    availability = await calendar_service.check_availability(integration, appointment_time, end_time, db)
+                                    is_available = availability.get("available", False)
+                                else:
+                                    # No calendar integration - check local DB conflicts
+                                    db_conflicts = calendar_service.check_db_conflicts(business_id, appointment_time, end_time, db)
+                                    is_available = not db_conflicts
+                                
+                                if not is_available:
+                                    date_fmt = appointment_time.strftime("%B %d")
+                                    time_fmt = appointment_time.strftime("%I:%M %p")
+                                    agent_response = f"I'm sorry, but {date_fmt} at {time_fmt} is not available. Would you like me to check another time?"
+                                else:
+                                    # Book the appointment
+                                    result = await calendar_service.check_and_book_appointment(
+                                        business_id=business_id,
+                                        start_time=appointment_time,
+                                        end_time=end_time,
+                                        customer_name=ws_session.get("customer_name", "Unknown"),
+                                        customer_phone=ws_session.get("customer_phone", "Unknown"),
+                                        service=service or "General Checkup",
+                                        db=db
+                                    )
+                                    
+                                    if result["success"]:
+                                        date_fmt = appointment_time.strftime("%B %d")
+                                        time_fmt = appointment_time.strftime("%I:%M %p")
+                                        agent_response = f"Great! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                                        ws_session["appointment_confirmed"] = True
+                                        ws_session["last_appointment_summary"] = {
+                                            "start_time": appointment_time,
+                                            "end_time": end_time,
+                                            "service": service or "General Checkup"
+                                        }
+                                        print(f"[Voice WS] Created appointment {result['appointment'].id} for {ws_session.get('customer_phone')} at {appointment_time}")
+                                    else:
+                                        agent_response = f"I'm sorry, I couldn't book that appointment. {result.get('message', 'Please try a different time.')}"
+                            except Exception as e:
+                                print(f"[Voice WS] Appointment booking error: {e}")
+                                agent_response = f"I'm having trouble booking that appointment right now. Could you please try again or call us directly?"
+                        else:
+                            agent_response = "I'd be happy to book an appointment for you. What date and time would you prefer?"
                 
                 # Also handle when customer asks about availability (not just CREATE_APPOINTMENT action)
                 # Handle gratitude and closing phrases
