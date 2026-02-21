@@ -21,15 +21,16 @@ from app.models.models import CalendarIntegration, Appointment, Business
 class CalendarService:
     """Service for calendar integrations"""
     
-    # Google OAuth config
-    GOOGLE_CLIENT_ID = settings.GOOGLE_CLIENT_ID
-    GOOGLE_CLIENT_SECRET = settings.GOOGLE_CLIENT_SECRET
-    GOOGLE_REDIRECT_URI = settings.GOOGLE_REDIRECT_URI
-    
-    # Microsoft OAuth config
-    MICROSOFT_CLIENT_ID = settings.MICROSOFT_CLIENT_ID
-    MICROSOFT_CLIENT_SECRET = settings.MICROSOFT_CLIENT_SECRET
-    MICROSOFT_REDIRECT_URI = settings.MICROSOFT_REDIRECT_URI
+    def __init__(self):
+        # Google OAuth config (instance attributes for testability)
+        self.GOOGLE_CLIENT_ID = settings.GOOGLE_CLIENT_ID
+        self.GOOGLE_CLIENT_SECRET = settings.GOOGLE_CLIENT_SECRET
+        self.GOOGLE_REDIRECT_URI = settings.GOOGLE_REDIRECT_URI
+        
+        # Microsoft OAuth config (instance attributes for testability)
+        self.MICROSOFT_CLIENT_ID = settings.MICROSOFT_CLIENT_ID
+        self.MICROSOFT_CLIENT_SECRET = settings.MICROSOFT_CLIENT_SECRET
+        self.MICROSOFT_REDIRECT_URI = settings.MICROSOFT_REDIRECT_URI
     
     def get_google_auth_url(self, business_id: int) -> str:
         """Generate Google OAuth URL"""

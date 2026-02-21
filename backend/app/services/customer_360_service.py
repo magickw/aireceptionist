@@ -509,6 +509,269 @@ class Customer360Service:
             "total_customers": len(customers),
             "segments": {k: {"count": len(v), "customers": v[:10]} for k, v in segments.items()}
         }
+    
+    async def get_customer_calls(
+        self,
+        customer_id: int,
+        db: Session,
+        limit: int = 10
+    ) -> List[Dict]:
+        """Get customer call history"""
+        from app.models.models import CallSession
+        
+        calls = db.query(CallSession).filter(
+            CallSession.customer_id == customer_id
+        ).order_by(CallSession.started_at.desc()).limit(limit).all()
+        
+        return [
+            {
+                "id": c.id,
+                "call_date": c.started_at.isoformat() if c.started_at else None,
+                "duration": c.duration_seconds,
+                "sentiment": c.sentiment,
+                "quality_score": float(c.quality_score) if c.quality_score else None,
+                "summary": c.summary
+            }
+            for c in calls
+        ]
+    
+    async def get_customer_appointments(
+        self,
+        customer_id: int,
+        db: Session,
+        limit: int = 10
+    ) -> List[Dict]:
+        """Get customer appointments"""
+        from app.models.models import Appointment
+        
+        appointments = db.query(Appointment).filter(
+            Appointment.customer_id == customer_id
+        ).order_by(Appointment.appointment_time.desc()).limit(limit).all()
+        
+        return [
+            {
+                "id": a.id,
+                "appointment_time": a.appointment_time.isoformat() if a.appointment_time else None,
+                "service": a.service_type,
+                "status": a.status,
+                "notes": a.notes
+            }
+            for a in appointments
+        ]
+    
+    async def get_customer_orders(
+        self,
+        customer_id: int,
+        db: Session,
+        limit: int = 10
+    ) -> List[Dict]:
+        """Get customer orders"""
+        from app.models.models import Order
+        
+        orders = db.query(Order).filter(
+            Order.customer_id == customer_id
+        ).order_by(Order.created_at.desc()).limit(limit).all()
+        
+        return [
+            {
+                "id": o.id,
+                "created_at": o.created_at.isoformat() if o.created_at else None,
+                "total_amount": float(o.total_amount) if o.total_amount else 0,
+                "status": o.status,
+                "delivery_method": o.delivery_method
+            }
+            for o in orders
+        ]
+    
+    async def calculate_lifetime_value(
+        self,
+        customer_id: int,
+        db: Session
+    ) -> float:
+        """Calculate customer lifetime value"""
+        from app.models.models import Customer, Order
+        
+        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+        if not customer:
+            return 0.0
+        
+        # Sum all completed and confirmed orders
+        orders = db.query(Order).filter(
+            Order.customer_id == customer_id,
+            Order.status.in_(["completed", "confirmed"])
+        ).all()
+        
+        ltv = sum(float(o.total_amount or 0) for o in orders)
+        return round(ltv, 2)
+    
+    async def calculate_churn_risk(
+        self,
+        customer_id: int,
+        db: Session
+    ) -> float:
+        """Calculate customer churn risk score"""
+        from app.models.models import Customer
+        
+        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+        if not customer:
+            return 0.5  # Default medium risk
+        
+        risk_score = 0.0
+        
+        # Time since last interaction
+        if customer.last_interaction:
+            days_inactive = (datetime.utcnow() - customer.last_interaction).days
+            if days_inactive > 60:
+                risk_score += 0.4
+            elif days_inactive > 30:
+                risk_score += 0.2
+            elif days_inactive > 14:
+                risk_score += 0.1
+        
+        # Low satisfaction
+        if customer.avg_sentiment and float(customer.avg_sentiment) < 0.4:
+            risk_score += 0.3
+        
+        # Low engagement
+        total_interactions = (customer.total_calls or 0) + (customer.total_orders or 0) + (customer.total_appointments or 0)
+        if total_interactions < 2:
+            risk_score += 0.2
+        
+        return min(1.0, round(risk_score, 2))
+    
+    async def calculate_satisfaction_score(
+        self,
+        customer_id: int,
+        db: Session
+    ) -> float:
+        """Calculate customer satisfaction score"""
+        from app.models.models import Customer
+        
+        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+        if not customer or not customer.avg_sentiment:
+            return 3.0  # Default neutral
+        
+        # Convert sentiment (0-1) to score (1-5)
+        sentiment = float(customer.avg_sentiment)
+        score = 1 + (sentiment * 4)  # Maps 0->1, 1->5
+        return round(score, 1)
+    
+    async def determine_loyalty_tier(
+        self,
+        customer_id: int,
+        db: Session
+    ) -> str:
+        """Determine customer loyalty tier"""
+        from app.models.models import Customer, Order
+        
+        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+        if not customer:
+            return "bronze"
+        
+        total_spent = float(customer.total_spent or 0)
+        total_interactions = (customer.total_calls or 0) + (customer.total_orders or 0)
+        
+        return self._calculate_loyalty_tier(total_spent, total_interactions)
+    
+    async def identify_vip(
+        self,
+        customer,
+        db: Session
+    ) -> bool:
+        """Check if customer qualifies as VIP"""
+        # High lifetime value (> $2000)
+        if customer.lifetime_value and float(customer.lifetime_value) > 2000:
+            return True
+        
+        # High satisfaction score (> 4.5)
+        if customer.satisfaction_score and customer.satisfaction_score > 4.5:
+            return True
+        
+        # Gold or platinum tier
+        if customer.loyalty_tier in ["gold", "platinum"]:
+            return True
+        
+        return False
+    
+    async def segment_customers_by_tier(self, db: Session) -> Dict[str, int]:
+        """Segment customers by loyalty tier"""
+        from app.models.models import Customer
+        
+        customers = db.query(Customer).all()
+        
+        segments = {"platinum": 0, "gold": 0, "silver": 0, "bronze": 0, "standard": 0}
+        
+        for c in customers:
+            tier = c.loyalty_tier or "standard"
+            if tier in segments:
+                segments[tier] += 1
+        
+        return segments
+    
+    async def segment_customers_by_risk(self, db: Session) -> Dict[str, int]:
+        """Segment customers by churn risk"""
+        from app.models.models import Customer
+        
+        customers = db.query(Customer).all()
+        
+        segments = {"low": 0, "medium": 0, "high": 0}
+        
+        for c in customers:
+            risk = float(c.churn_risk or 0.5)
+            if risk < 0.3:
+                segments["low"] += 1
+            elif risk < 0.6:
+                segments["medium"] += 1
+            else:
+                segments["high"] += 1
+        
+        return segments
+    
+    async def get_customer_insights(
+        self,
+        customer_id: int,
+        db: Session
+    ) -> Dict:
+        """Get comprehensive customer insights"""
+        from app.models.models import Customer, CallSession, Order
+        
+        customer = db.query(Customer).filter(Customer.id == customer_id).first()
+        if not customer:
+            return {"error": "Customer not found"}
+        
+        calls = db.query(CallSession).filter(
+            CallSession.customer_id == customer_id
+        ).all()
+        
+        orders = db.query(Order).filter(
+            Order.customer_id == customer_id
+        ).all()
+        
+        ltv = await self._calculate_lifetime_value(customer_id, db)
+        
+        return {
+            "customer": {
+                "id": customer.id,
+                "name": customer.name,
+                "email": customer.email,
+                "loyalty_tier": customer.loyalty_tier,
+                "churn_risk": float(customer.churn_risk or 0),
+                "is_vip": customer.is_vip,
+                "lifetime_value": ltv,
+                "satisfaction_score": await self.calculate_satisfaction_score(customer_id, db)
+            },
+            "metrics": {
+                "total_calls": customer.total_calls,
+                "total_orders": customer.total_orders,
+                "lifetime_value": ltv,
+                "satisfaction_score": await self.calculate_satisfaction_score(customer_id, db)
+            },
+            "risk": {
+                "churn_risk": float(customer.churn_risk or 0)
+            },
+            "tier": customer.loyalty_tier,
+            "is_vip": customer.is_vip
+        }
 
 
 # Singleton instance
