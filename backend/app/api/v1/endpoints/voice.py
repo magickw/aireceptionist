@@ -1145,8 +1145,8 @@ async def voice_websocket(
                     })
 
             elif message_type == "audio_stop":
-                # Mark end of user voice turn (streaming mode)
                 if use_streaming and sonic_session and sonic_session.is_active:
+                    # STREAMING PATH: end user turn triggers STT + model response
                     await sonic_session.end_user_turn()
                     # Send latency metrics after turn completes
                     await asyncio.sleep(0.5)  # brief wait for metrics to populate
@@ -1155,6 +1155,68 @@ async def voice_websocket(
                         await manager.send_json(session_id, {
                             "type": "latency_metrics",
                             "metrics": metrics,
+                        })
+                elif audio_buffer:
+                    # BATCH FALLBACK: flush remaining audio buffer on stop
+                    try:
+                        tracker = manager.latency_trackers.get(session_id)
+                        if tracker:
+                            tracker.start()
+
+                        buffered_audio = audio_buffer
+                        audio_buffer = b""
+
+                        async for response in nova_sonic.process_audio_stream(
+                            _generate_audio_chunks([buffered_audio]),
+                            {
+                                "business_context": await _get_business_context(business_id),
+                                "customer_context": context,
+                            }
+                        ):
+                            if response["type"] == "transcript":
+                                conversation_history.append({
+                                    "role": "customer",
+                                    "content": response["text"],
+                                })
+                                await manager.send_json(session_id, {
+                                    "type": "transcript",
+                                    "text": response["text"],
+                                })
+                            elif response["type"] == "text_response":
+                                conversation_history.append({
+                                    "role": "ai",
+                                    "content": response["text"],
+                                })
+                                await manager.send_json(session_id, {
+                                    "type": "agent_response",
+                                    "text": response["text"],
+                                })
+                            elif response["type"] == "audio":
+                                audio_base64 = nova_sonic.encode_audio_base64(response["data"])
+                                await manager.send_json(session_id, {
+                                    "type": "audio",
+                                    "audio": audio_base64,
+                                    "format": "pcm16",
+                                    "sample_rate": 16000,
+                                })
+                            elif response["type"] == "complete":
+                                if tracker:
+                                    tracker.end()
+                                    metrics = tracker.get_metrics()
+                                    await manager.send_json(session_id, {
+                                        "type": "latency_metrics",
+                                        "metrics": metrics,
+                                    })
+                            elif response["type"] == "error":
+                                await manager.send_json(session_id, {
+                                    "type": "error",
+                                    "message": response["message"],
+                                })
+                    except Exception as e:
+                        print(f"[Voice WS] Batch audio_stop processing error: {e}")
+                        await manager.send_json(session_id, {
+                            "type": "error",
+                            "message": f"Audio processing error: {str(e)}",
                         })
 
             elif message_type == "audio":

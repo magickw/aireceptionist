@@ -275,16 +275,21 @@ class NovaSonicHandler:
             
             # Try to create bucket if it doesn't exist (ignore if already exists)
             try:
-                s3.create_bucket(
-                    Bucket=bucket_name,
-                    CreateBucketConfiguration={'LocationConstraint': settings.AWS_REGION}
-                )
+                # us-east-1 doesn't require LocationConstraint
+                if settings.AWS_REGION == 'us-east-1':
+                    s3.create_bucket(Bucket=bucket_name)
+                else:
+                    s3.create_bucket(
+                        Bucket=bucket_name,
+                        CreateBucketConfiguration={'LocationConstraint': settings.AWS_REGION}
+                    )
             except s3.exceptions.BucketAlreadyOwnedByYou:
                 pass
             except s3.exceptions.BucketAlreadyExists:
                 pass
-            except Exception:
-                pass  # Use existing bucket
+            except Exception as e:
+                print(f"[Nova Sonic] Warning: Could not create S3 bucket: {e}")
+                # Try to continue - bucket might exist or permissions issue
             
             # Upload the audio file
             # Convert PCM to WAV format for Transcribe

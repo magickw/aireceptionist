@@ -1,22 +1,19 @@
 """
-Nova Sonic Streaming Session Manager - Updated for New AWS Bedrock API
-
-Replaces the deprecated invoke_model_with_bidirectional_stream API with the new 
-converse_stream API that works with AWS Bedrock's unified API.
-
-IMPORTANT: The new API has limitations:
-- nova-sonic-v1:0 does NOT support audio input via the new API (text only)
-- Audio input must use Amazon Transcribe separately
-- Streaming now only applies to text output (not bidirectional audio)
+Nova Sonic Streaming Session Manager
 
 Architecture:
-- Text input → AWS Bedrock Nova Lite → Streaming text response
-- Audio input → Amazon Transcribe → Text → AWS Bedrock → Streaming response
+- Audio input -> Buffer -> Amazon Transcribe STT -> Text
+- Text -> AWS Bedrock Nova Lite (converse_stream) -> Streaming text response
+- Text response -> Amazon Polly TTS -> Audio output
+
+The converse_stream API is text-only so audio I/O is handled externally:
+  STT via Amazon Transcribe, TTS via Amazon Polly.
 """
 import boto3
 import json
 import asyncio
 import time
+import traceback
 from typing import Dict, Any, Optional, Callable, List
 from concurrent.futures import ThreadPoolExecutor
 
@@ -35,8 +32,7 @@ class StreamLatencyTracker:
         self._end_time: Optional[float] = None
 
     def mark_start(self):
-        if self._start_time is None:
-            self._start_time = time.monotonic()
+        self._start_time = time.monotonic()
 
     def mark_first_chunk(self):
         if self._first_chunk_at is None:
@@ -64,10 +60,15 @@ class StreamLatencyTracker:
 
 class NovaSonicStreamSession:
     """
-    Manages one streaming session using the new AWS Bedrock converse_stream API.
-    
-    IMPORTANT: This is now TEXT-ONLY streaming. Audio input is handled separately via
-    Amazon Transcribe, then the text is streamed through this session.
+    Manages one streaming session using the AWS Bedrock converse_stream API.
+
+    Audio flow:
+      1. Browser sends PCM chunks via WebSocket
+      2. send_audio_chunk() buffers them
+      3. end_user_turn() transcribes the buffer via Amazon Transcribe,
+         runs safety checks, then calls converse_stream for the model response
+      4. Text response is streamed to text_queue
+      5. After text completes, Polly TTS audio is sent to audio_queue
     """
     def __init__(
         self,
@@ -92,11 +93,15 @@ class NovaSonicStreamSession:
         # State
         self.is_active = False
         self._response_task: Optional[asyncio.Task] = None
-        self._content_buffer: List[str] = []
         self.latency = StreamLatencyTracker()
         self._conversation_history: List[Dict[str, Any]] = []
+
+        # Audio buffering (accumulated between start_user_turn / end_user_turn)
+        self._audio_buffer = b""
+
+        # Thinking-block filter state (reset per assistant turn)
         self._in_thinking_block = False
-        self._partial_text = ""  # For handling partial tags
+        self._partial_text = ""
 
         # Bedrock client
         self._bedrock = boto3.client(
@@ -110,206 +115,345 @@ class NovaSonicStreamSession:
         """Initialize the streaming session."""
         self.is_active = True
 
-    def _open_stream(self, messages: List[Dict[str, Any]], tool_config: Optional[Dict] = None) -> Dict[str, Any]:
-        """Open a streaming request with the new API."""
-        try:
-            kwargs = {
-                "modelId": self.model_id,
-                "messages": messages,
-            }
-            
-            if self.system_prompt:
-                kwargs["system"] = [{"text": self.system_prompt}]
-            
-            kwargs["inferenceConfig"] = {
-                "maxTokens": 1024,
-                "temperature": 0.7,
-                "topP": 0.9,
-            }
-            
-            if tool_config:
-                kwargs["toolConfig"] = tool_config
-            
-            return self._bedrock.converse_stream(**kwargs)
-        except Exception as e:
-            raise RuntimeError(f"Bedrock streaming failed: {e}")
+    # ------------------------------------------------------------------
+    # User turn lifecycle
+    # ------------------------------------------------------------------
+
+    async def start_user_turn(self):
+        """Mark beginning of a new user voice turn. Resets audio buffer."""
+        self._audio_buffer = b""
+        self._partial_text = ""
+        self._in_thinking_block = False
+        self.latency.reset()
+        self.latency.mark_start()
 
     async def send_audio_chunk(self, audio_data: bytes):
-        """
-        Process audio chunk - sends to transcript queue after STT.
-        
-        NOTE: Since the new API doesn't support audio input, we need to:
-        1. Use Amazon Transcribe to convert audio to text
-        2. Then send the text to the model
-        """
-        try:
-            from app.services.nova_sonic import nova_sonic
-            transcript = await nova_sonic._transcribe_audio_with_nova(audio_data)
-            
-            if transcript:
-                self._conversation_history.append({"role": "user", "content": [{"text": transcript}]})
-                await self.transcript_queue.put({"text": transcript})
-                
-                # Safety check
-                if self.safety_checker:
-                    safety_result = self.safety_checker(transcript)
-                    if safety_result:
-                        await self.transcript_queue.put({
-                            "text": transcript,
-                            "safety_trigger": safety_result
-                        })
-        except Exception as e:
-            print(f"[Nova Sonic Stream] STT error: {e}")
+        """Buffer an audio chunk. STT happens later in end_user_turn()."""
+        self._audio_buffer += audio_data
 
     async def end_user_turn(self):
-        """Signal end of user turn and trigger model response."""
-        if not self._conversation_history:
+        """
+        Transcribe buffered audio, run safety checks, then generate a
+        model response via converse_stream.
+        """
+        if not self._audio_buffer or len(self._audio_buffer) < 1000:
             return
-        
+
+        audio_data = self._audio_buffer
+        self._audio_buffer = b""
+
+        # --- STT ---
+        from app.services.nova_sonic import nova_sonic
+        transcript = await nova_sonic._transcribe_audio_with_nova(audio_data)
+
+        if not transcript:
+            await self.text_queue.put({
+                "chunk": "I'm sorry, I couldn't understand that. Could you please try again?",
+            })
+            await self.text_queue.put({"turn_complete": True})
+            return
+
+        # Emit transcript to client
+        await self.transcript_queue.put({"text": transcript})
+
+        # --- Safety check ---
+        if self.safety_checker:
+            safety_result = self.safety_checker(transcript)
+            if safety_result:
+                await self.transcript_queue.put({
+                    "text": transcript,
+                    "safety_trigger": safety_result,
+                })
+                return
+
+        # Add to conversation history and generate response
+        self._conversation_history.append({
+            "role": "user",
+            "content": [{"text": transcript}],
+        })
         await self._generate_assistant_response()
 
+    # ------------------------------------------------------------------
+    # Text input (for text-mode conversations)
+    # ------------------------------------------------------------------
+
+    async def send_text_message(self, message: str):
+        """Send a text message directly (for text-based conversations)."""
+        self._conversation_history.append({
+            "role": "user",
+            "content": [{"text": message}],
+        })
+        await self._generate_assistant_response()
+
+    # ------------------------------------------------------------------
+    # Tool result
+    # ------------------------------------------------------------------
+
+    async def send_tool_result(self, tool_use_id: str, result: Dict[str, Any]):
+        """Send tool result back to the model and continue generation."""
+        self._conversation_history.append({
+            "role": "user",
+            "content": [{
+                "toolResult": {
+                    "toolUseId": tool_use_id,
+                    "content": [{"text": json.dumps(result)}],
+                    "status": "success",
+                },
+            }],
+        })
+        await self._generate_assistant_response()
+
+    # ------------------------------------------------------------------
+    # Core: stream model response
+    # ------------------------------------------------------------------
+
+    def _open_stream(
+        self,
+        messages: List[Dict[str, Any]],
+        tool_config: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Open a converse_stream request (blocking boto3 call)."""
+        kwargs: Dict[str, Any] = {
+            "modelId": self.model_id,
+            "messages": messages,
+        }
+        if self.system_prompt:
+            kwargs["system"] = [{"text": self.system_prompt}]
+        kwargs["inferenceConfig"] = {
+            "maxTokens": 1024,
+            "temperature": 0.7,
+            "topP": 0.9,
+        }
+        if tool_config:
+            kwargs["toolConfig"] = tool_config
+        return self._bedrock.converse_stream(**kwargs)
+
     async def _generate_assistant_response(self):
-        """Generate assistant response using the conversation history."""
+        """
+        Stream a model response via converse_stream.
+
+        Runs the blocking boto3 iteration in a thread pool and bridges
+        events to asyncio queues.
+        """
+        # Reset thinking-block state for this turn
+        self._in_thinking_block = False
+        self._partial_text = ""
+
         try:
-            # Build tool config if tools are available
+            # Build tool config
             tool_config = None
             if self.tool_definitions:
                 tool_config = {
                     "tools": [
                         {
                             "toolSpec": {
-                                "name": tool["name"],
-                                "description": tool.get("description", ""),
-                                "inputSchema": tool.get("inputSchema", {})
+                                "name": t["name"],
+                                "description": t.get("description", ""),
+                                "inputSchema": t.get("inputSchema", {}),
                             }
                         }
-                        for tool in self.tool_definitions
+                        for t in self.tool_definitions
                     ]
                 }
-            
-            # Open stream directly (boto3 converse_stream is synchronous but returns an async stream)
-            stream_response = self._open_stream(self._conversation_history, tool_config)
-            
-            stream = stream_response['stream']
-            
-            # Process stream events
-            for event in stream:
+
+            # Bridge blocking stream -> async via an intermediate queue
+            loop = asyncio.get_event_loop()
+            event_queue: asyncio.Queue = asyncio.Queue()
+
+            def _read_stream():
+                try:
+                    resp = self._open_stream(self._conversation_history, tool_config)
+                    for ev in resp["stream"]:
+                        loop.call_soon_threadsafe(event_queue.put_nowait, ev)
+                except Exception as e:
+                    loop.call_soon_threadsafe(
+                        event_queue.put_nowait, {"_error": str(e)}
+                    )
+                finally:
+                    loop.call_soon_threadsafe(event_queue.put_nowait, None)
+
+            loop.run_in_executor(_executor, _read_stream)
+
+            # --- Process events from the thread ---
+            accumulated_text = ""
+            current_tool_use_id: Optional[str] = None
+            current_tool_name: Optional[str] = None
+            current_tool_input_json = ""
+            in_tool_block = False
+            stop_reason: Optional[str] = None
+
+            while True:
+                event = await event_queue.get()
+                if event is None:
+                    break
                 if not self.is_active:
                     break
+                if "_error" in event:
+                    print(f"[Nova Sonic Stream] Stream error: {event['_error']}")
+                    await self.text_queue.put({"error": event["_error"]})
+                    break
 
-                # Text streaming
-                if 'contentBlockDelta' in event:
-                    delta = event['contentBlockDelta'].get('delta', {})
-                    text = delta.get('text', '')
-                    if text:
-                        self._partial_text += text
-                        
-                        # Process thinking blocks - handle partial tags
-                        while True:
-                            # Check for opening tag (may be split across chunks)
-                            if not self._in_thinking_block:
-                                # Look for <thinking> tag
-                                open_idx = self._partial_text.find('<thinking>')
-                                if open_idx != -1:
-                                    # Found opening tag
-                                    before = self._partial_text[:open_idx]
-                                    after = self._partial_text[open_idx + 10:]  # Skip <thinking>
-                                    
-                                    # Output text before the tag
-                                    if before:
-                                        self.latency.mark_first_chunk()
-                                        await self.text_queue.put({"chunk": before})
-                                    
-                                    self._in_thinking_block = True
-                                    self._partial_text = after
-                                    continue
-                                # Check for partial opening tag (<thinking)
-                                elif '<thinking' in self._partial_text:
-                                    # Wait for more chunks to see if it becomes <thinking>
-                                    break
-                            
-                            # Check for closing tag (may be split)
-                            if self._in_thinking_block:
-                                close_idx = self._partial_text.find('</thinking>')
-                                if close_idx != -1:
-                                    # Found closing tag
-                                    after = self._partial_text[close_idx + 12:]  # Skip </thinking>
-                                    
-                                    # Skip text inside thinking block
-                                    self._in_thinking_block = False
-                                    self._partial_text = after
-                                    continue
-                                # Check for partial closing tag
-                                elif '</thinking' in self._partial_text or '<' in self._partial_text:
-                                    # Wait for more chunks
-                                    break
-                            
-                            # No tags found or processed, break
-                            break
-                        
-                        # If not in thinking block and we have accumulated text with no pending tags, output it
-                        if not self._in_thinking_block and self._partial_text:
-                            # Only output if we're sure no opening tag is coming
-                            if '<thinking' not in self._partial_text and '<' not in self._partial_text[:20]:
-                                # Safe to output
+                # --- contentBlockStart ---
+                if "contentBlockStart" in event:
+                    start_info = event["contentBlockStart"].get("start", {})
+                    if "toolUse" in start_info:
+                        in_tool_block = True
+                        current_tool_use_id = start_info["toolUse"].get("toolUseId", "")
+                        current_tool_name = start_info["toolUse"].get("name", "")
+                        current_tool_input_json = ""
+
+                # --- contentBlockDelta ---
+                elif "contentBlockDelta" in event:
+                    delta = event["contentBlockDelta"].get("delta", {})
+
+                    if in_tool_block:
+                        # Tool use input chunk
+                        input_chunk = delta.get("toolUse", {}).get("input", "")
+                        current_tool_input_json += input_chunk
+                    else:
+                        # Text delta
+                        text = delta.get("text", "")
+                        if text:
+                            filtered = self._filter_thinking(text)
+                            if filtered:
                                 self.latency.mark_first_chunk()
-                                await self.text_queue.put({"chunk": self._partial_text})
-                                self._partial_text = ""
+                                accumulated_text += filtered
+                                await self.text_queue.put({"chunk": filtered})
 
-                elif 'contentBlockStop' in event:
-                    # Output any remaining text (if not in thinking block)
-                    if self._partial_text and not self._in_thinking_block:
-                        # Check if there's a partial opening tag
-                        if '<thinking' not in self._partial_text:
-                            await self.text_queue.put({"chunk": self._partial_text})
-                        self._partial_text = ""
-                    await self.text_queue.put({"is_last": True})
+                # --- contentBlockStop ---
+                elif "contentBlockStop" in event:
+                    if in_tool_block and current_tool_name:
+                        # Parse accumulated tool input JSON
+                        try:
+                            tool_input = (
+                                json.loads(current_tool_input_json)
+                                if current_tool_input_json
+                                else {}
+                            )
+                        except json.JSONDecodeError:
+                            tool_input = {}
 
-                elif 'messageStop' in event:
+                        await self.tool_queue.put({
+                            "tool_use_id": current_tool_use_id,
+                            "name": current_tool_name,
+                            "input": tool_input,
+                        })
+
+                        # Record tool use in conversation history
+                        self._conversation_history.append({
+                            "role": "assistant",
+                            "content": [{
+                                "toolUse": {
+                                    "toolUseId": current_tool_use_id,
+                                    "name": current_tool_name,
+                                    "input": tool_input,
+                                }
+                            }],
+                        })
+
+                        in_tool_block = False
+                        current_tool_use_id = None
+                        current_tool_name = None
+                        current_tool_input_json = ""
+                    else:
+                        # Flush any remaining partial text from thinking filter
+                        remainder = self._flush_thinking_buffer()
+                        if remainder:
+                            accumulated_text += remainder
+                            await self.text_queue.put({"chunk": remainder})
+
+                # --- messageStop ---
+                elif "messageStop" in event:
+                    stop_reason = event["messageStop"].get("stopReason", "")
                     self.latency.mark_end()
-                    await self.text_queue.put({"complete": True})
-                    await self.text_queue.put({"turn_complete": True})
+                    break
 
-                # Tool use (if any)
-                elif 'toolUseBlockStart' in event or 'toolUse' in event:
-                    # Tool start detected
-                    pass
-                elif 'toolUseBlockDelta' in event:
-                    delta = event['toolUseBlockDelta'].get('delta', {})
-                    # Tool input streaming
-                    pass
-                elif 'toolUseBlockStop' in event:
-                    # Tool completed - extract tool info from accumulated state
-                    pass
-                    
+            # Record assistant text in conversation history
+            if accumulated_text:
+                self._conversation_history.append({
+                    "role": "assistant",
+                    "content": [{"text": accumulated_text}],
+                })
+
+            # If stop_reason is tool_use, the relay task will call send_tool_result()
+            # which re-enters _generate_assistant_response(). Don't finalize yet.
+            if stop_reason == "tool_use":
+                return
+
+            # --- Turn complete ---
+            await self.text_queue.put({"turn_complete": True})
+
+            # --- TTS: synthesize audio for the full text response ---
+            if accumulated_text:
+                from app.services.nova_sonic import nova_sonic
+                audio_data = await nova_sonic._synthesize_speech(accumulated_text)
+                if audio_data:
+                    audio_b64 = nova_sonic.encode_audio_base64(audio_data)
+                    await self.audio_queue.put({
+                        "audio": audio_b64,
+                        "sample_rate": 16000,
+                    })
+
         except Exception as e:
-            print(f"[Nova Sonic Stream] Error: {e}")
+            print(f"[Nova Sonic Stream] Error: {e}\n{traceback.format_exc()}")
             await self.text_queue.put({"error": str(e)})
+            await self.text_queue.put({"turn_complete": True})
 
-    async def send_text_message(self, message: str):
-        """Send a text message directly (for text-based conversations)."""
-        self._conversation_history.append({"role": "user", "content": [{"text": message}]})
-        await self._generate_assistant_response()
+    # ------------------------------------------------------------------
+    # Thinking-block filter
+    # ------------------------------------------------------------------
 
-    async def send_tool_result(self, tool_use_id: str, result: Dict[str, Any]):
-        """Send tool result back to the model."""
-        tool_result_content = {
-            "toolResult": {
-                "toolUseId": tool_use_id,
-                "content": [{"text": json.dumps(result)}],
-                "status": "success"
-            }
-        }
-        
-        self._conversation_history.append({
-            "role": "user",
-            "content": [tool_result_content]
-        })
-        
-        await self._generate_assistant_response()
+    def _filter_thinking(self, text: str) -> str:
+        """
+        Filter out <thinking>...</thinking> blocks that may span multiple
+        chunks. Returns the portion of text that should be emitted.
+        """
+        self._partial_text += text
+        output = ""
 
-    def _loop(self):
-        return asyncio.get_event_loop()
+        while True:
+            if not self._in_thinking_block:
+                idx = self._partial_text.find("<thinking>")
+                if idx != -1:
+                    output += self._partial_text[:idx]
+                    self._partial_text = self._partial_text[idx + 10:]
+                    self._in_thinking_block = True
+                    continue
+                elif "<thinking" in self._partial_text:
+                    # Might be a partial tag; hold back
+                    break
+                else:
+                    output += self._partial_text
+                    self._partial_text = ""
+                    break
+            else:
+                idx = self._partial_text.find("</thinking>")
+                if idx != -1:
+                    self._partial_text = self._partial_text[idx + 12:]
+                    self._in_thinking_block = False
+                    continue
+                elif "</thinking" in self._partial_text:
+                    break
+                else:
+                    # Still inside thinking; discard
+                    self._partial_text = ""
+                    break
+
+        return output
+
+    def _flush_thinking_buffer(self) -> str:
+        """Flush remaining partial text (called at content block end)."""
+        if self._partial_text and not self._in_thinking_block:
+            if "<thinking" not in self._partial_text:
+                out = self._partial_text
+                self._partial_text = ""
+                return out
+        self._partial_text = ""
+        return ""
+
+    # ------------------------------------------------------------------
+    # Cleanup
+    # ------------------------------------------------------------------
 
     async def close(self):
         """Close the streaming session."""
@@ -324,12 +468,16 @@ class NovaSonicStreamSession:
             except (asyncio.CancelledError, Exception):
                 pass
 
-        # Sentinel values
+        # Sentinel values to unblock relay consumers
         await self.text_queue.put(None)
         await self.tool_queue.put(None)
         await self.transcript_queue.put(None)
         await self.audio_queue.put(None)
 
+
+# ======================================================================
+# Prompt & tool builders (used by nova_sonic.create_streaming_session)
+# ======================================================================
 
 def build_nova_sonic_system_prompt(
     business_context: Dict[str, Any],
@@ -337,20 +485,15 @@ def build_nova_sonic_system_prompt(
     knowledge_context: str = "",
     training_context: str = "",
 ) -> str:
-    """
-    Build the system prompt for Nova Sonic voice conversations.
-    
-    This creates a specialized prompt optimized for voice interactions
-    with the business context and customer information.
-    """
+    """Build the system prompt for Nova Sonic voice conversations."""
     business_name = business_context.get("name", "our business")
     business_type = business_context.get("type", "general")
     services = business_context.get("services", [])
     menu = business_context.get("menu", [])
     hours = business_context.get("hours", {})
-    
+
     customer_name = customer_context.get("name", "Unknown")
-    
+
     prompt = f"""You are an AI voice receptionist for {business_name}, a {business_type} business.
 
 Your role is to:
@@ -363,29 +506,31 @@ Your role is to:
 Business Information:
 - Type: {business_type}
 """
-    
+
     if services:
         prompt += f"- Services: {', '.join(services)}\n"
-    
+
     if menu:
-        menu_items = ", ".join([f"{item.get('name', '')} (${item.get('price', 0)})" for item in menu[:10]])
+        menu_items = ", ".join(
+            [f"{item.get('name', '')} (${item.get('price', 0)})" for item in menu[:10]]
+        )
         prompt += f"- Menu Items: {menu_items}\n"
-    
+
     if hours:
         prompt += f"- Hours: {json.dumps(hours)}\n"
-    
+
     prompt += f"""
 
 Current Customer:
 - Name: {customer_name}
 """
-    
+
     if knowledge_context:
         prompt += f"\nKnowledge Base:\n{knowledge_context}\n"
-    
+
     if training_context:
         prompt += f"\n{training_context}\n"
-    
+
     prompt += """
 Voice Interaction Guidelines:
 - Keep responses conversational and natural (like a real person speaking)
@@ -397,21 +542,19 @@ Voice Interaction Guidelines:
 - Respond directly without thinking or analysis steps - just provide the helpful response
 
 When a customer wants to:
-- Book an appointment → ask for date, time, and service
-- Place an order → ask what items they want
-- Get directions → provide the business address
-- Speak to a human → transfer the call
+- Book an appointment -> ask for date, time, and service
+- Place an order -> ask what items they want
+- Get directions -> provide the business address
+- Speak to a human -> transfer the call
 """
-    
+
     return prompt
 
 
-def build_tool_definitions(business_type: str, business_context: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """
-    Build tool definitions for Nova Sonic to use.
-    
-    These are the actions the AI can take during a voice conversation.
-    """
+def build_tool_definitions(
+    business_type: str, business_context: Dict[str, Any]
+) -> List[Dict[str, Any]]:
+    """Build tool definitions for Nova Sonic to use."""
     base_tools = [
         {
             "name": "bookAppointment",
@@ -422,28 +565,28 @@ def build_tool_definitions(business_type: str, business_context: Dict[str, Any])
                     "properties": {
                         "date": {
                             "type": "string",
-                            "description": "The date for the appointment (e.g., 'tomorrow', 'next Tuesday', 'March 15')"
+                            "description": "The date for the appointment (e.g., 'tomorrow', 'next Tuesday', 'March 15')",
                         },
                         "time": {
                             "type": "string",
-                            "description": "The time for the appointment (e.g., '2pm', '10:30 AM')"
+                            "description": "The time for the appointment (e.g., '2pm', '10:30 AM')",
                         },
                         "customer_name": {
                             "type": "string",
-                            "description": "Customer's name"
+                            "description": "Customer's name",
                         },
                         "customer_phone": {
                             "type": "string",
-                            "description": "Customer's phone number"
+                            "description": "Customer's phone number",
                         },
                         "service": {
                             "type": "string",
-                            "description": "The type of service being booked"
-                        }
+                            "description": "The type of service being booked",
+                        },
                     },
-                    "required": ["date", "time", "customer_name", "service"]
+                    "required": ["date", "time", "customer_name", "service"],
                 }
-            }
+            },
         },
         {
             "name": "checkAvailability",
@@ -454,16 +597,16 @@ def build_tool_definitions(business_type: str, business_context: Dict[str, Any])
                     "properties": {
                         "date": {
                             "type": "string",
-                            "description": "The date to check"
+                            "description": "The date to check",
                         },
                         "time": {
                             "type": "string",
-                            "description": "The time to check"
-                        }
+                            "description": "The time to check",
+                        },
                     },
-                    "required": ["date", "time"]
+                    "required": ["date", "time"],
                 }
-            }
+            },
         },
         {
             "name": "placeOrder",
@@ -478,27 +621,22 @@ def build_tool_definitions(business_type: str, business_context: Dict[str, Any])
                                 "type": "object",
                                 "properties": {
                                     "name": {"type": "string"},
-                                    "quantity": {"type": "integer"}
-                                }
-                            }
+                                    "quantity": {"type": "integer"},
+                                },
+                            },
                         },
                         "delivery_method": {
                             "type": "string",
-                            "description": "pickup or delivery"
-                        }
-                    }
+                            "description": "pickup or delivery",
+                        },
+                    },
                 }
-            }
+            },
         },
         {
             "name": "confirmOrder",
             "description": "Finalize and save the current order",
-            "inputSchema": {
-                "json": {
-                    "type": "object",
-                    "properties": {}
-                }
-            }
+            "inputSchema": {"json": {"type": "object", "properties": {}}},
         },
         {
             "name": "transferToHuman",
@@ -509,21 +647,16 @@ def build_tool_definitions(business_type: str, business_context: Dict[str, Any])
                     "properties": {
                         "reason": {
                             "type": "string",
-                            "description": "Reason for transfer"
+                            "description": "Reason for transfer",
                         }
-                    }
+                    },
                 }
-            }
+            },
         },
         {
             "name": "sendDirections",
             "description": "Send directions to the business location",
-            "inputSchema": {
-                "json": {
-                    "type": "object",
-                    "properties": {}
-                }
-            }
+            "inputSchema": {"json": {"type": "object", "properties": {}}},
         },
         {
             "name": "processPayment",
@@ -534,12 +667,12 @@ def build_tool_definitions(business_type: str, business_context: Dict[str, Any])
                     "properties": {
                         "amount": {
                             "type": "number",
-                            "description": "Payment amount"
+                            "description": "Payment amount",
                         }
-                    }
+                    },
                 }
-            }
-        }
+            },
+        },
     ]
-    
+
     return base_tools

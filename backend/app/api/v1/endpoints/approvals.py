@@ -3,13 +3,31 @@ Approval Management API
 Handles manager approval requests for AI actions requiring review
 """
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from datetime import datetime
+from pydantic import BaseModel
 
 from app.api import deps
 from app.models.models import ApprovalRequest, User, CallSession
+
+
+# Pydantic schemas for validation
+class OverrideRequest(BaseModel):
+    request_type: Optional[str] = None
+    call_session_id: Optional[str] = None
+    original_response: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = ""
+
+
+class RejectRequest(BaseModel):
+    request_type: Optional[str] = None
+    call_session_id: Optional[str] = None
+    context: Optional[Dict[str, Any]] = None
+    notes: Optional[str] = ""
+
 
 router = APIRouter()
 
@@ -45,17 +63,21 @@ async def create_approval_request(
 
 @router.post("/override")
 async def approve_override(
+    request: OverrideRequest,
     *,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
-    request_type: str,
-    call_session_id: str,
-    original_response: str,
-    context: Dict[str, Any],
-    notes: str = ""
 ) -> Any:
     """Approve an AI override request"""
     business_id = await deps.get_current_business_id(current_user, db)
+    
+    # Use provided values or defaults
+    call_session_id = request.call_session_id or "unknown"
+    request_type = request.request_type or "override"
+    original_response = request.original_response or ""
+    context = request.context or {}
+    notes = request.notes or ""
+    
     # Create or update approval request
     approval = db.query(ApprovalRequest).filter(
         ApprovalRequest.call_session_id == call_session_id,
@@ -94,16 +116,20 @@ async def approve_override(
 
 @router.post("/reject")
 async def reject_request(
+    request: RejectRequest,
     *,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
-    request_type: str,
-    call_session_id: str,
-    context: Dict[str, Any],
-    notes: str = ""
 ) -> Any:
     """Reject an AI action request"""
     business_id = await deps.get_current_business_id(current_user, db)
+    
+    # Use provided values or defaults
+    call_session_id = request.call_session_id or "unknown"
+    request_type = request.request_type or "unknown"
+    context = request.context or {}
+    notes = request.notes or ""
+    
     # Create or update approval request
     approval = db.query(ApprovalRequest).filter(
         ApprovalRequest.call_session_id == call_session_id,
