@@ -839,11 +839,64 @@ async def voice_websocket(
                             asking_for_confirmed = True
                     
                     if asking_for_info and asking_for_confirmed:
-                        # Stop asking - info is already confirmed
-                        reasoning_result["suggested_response"] = f"Great, thank you {ws_session['customer_name']}! Let me proceed with your appointment."
+                        # Stop asking - info is already confirmed, now actually check availability
+                        try:
+                            from app.services.calendar_service import calendar_service
+                            from app.models.models import CalendarIntegration
+                            
+                            # Parse the confirmed date and time
+                            date_str = confirmed_info.get("date") or confirmed_info.get("preferred_date")
+                            time_str = confirmed_info.get("time") or confirmed_info.get("preferred_time")
+                            appointment_time = parse_natural_datetime(date_str, time_str)
+                            
+                            if appointment_time:
+                                end_time = appointment_time + timedelta(hours=1)
+                                
+                                # Check availability immediately
+                                integration = db.query(CalendarIntegration).filter(
+                                    CalendarIntegration.business_id == business_id,
+                                    CalendarIntegration.status == "active"
+                                ).first()
+                                
+                                is_available = True
+                                if integration:
+                                    availability = await calendar_service.check_availability(integration, appointment_time, end_time, db)
+                                    is_available = availability.get("available", False)
+                                else:
+                                    db_conflicts = calendar_service.check_db_conflicts(business_id, appointment_time, end_time, db)
+                                    is_available = not db_conflicts
+                                
+                                date_fmt = appointment_time.strftime("%B %d")
+                                time_fmt = appointment_time.strftime("%I:%M %p")
+                                
+                                if is_available:
+                                    # Book it immediately since all info is confirmed
+                                    result = await calendar_service.check_and_book_appointment(
+                                        business_id=business_id,
+                                        start_time=appointment_time,
+                                        end_time=end_time,
+                                        customer_name=ws_session.get("customer_name", "Unknown"),
+                                        customer_phone=ws_session.get("customer_phone", "Unknown"),
+                                        service=confirmed_info.get("service") or confirmed_info.get("service_type") or "General Checkup",
+                                        db=db
+                                    )
+                                    
+                                    if result["success"]:
+                                        reasoning_result["suggested_response"] = f"Great! I've checked and {date_fmt} at {time_fmt} is available. I've booked your appointment. We'll see you then!"
+                                    else:
+                                        reasoning_result["suggested_response"] = f"I've checked availability, but there's an issue booking. {result.get('message', 'Please try a different time.')}"
+                                else:
+                                    # Not available, suggest alternatives
+                                    reasoning_result["suggested_response"] = f"I've checked availability, but {date_fmt} at {time_fmt} is not available. Would you like me to check another time?"
+                            else:
+                                reasoning_result["suggested_response"] = f"Great, thank you {ws_session['customer_name']}! I need a specific date and time to check availability."
+                        except Exception as e:
+                            print(f"[Voice API WS] Availability check error: {e}")
+                            reasoning_result["suggested_response"] = f"Great, thank you {ws_session['customer_name']}! Let me check availability for your appointment."
                         agent_response = reasoning_result["suggested_response"]
-                        print(f"[Voice API WS] Skipping confirmation - info already confirmed: {confirmed_info}")
+                        print(f"[Voice API WS] Info confirmed, checking availability: {confirmed_info}")
                     elif asking_for_info:
+                        # Still collecting info
                         reasoning_result["suggested_response"] = f"Great, thank you {ws_session['customer_name']}! Let me check availability for your appointment."
                         agent_response = reasoning_result["suggested_response"]
                 
