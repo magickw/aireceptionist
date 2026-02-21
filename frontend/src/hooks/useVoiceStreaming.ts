@@ -100,6 +100,11 @@ export function useVoiceStreaming({
       const audioCtx = new AudioContext({ sampleRate: 16000 });
       audioContextRef.current = audioCtx;
 
+      // Resume if suspended (browser autoplay policy)
+      if (audioCtx.state === 'suspended') {
+        await audioCtx.resume();
+      }
+
       // If browser forced a different sample rate, we'll downsample
       const actualRate = audioCtx.sampleRate;
 
@@ -133,7 +138,13 @@ export function useVoiceStreaming({
 
         const pcm16 = float32ToInt16(samples);
         const bytes = new Uint8Array(pcm16.buffer);
-        const b64 = btoa(String.fromCharCode(...bytes));
+
+        // Chunk-safe base64 encoding (avoid stack overflow from spread on large arrays)
+        let binary = '';
+        for (let i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        const b64 = btoa(binary);
 
         ws.send(JSON.stringify({ type: 'audio', content: b64 }));
       };
@@ -203,6 +214,10 @@ export function useVoiceStreaming({
   const getPlaybackCtx = useCallback(() => {
     if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
       playbackCtxRef.current = new AudioContext();
+    }
+    // Resume if suspended (browser autoplay policy)
+    if (playbackCtxRef.current.state === 'suspended') {
+      playbackCtxRef.current.resume().catch(() => {});
     }
     return playbackCtxRef.current;
   }, []);

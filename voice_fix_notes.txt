@@ -1,0 +1,26 @@
+Voice Recognition Issue Analysis:
+================================
+
+Problem:
+- Call simulator shows "Nova could not understand the audio" error
+- Streaming mode is failing to initialize (fallback to batch mode)
+- Batch mode uses Amazon Transcribe which requires S3 upload
+- Transcription might be failing due to:
+  1. S3 bucket creation permissions
+  2. Audio format issues
+  3. Insufficient audio data
+  4. Transcription job timeout
+
+Current State:
+- Audio buffering is implemented (64KB threshold ~2 seconds)
+- Error logging is improved
+- Frontend sends listening acknowledgment
+
+Potential Fixes:
+1. Check S3 permissions for creating buckets
+2. Pre-create S3 bucket for transcription
+3. Add fallback to simple text input when transcription fails
+4. Improve streaming mode initialization to understand why it fails
+5. Add better error messages to help debug
+
+The streaming mode failure is the root cause - if streaming worked, we wouldn't need S3/Transcribe at all.

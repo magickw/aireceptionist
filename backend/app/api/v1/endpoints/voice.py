@@ -427,11 +427,33 @@ async def _run_streaming_relay(
                 break
 
     async def _relay_text():
+        accumulated_text = ""
         while sonic_session.is_active:
             item = await sonic_session.text_queue.get()
             if item is None:
+                # Session closing — flush any accumulated text
+                if accumulated_text:
+                    conversation_history.append({"role": "ai", "content": accumulated_text})
                 break
+
+            if item.get("turn_complete"):
+                # Assistant turn finished — send final signal and record in history
+                if accumulated_text:
+                    conversation_history.append({"role": "ai", "content": accumulated_text})
+                    try:
+                        await websocket.send_json({
+                            "type": "text_chunk",
+                            "chunk": "",
+                            "is_last": True,
+                            "full_text": accumulated_text,
+                        })
+                    except Exception:
+                        break
+                accumulated_text = ""
+                continue
+
             chunk = item.get("chunk", "")
+            accumulated_text += chunk
             try:
                 await websocket.send_json({
                     "type": "text_chunk",
@@ -450,14 +472,18 @@ async def _run_streaming_relay(
             tool_input = item.get("input", {})
             tool_use_id = item.get("tool_use_id", "")
 
-            result = await handle_tool_use(
-                tool_name=tool_name,
-                tool_input=tool_input,
-                ws_session=ws_session,
-                business_id=business_id,
-                business_context=business_context,
-                db=db,
-            )
+            try:
+                result = await handle_tool_use(
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    ws_session=ws_session,
+                    business_id=business_id,
+                    business_context=business_context,
+                    db=db,
+                )
+            except Exception as e:
+                print(f"[Relay] Tool execution error for {tool_name}: {e}")
+                result = {"success": False, "message": f"Tool execution failed: {str(e)}"}
 
             # Send tool result back to the model so it can continue
             await sonic_session.send_tool_result(tool_use_id, result)
@@ -481,6 +507,16 @@ async def _run_streaming_relay(
         _relay_tools(),
         return_exceptions=True,
     )
+
+    # If the stream died mid-session, notify the client to fall back
+    if not sonic_session.is_active:
+        try:
+            await websocket.send_json({
+                "type": "streaming_failed",
+                "message": "Voice stream disconnected. Falling back to text mode.",
+            })
+        except Exception:
+            pass
 
 
 @router.websocket("/ws")
@@ -1100,6 +1136,13 @@ async def voice_websocket(
                 # Mark beginning of user voice turn (streaming mode)
                 if use_streaming and sonic_session and sonic_session.is_active:
                     await sonic_session.start_user_turn()
+                elif use_streaming and sonic_session and not sonic_session.is_active:
+                    # Stream died — tell client to switch modes
+                    use_streaming = False
+                    await manager.send_json(session_id, {
+                        "type": "streaming_failed",
+                        "message": "Voice stream disconnected. Please use text input.",
+                    })
 
             elif message_type == "audio_stop":
                 # Mark end of user voice turn (streaming mode)

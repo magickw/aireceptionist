@@ -206,6 +206,11 @@ export default function CallSimulator() {
           } else if (data.type === 'human_intervention_request') {
             setAutonomyMode('GUARDED');
             addMessageRef.current(`[Transfer requested: ${data.reason || 'Human agent needed'}]`, 'ai');
+          } else if (data.type === 'streaming_failed') {
+            // Stream died mid-session — fall back to text mode
+            setIsStreamingReady(false);
+            setInputMode('text');
+            console.warn('[CallSim] Streaming failed:', data.message);
           } else if (data.type === 'latency_metrics') {
             setLatencyMetrics(data.metrics);
             console.log('[CallSim] Latency:', data.metrics);
@@ -388,6 +393,8 @@ export default function CallSimulator() {
         <VoiceVisualizer
           isActive={!!currentCall}
           isSpeaking={isSpeaking || isPlaying}
+          isRecording={isRecording}
+          micLevel={micLevel}
         />
       </Box>
 

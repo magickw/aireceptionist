@@ -365,21 +365,19 @@ export default function CalendarPage() {
           <Paper elevation={3} sx={{ p: 3, height: '100%' }}>
             <Typography variant="h6" gutterBottom>Date Selector</Typography>
             {/* Direct usage of dynamically imported DateTimePicker for main date selector */}
-            {typeof window !== 'undefined' && (
-              <LocalizationProvider dateAdapter={AdapterDayjs}>
-                <DateTimePicker
-                  label="Select Date"
-                  value={selectedDate}
-                  onChange={handleDateChange}
-                  renderInput={(params) => <TextField {...params} fullWidth />}
-                  slotProps={{
-                    actionBar: {
-                      actions: ['clear', 'today'],
-                    },
-                  }}
-                />
-              </LocalizationProvider>
-            )}
+            <LocalizationProvider dateAdapter={AdapterDayjs}>
+              <DateTimePicker
+                label="Select Date"
+                value={selectedDate}
+                onChange={handleDateChange}
+                renderInput={(params) => <TextField {...params} fullWidth />}
+                slotProps={{
+                  actionBar: {
+                    actions: ['clear', 'today'],
+                  },
+                }}
+              />
+            </LocalizationProvider>
 
             <Box sx={{ mt: 3 }}>
               <Typography variant="h6" gutterBottom>Available Slots</Typography>

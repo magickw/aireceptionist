@@ -5,9 +5,11 @@ import { Box, Typography } from '@mui/material';
 interface VoiceVisualizerProps {
   isActive: boolean;
   isSpeaking?: boolean;
+  isRecording?: boolean;
+  micLevel?: number; // 0-1, real microphone input level
 }
 
-const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive, isSpeaking = false }) => {
+const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive, isSpeaking = false, isRecording = false, micLevel = 0 }) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const animationRef = useRef<number>();
   const [bars] = useState(() => 
@@ -32,7 +34,7 @@ const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive, isSpeaking 
           const barHeight = height * bar * 0.2;
           const x = i * barWidth;
           const y = (height - barHeight) / 2;
-          
+
           ctx.fillStyle = 'rgba(100, 100, 100, 0.5)';
           ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
         });
@@ -42,30 +44,51 @@ const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive, isSpeaking 
           // Randomize height for animation
           const randomFactor = Math.random() * 0.6 + 0.2;
           const barHeight = height * bar * randomFactor;
-          
+
           // Gradient color based on height
           const intensity = randomFactor;
           const r = Math.floor(96 + intensity * 80);
           const g = Math.floor(165 + intensity * 90);
           const b = Math.floor(250);
-          
+
           const barWidth = width / bars.length;
           const x = i * barWidth;
           const y = (height - barHeight) / 2;
-          
+
           // Create gradient
           const gradient = ctx.createLinearGradient(0, y, 0, y + barHeight);
           gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.9)`);
           gradient.addColorStop(0.5, `rgba(${r}, ${g}, ${b}, 0.6)`);
           gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.3)`);
-          
+
           ctx.fillStyle = gradient;
           ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
-          
+
           // Round the tops
           ctx.beginPath();
           ctx.arc(x + barWidth / 2, y, (barWidth - 2) / 2, Math.PI, 0);
           ctx.fill();
+        });
+      } else if (isRecording && micLevel > 0) {
+        // Recording state - bars driven by real mic level
+        bars.forEach((bar, i) => {
+          const spread = Math.sin((i / bars.length) * Math.PI);
+          const barHeight = height * bar * micLevel * spread * 1.5 + height * 0.05;
+
+          const barWidth = width / bars.length;
+          const x = i * barWidth;
+          const y = (height - barHeight) / 2;
+
+          const r = Math.floor(239);
+          const g = Math.floor(68 + micLevel * 100);
+          const b = Math.floor(68);
+
+          const gradient = ctx.createLinearGradient(0, y, 0, y + barHeight);
+          gradient.addColorStop(0, `rgba(${r}, ${g}, ${b}, 0.9)`);
+          gradient.addColorStop(1, `rgba(${r}, ${g}, ${b}, 0.3)`);
+
+          ctx.fillStyle = gradient;
+          ctx.fillRect(x + 1, y, barWidth - 2, barHeight);
         });
       } else {
         // Listening state - subtle animation
@@ -93,7 +116,7 @@ const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive, isSpeaking 
         cancelAnimationFrame(animationRef.current);
       }
     };
-  }, [isActive, isSpeaking, bars]);
+  }, [isActive, isSpeaking, isRecording, micLevel, bars]);
   
   return (
     <Box
@@ -135,7 +158,7 @@ const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive, isSpeaking 
           </Typography>
         </Box>
       )}
-      {isActive && !isSpeaking && (
+      {isActive && !isSpeaking && !isRecording && (
         <Box
           sx={{
             position: 'absolute',
@@ -153,6 +176,29 @@ const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive, isSpeaking 
             }}
           >
             Listening...
+          </Typography>
+        </Box>
+      )}
+      {isRecording && (
+        <Box
+          sx={{
+            position: 'absolute',
+            top: 4,
+            right: 8,
+          }}
+        >
+          <Typography
+            variant="caption"
+            sx={{
+              color: '#ef4444',
+              fontSize: '0.65rem',
+              letterSpacing: 1,
+              textTransform: 'uppercase',
+              fontWeight: 'bold',
+              animation: 'pulse 1s infinite',
+            }}
+          >
+            Recording
           </Typography>
         </Box>
       )}
