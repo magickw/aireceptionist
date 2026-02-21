@@ -883,6 +883,12 @@ async def voice_websocket(
                                     
                                     if result["success"]:
                                         reasoning_result["suggested_response"] = f"Great! I've checked and {date_fmt} at {time_fmt} is available. I've booked your appointment. We'll see you then!"
+                                        ws_session["appointment_confirmed"] = True
+                                        ws_session["last_appointment_summary"] = {
+                                            "start_time": appointment_time,
+                                            "end_time": end_time,
+                                            "service": confirmed_info.get("service") or confirmed_info.get("service_type") or "General Checkup"
+                                        }
                                     else:
                                         reasoning_result["suggested_response"] = f"I've checked availability, but there's an issue booking. {result.get('message', 'Please try a different time.')}"
                                 else:
@@ -1116,6 +1122,12 @@ async def voice_websocket(
                                     date_fmt = appointment_time.strftime("%B %d")
                                     time_fmt = appointment_time.strftime("%I:%M %p")
                                     agent_response = f"Great! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                                    ws_session["appointment_confirmed"] = True
+                                    ws_session["last_appointment_summary"] = {
+                                        "start_time": appointment_time,
+                                        "end_time": end_time,
+                                        "service": service or "General Checkup"
+                                    }
                                     print(f"[Voice WS] Created appointment {result['appointment'].id} for {ws_session.get('customer_phone')} at {appointment_time}")
                                 else:
                                     agent_response = f"I'm sorry, I couldn't book that appointment. {result.get('message', 'Please try a different time.')}"
@@ -1126,6 +1138,54 @@ async def voice_websocket(
                         agent_response = "I'd be happy to book an appointment for you. What date and time would you prefer?"
                 
                 # Also handle when customer asks about availability (not just CREATE_APPOINTMENT action)
+                # Handle gratitude and closing phrases
+                gratitude_phrases = ["thank you", "thanks", "thank", "thx", "appreciate it"]
+                closing_phrases = ["bye", "goodbye", "good bye", "see you", "take care", "have a nice", "have a great", "talk to you later"]
+                is_gratitude = any(phrase in content_lower for phrase in gratitude_phrases)
+                is_closing = any(phrase in content_lower for phrase in closing_phrases)
+                
+                # Check if a task was recently completed
+                task_completed = (
+                    ws_session.get("order_confirmed") or 
+                    ws_session.get("appointment_confirmed") or
+                    ("booked your appointment" in agent_response) or
+                    ("confirmed your order" in agent_response)
+                )
+                
+                # Handle gratitude after task completion
+                if is_gratitude and task_completed:
+                    if ws_session.get("order_confirmed"):
+                        last_order = ws_session.get("last_order_summary", {})
+                        if last_order:
+                            agent_response = f"You're welcome! Your order ({last_order.get('items', 'your items')}) will be ready for {last_order.get('delivery_method', 'pickup')}. Have a great day!"
+                    elif ws_session.get("appointment_confirmed"):
+                        last_appt = ws_session.get("last_appointment_summary", {})
+                        if last_appt and last_appt.get("start_time"):
+                            date_fmt = last_appt.get("start_time").strftime("%B %d")
+                            time_fmt = last_appt.get("start_time").strftime("%I:%M %p")
+                            agent_response = f"You're welcome! We'll see you on {date_fmt} at {time_fmt}. Have a wonderful day!"
+                    else:
+                        agent_response = "You're welcome! Is there anything else I can help you with?"
+                    
+                    # Skip further processing
+                    skip_reasoning = True
+                
+                # Handle closing phrases after task completion
+                elif is_closing and task_completed:
+                    if ws_session.get("order_confirmed"):
+                        agent_response = "Thank you for your order! Have a great day, and we look forward to serving you again soon!"
+                    elif ws_session.get("appointment_confirmed"):
+                        agent_response = "Thank you for calling! We'll see you at your scheduled appointment. Have a wonderful day!"
+                    else:
+                        agent_response = "Thank you for calling! Have a great day!"
+                    
+                    skip_reasoning = True
+                
+                # Handle closing phrases without task completion
+                elif is_closing:
+                    agent_response = "Thank you for calling! If you need anything else in the future, don't hesitate to reach out. Have a great day!"
+                    skip_reasoning = True
+                
                 # Check if message mentions availability or booking with a specific time
                 elif "available" in content_lower or "book" in content_lower or "appointment" in content_lower:
                     date_str = entities.get("date") or entities.get("preferred_date")
@@ -1173,6 +1233,12 @@ async def voice_websocket(
                                     
                                     if result["success"]:
                                         agent_response = f"Perfect! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                                        ws_session["appointment_confirmed"] = True
+                                        ws_session["last_appointment_summary"] = {
+                                            "start_time": appointment_time,
+                                            "end_time": end_time,
+                                            "service": entities.get("service") or entities.get("service_type") or "General Checkup"
+                                        }
                                     else:
                                         agent_response = f"I'm sorry, I couldn't complete the booking. Would you like to try a different time?"
                                 else:
@@ -2193,22 +2259,77 @@ async def send_http_message(
     # Handle post-order confirmation context
     # If customer thanks us after order, acknowledge properly
     gratitude_phrases = ["thank you", "thanks", "thank", "thx", "appreciate it"]
+    closing_phrases = ["bye", "goodbye", "good bye", "see you", "take care", "have a nice", "have a great", "talk to you later"]
     is_gratitude = any(phrase in message_lower for phrase in gratitude_phrases)
+    is_closing = any(phrase in message_lower for phrase in closing_phrases)
     
-    if is_gratitude and http_session and http_session.get("order_confirmed"):
-        last_order = http_session.get("last_order_summary", {})
-        if last_order:
-            agent_response = f"You're welcome! Your order ({last_order.get('items', 'your items')}) will be ready for {last_order.get('delivery_method', 'pickup')}. Is there anything else I can help you with?"
-            session_store.add_event(session_id, {
-                "type": "agent_response",
-                "text": agent_response,
-                "reasoning": reasoning_result
-            })
-            session["conversation_history"].append({
-                "role": "ai",
-                "content": agent_response
-            })
-            return {"status": "processed", "text": agent_response}
+    # Check if a task was recently completed
+    task_completed = (
+        http_session.get("order_confirmed") or 
+        http_session.get("appointment_confirmed") or
+        "booked your appointment" in session.get("conversation_history", [])[-1].get("content", "") if session.get("conversation_history") else False or
+        "confirmed your order" in session.get("conversation_history", [])[-1].get("content", "") if session.get("conversation_history") else False
+    )
+    
+    # Handle gratitude after task completion
+    if is_gratitude and task_completed:
+        if http_session.get("order_confirmed"):
+            last_order = http_session.get("last_order_summary", {})
+            if last_order:
+                agent_response = f"You're welcome! Your order ({last_order.get('items', 'your items')}) will be ready for {last_order.get('delivery_method', 'pickup')}. Have a great day!"
+        elif http_session.get("appointment_confirmed"):
+            last_appt = http_session.get("last_appointment_summary", {})
+            if last_appt:
+                date_fmt = last_appt.get("start_time").strftime("%B %d") if last_appt.get("start_time") else "your appointment"
+                time_fmt = last_appt.get("start_time").strftime("%I:%M %p") if last_appt.get("start_time") else "your scheduled time"
+                agent_response = f"You're welcome! We'll see you on {date_fmt} at {time_fmt}. Have a wonderful day!"
+        else:
+            agent_response = "You're welcome! Is there anything else I can help you with?"
+        
+        session_store.add_event(session_id, {
+            "type": "agent_response",
+            "text": agent_response,
+            "reasoning": reasoning_result
+        })
+        session["conversation_history"].append({
+            "role": "ai",
+            "content": agent_response
+        })
+        return {"status": "processed", "text": agent_response}
+    
+    # Handle closing phrases after task completion
+    if is_closing and task_completed:
+        if http_session.get("order_confirmed"):
+            agent_response = "Thank you for your order! Have a great day, and we look forward to serving you again soon!"
+        elif http_session.get("appointment_confirmed"):
+            agent_response = "Thank you for calling! We'll see you at your scheduled appointment. Have a wonderful day!"
+        else:
+            agent_response = "Thank you for calling! Have a great day!"
+        
+        session_store.add_event(session_id, {
+            "type": "agent_response",
+            "text": agent_response,
+            "reasoning": reasoning_result
+        })
+        session["conversation_history"].append({
+            "role": "ai",
+            "content": agent_response
+        })
+        return {"status": "processed", "text": agent_response}
+    
+    # Handle closing phrases without task completion
+    if is_closing:
+        agent_response = "Thank you for calling! If you need anything else in the future, don't hesitate to reach out. Have a great day!"
+        session_store.add_event(session_id, {
+            "type": "agent_response",
+            "text": agent_response,
+            "reasoning": reasoning_result
+        })
+        session["conversation_history"].append({
+            "role": "ai",
+            "content": agent_response
+        })
+        return {"status": "processed", "text": agent_response}
     
     # If customer confirms they want pickup/delivery, store it and ask for contact info
     if delivery_method and http_session and http_session.get("order_items"):
@@ -2475,6 +2596,12 @@ async def send_http_message(
                     date_fmt = pending["start_time"].strftime("%B %d")
                     time_fmt = pending["start_time"].strftime("%I:%M %p")
                     agent_response = f"Great! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                    http_session["appointment_confirmed"] = True
+                    http_session["last_appointment_summary"] = {
+                        "start_time": pending["start_time"],
+                        "end_time": pending["end_time"],
+                        "service": pending.get("service", "General Checkup")
+                    }
                     appointment_created = True
                     print(f"[Voice API] Created appointment {result['appointment'].id} from pending confirmation")
                 else:
