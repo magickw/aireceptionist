@@ -97,6 +97,13 @@ export function useVoiceStreaming({
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
 
+  // Refs for sentence completion detection
+  const accumulatedTranscriptRef = useRef('');
+  const finalTranscriptTimerRef = useRef<number | null>(null);
+  const lastSpeechTimeRef = useRef<number>(0);
+  const silenceThreshold = 1200; // ms of silence before sending
+  const minTranscriptLength = 2; // minimum words to send
+
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
   const playbackQueueRef = useRef<AudioBuffer[]>([]);
@@ -113,7 +120,63 @@ export function useVoiceStreaming({
 
   // ---- Recording (mic capture + browser STT) ----
 
+  /**
+   * Check if transcript forms a complete sentence
+   * Detects sentence boundaries: . ! ? and common completion patterns
+   */
+  const isCompleteSentence = useCallback((text: string): boolean => {
+    const trimmed = text.trim();
+    if (trimmed.length < minTranscriptLength) return false;
+
+    // Check for sentence-ending punctuation
+    const sentenceEnders = /[.!?]\s*$/;
+    if (sentenceEnders.test(trimmed)) return true;
+
+    // Check for question words at end (common in queries)
+    const questionPatterns = /\b(what|where|when|why|how|who|which|whose)\b.*\?$/i;
+    if (questionPatterns.test(trimmed)) return true;
+
+    // Check for command patterns (imperatives)
+    const commandPatterns = /^(please|can you|could you|I need|I want|I would like|book|order|schedule|cancel|help)/i;
+    if (commandPatterns.test(trimmed) && trimmed.length > 10) return true;
+
+    return false;
+  }, []);
+
+  /**
+   * Check if we should send the transcript based on silence or sentence completion
+   */
+  const sendTranscriptIfReady = useCallback(() => {
+    const transcript = accumulatedTranscriptRef.current.trim();
+    if (!transcript) {
+      return;
+    }
+
+    const timeSinceLastSpeech = Date.now() - lastSpeechTimeRef.current;
+    const isSilenceDetected = timeSinceLastSpeech >= silenceThreshold;
+
+    // Send if we have a complete sentence OR significant silence
+    if (isCompleteSentence(transcript) || isSilenceDetected) {
+      // Only send if we have enough content
+      const wordCount = transcript.split(/\s+/).length;
+      if (wordCount >= minTranscriptLength) {
+        console.log('[useVoiceStreaming] Sending transcript:', transcript);
+        setInterimTranscript('');
+        accumulatedTranscriptRef.current = '';
+        onTranscriptRef.current?.(transcript, true);
+      }
+    }
+  }, [isCompleteSentence]);
+
   const startRecording = useCallback(async () => {
+    // Reset transcript state
+    accumulatedTranscriptRef.current = '';
+    lastSpeechTimeRef.current = 0;
+    if (finalTranscriptTimerRef.current) {
+      clearTimeout(finalTranscriptTimerRef.current);
+      finalTranscriptTimerRef.current = null;
+    }
+
     try {
       // 1. Mic capture (for visual level meter only)
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -174,19 +237,37 @@ export function useVoiceStreaming({
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
           let interim = '';
+          let hasFinalResult = false;
+
           for (let i = event.resultIndex; i < event.results.length; i++) {
             const result = event.results[i];
+            const transcript = result[0].transcript;
+
             if (result.isFinal) {
-              const text = result[0].transcript.trim();
-              if (text) {
-                setInterimTranscript('');
-                onTranscriptRef.current?.(text, true);
-              }
-            } else {
-              interim += result[0].transcript;
+              // Browser marked this as final, but we'll use our own completion detection
+              hasFinalResult = true;
             }
+            // Always accumulate transcript (both final and interim)
+            interim += transcript;
           }
-          if (interim) setInterimTranscript(interim);
+
+          // Update interim display
+          if (interim) {
+            setInterimTranscript(interim);
+            accumulatedTranscriptRef.current = interim;
+            lastSpeechTimeRef.current = Date.now();
+          }
+
+          // Clear any pending send timer
+          if (finalTranscriptTimerRef.current) {
+            clearTimeout(finalTranscriptTimerRef.current);
+            finalTranscriptTimerRef.current = null;
+          }
+
+          // Start silence detection timer
+          finalTranscriptTimerRef.current = window.setTimeout(() => {
+            sendTranscriptIfReady();
+          }, silenceThreshold);
         };
 
         recognition.onerror = (ev) => {
@@ -220,6 +301,25 @@ export function useVoiceStreaming({
   }, []);
 
   const stopRecording = useCallback(() => {
+    // Send any pending transcript before stopping
+    if (accumulatedTranscriptRef.current.trim()) {
+      const transcript = accumulatedTranscriptRef.current.trim();
+      const wordCount = transcript.split(/\s+/).length;
+      if (wordCount >= minTranscriptLength) {
+        onTranscriptRef.current?.(transcript, true);
+      }
+    }
+
+    // Clear pending timer
+    if (finalTranscriptTimerRef.current) {
+      clearTimeout(finalTranscriptTimerRef.current);
+      finalTranscriptTimerRef.current = null;
+    }
+
+    // Reset transcript state
+    accumulatedTranscriptRef.current = '';
+    lastSpeechTimeRef.current = 0;
+
     // Stop SpeechRecognition
     if (recognitionRef.current) {
       try {
@@ -349,6 +449,9 @@ export function useVoiceStreaming({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (finalTranscriptTimerRef.current) {
+        clearTimeout(finalTranscriptTimerRef.current);
+      }
       if (recognitionRef.current) {
         try { recognitionRef.current.abort(); } catch { /* */ }
       }
