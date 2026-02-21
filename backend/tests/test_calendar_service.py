@@ -54,48 +54,61 @@ def sample_appointment():
 class TestGoogleOAuth:
     """Test cases for Google OAuth"""
     
-    def test_get_google_auth_url(self, calendar_service):
+    @patch('app.services.calendar_service.settings')
+    def test_get_google_auth_url(self, mock_settings, calendar_service):
         """Test generating Google OAuth URL"""
         business_id = 123
+        mock_settings.GOOGLE_CLIENT_ID = 'test_client_id'
+        mock_settings.GOOGLE_CLIENT_SECRET = 'test_secret'
+        mock_settings.GOOGLE_REDIRECT_URI = 'http://localhost/callback'
         
-        with patch.object(calendar_service, 'GOOGLE_CLIENT_ID', 'test_client_id'):
-            url = calendar_service.get_google_auth_url(business_id)
+        url = calendar_service.get_google_auth_url(business_id)
         
         assert "accounts.google.com" in url
         assert "test_client_id" in url
-        assert "123:" in url  # business_id in state
+        # State is URL-encoded, so check for both versions
+        assert "123:" in url or "123%3A" in url  # business_id in state
         assert "calendar" in url.lower()
     
-    def test_google_auth_url_includes_state(self, calendar_service):
+    @patch('app.services.calendar_service.settings')
+    def test_google_auth_url_includes_state(self, mock_settings, calendar_service):
         """Test that state parameter includes business_id"""
         business_id = 456
+        mock_settings.GOOGLE_CLIENT_ID = 'test_client_id'
+        mock_settings.GOOGLE_CLIENT_SECRET = 'test_secret'
+        mock_settings.GOOGLE_REDIRECT_URI = 'http://localhost/callback'
         
-        with patch.object(calendar_service, 'GOOGLE_CLIENT_ID', 'test_client_id'):
-            url = calendar_service.get_google_auth_url(business_id)
+        url = calendar_service.get_google_auth_url(business_id)
         
-        assert "state=456:" in url or "state=" in url  # State should be present
+        assert "state=" in url  # State should be present
 
 
 class TestMicrosoftOAuth:
     """Test cases for Microsoft OAuth"""
     
-    def test_get_microsoft_auth_url(self, calendar_service):
+    @patch('app.services.calendar_service.settings')
+    def test_get_microsoft_auth_url(self, mock_settings, calendar_service):
         """Test generating Microsoft OAuth URL"""
         business_id = 123
+        mock_settings.MICROSOFT_CLIENT_ID = 'test_client_id'
+        mock_settings.MICROSOFT_CLIENT_SECRET = 'test_secret'
+        mock_settings.MICROSOFT_REDIRECT_URI = 'http://localhost/callback'
         
-        with patch.object(calendar_service, 'MICROSOFT_CLIENT_ID', 'test_client_id'):
-            url = calendar_service.get_microsoft_auth_url(business_id)
+        url = calendar_service.get_microsoft_auth_url(business_id)
         
         assert "login.microsoftonline.com" in url
         assert "test_client_id" in url
         assert "calendars" in url.lower()
     
-    def test_microsoft_auth_url_includes_state(self, calendar_service):
+    @patch('app.services.calendar_service.settings')
+    def test_microsoft_auth_url_includes_state(self, mock_settings, calendar_service):
         """Test that state parameter includes business_id"""
         business_id = 789
+        mock_settings.MICROSOFT_CLIENT_ID = 'test_client_id'
+        mock_settings.MICROSOFT_CLIENT_SECRET = 'test_secret'
+        mock_settings.MICROSOFT_REDIRECT_URI = 'http://localhost/callback'
         
-        with patch.object(calendar_service, 'MICROSOFT_CLIENT_ID', 'test_client_id'):
-            url = calendar_service.get_microsoft_auth_url(business_id)
+        url = calendar_service.get_microsoft_auth_url(business_id)
         
         assert "state=" in url  # State should be present
 
@@ -105,8 +118,14 @@ class TestExchangeGoogleCode:
     
     @pytest.mark.asyncio
     @patch('aiohttp.ClientSession')
-    async def test_exchange_google_code_success(self, mock_session_class, calendar_service, mock_db):
+    @patch('app.services.calendar_service.settings')
+    async def test_exchange_google_code_success(self, mock_settings, mock_session_class, calendar_service, mock_db):
         """Test successful Google code exchange"""
+        # Mock settings
+        mock_settings.GOOGLE_CLIENT_ID = 'test_id'
+        mock_settings.GOOGLE_CLIENT_SECRET = 'test_secret'
+        mock_settings.GOOGLE_REDIRECT_URI = 'http://localhost/callback'
+        
         # Mock token response
         mock_token_response = Mock()
         mock_token_response.status = 200
@@ -133,10 +152,7 @@ class TestExchangeGoogleCode:
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
         
-        with patch.object(calendar_service, 'GOOGLE_CLIENT_ID', 'test_id'), \
-             patch.object(calendar_service, 'GOOGLE_CLIENT_SECRET', 'test_secret'):
-            
-            result = await calendar_service.exchange_google_code("test_code", 1, mock_db)
+        result = await calendar_service.exchange_google_code("test_code", 1, mock_db)
         
         assert result.provider == "google"
         assert result.access_token == "new_access_token"
@@ -145,8 +161,14 @@ class TestExchangeGoogleCode:
     
     @pytest.mark.asyncio
     @patch('aiohttp.ClientSession')
-    async def test_exchange_google_code_existing_integration(self, mock_session_class, calendar_service, mock_db, sample_integration):
+    @patch('app.services.calendar_service.settings')
+    async def test_exchange_google_code_existing_integration(self, mock_settings, mock_session_class, calendar_service, mock_db, sample_integration):
         """Test updating existing integration"""
+        # Mock settings
+        mock_settings.GOOGLE_CLIENT_ID = 'test_id'
+        mock_settings.GOOGLE_CLIENT_SECRET = 'test_secret'
+        mock_settings.GOOGLE_REDIRECT_URI = 'http://localhost/callback'
+        
         # Mock existing integration
         mock_db.query.return_value.filter.return_value.first.return_value = sample_integration
         
@@ -170,10 +192,7 @@ class TestExchangeGoogleCode:
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
         
-        with patch.object(calendar_service, 'GOOGLE_CLIENT_ID', 'test_id'), \
-             patch.object(calendar_service, 'GOOGLE_CLIENT_SECRET', 'test_secret'):
-            
-            result = await calendar_service.exchange_google_code("test_code", 1, mock_db)
+        result = await calendar_service.exchange_google_code("test_code", 1, mock_db)
         
         # Should update existing integration
         assert result.access_token == "updated_token"
@@ -185,8 +204,13 @@ class TestRefreshGoogleToken:
     
     @pytest.mark.asyncio
     @patch('aiohttp.ClientSession')
-    async def test_refresh_google_token_success(self, mock_session_class, calendar_service, mock_db, sample_integration):
+    @patch('app.services.calendar_service.settings')
+    async def test_refresh_google_token_success(self, mock_settings, mock_session_class, calendar_service, mock_db, sample_integration):
         """Test successful token refresh"""
+        # Mock settings
+        mock_settings.GOOGLE_CLIENT_ID = 'test_id'
+        mock_settings.GOOGLE_CLIENT_SECRET = 'test_secret'
+        
         mock_response = Mock()
         mock_response.status = 200
         mock_response.json = AsyncMock(return_value={
@@ -200,18 +224,20 @@ class TestRefreshGoogleToken:
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
         
-        with patch.object(calendar_service, 'GOOGLE_CLIENT_ID', 'test_id'), \
-             patch.object(calendar_service, 'GOOGLE_CLIENT_SECRET', 'test_secret'):
-            
-            result = await calendar_service.refresh_google_token(sample_integration, mock_db)
+        result = await calendar_service.refresh_google_token(sample_integration, mock_db)
         
         assert result is True
         assert sample_integration.access_token == "refreshed_token"
     
     @pytest.mark.asyncio
     @patch('aiohttp.ClientSession')
-    async def test_refresh_google_token_failure(self, mock_session_class, calendar_service, mock_db, sample_integration):
+    @patch('app.services.calendar_service.settings')
+    async def test_refresh_google_token_failure(self, mock_settings, mock_session_class, calendar_service, mock_db, sample_integration):
         """Test token refresh failure"""
+        # Mock settings
+        mock_settings.GOOGLE_CLIENT_ID = 'test_id'
+        mock_settings.GOOGLE_CLIENT_SECRET = 'test_secret'
+        
         mock_response = Mock()
         mock_response.status = 400
         mock_response.json = AsyncMock(return_value={"error": "invalid_grant"})
@@ -222,10 +248,7 @@ class TestRefreshGoogleToken:
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
         
-        with patch.object(calendar_service, 'GOOGLE_CLIENT_ID', 'test_id'), \
-             patch.object(calendar_service, 'GOOGLE_CLIENT_SECRET', 'test_secret'):
-            
-            result = await calendar_service.refresh_google_token(sample_integration, mock_db)
+        result = await calendar_service.refresh_google_token(sample_integration, mock_db)
         
         assert result is False
 
