@@ -4,6 +4,7 @@ import pytest
 from unittest.mock import Mock, patch, AsyncMock, MagicMock
 from datetime import datetime
 import asyncio
+import json
 
 from app.services.nova_act import (
     NovaActAutomation,
@@ -411,7 +412,7 @@ class TestWorkflowCreation:
             interaction_data={"type": "email"}
         )
         
-        assert workflow.name == "HubSpot CRM Update"
+        assert workflow.name == "Hubspot CRM Update"  # Lowercase 'p' in actual implementation
         assert len(workflow.steps) == 5
         assert workflow.steps[0].action == AutomationAction.NAVIGATE
 

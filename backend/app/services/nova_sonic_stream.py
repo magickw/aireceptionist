@@ -721,6 +721,9 @@ def build_nova_sonic_system_prompt(
     """Build the system prompt for Nova Sonic voice conversations."""
     business_name = business_context.get("name", "our business")
     business_type = business_context.get("type", "general")
+    business_phone = business_context.get("phone", "")
+    business_address = business_context.get("address", "")
+    business_website = business_context.get("website", "")
     services = business_context.get("services", [])
     menu = business_context.get("menu", [])
     hours = business_context.get("hours", {})
@@ -737,8 +740,18 @@ Your role is to:
 - Transfer to a human when needed
 
 Business Information:
+- Name: {business_name}
 - Type: {business_type}
 """
+
+    if business_phone:
+        prompt += f"- Phone: {business_phone}\n"
+
+    if business_address:
+        prompt += f"- Address: {business_address}\n"
+
+    if business_website:
+        prompt += f"- Website: {business_website}\n"
 
     if services:
         prompt += f"- Services: {', '.join(services)}\n"

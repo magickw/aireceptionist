@@ -31,11 +31,10 @@ def sample_customer():
         loyalty_tier="gold",
         churn_risk=0.2,
         is_vip=True,
-        lifetime_value=5000.00,
-        satisfaction_score=4.5,
-        complaint_count=0,
-        call_count=5,
-        last_contact=datetime.now() - timedelta(days=7)
+        total_spent=5000.00,
+        avg_sentiment=4.5,
+        total_calls=5,
+        last_interaction=datetime.now() - timedelta(days=7)
     )
 
 

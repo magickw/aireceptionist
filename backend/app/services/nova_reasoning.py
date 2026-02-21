@@ -967,6 +967,15 @@ Return ONLY a JSON list of objects:
         # Get risk profile for escalation logic
         risk_profile = BusinessTypeTemplate.get_risk_profile(business_type)
         
+        # Build contact info section
+        contact_section = ""
+        if business_context.get('phone'):
+            contact_section += f"- Business Phone: {business_context.get('phone')}\n"
+        if business_context.get('address'):
+            contact_section += f"- Business Address: {business_context.get('address')}\n"
+        if business_context.get('website'):
+            contact_section += f"- Website: {business_context.get('website')}\n"
+        
         prompt = f"""
 You are Nova 2 Lite, the reasoning core of an autonomous business operations agent.
 
@@ -978,7 +987,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
 ## Business Context:
 - Business Name: {business_context.get('name', 'Unknown')}
 - Business Type: {business_type.title()}
-- Services: {', '.join(business_context.get('services', []))}
+{contact_section}- Services: {', '.join(business_context.get('services', []))}
 - Operating Hours: {business_context.get('operating_hours', 'Not specified')}
 - Available Slots: {', '.join(business_context.get('available_slots', []))}
 {menu_section}

@@ -1859,6 +1859,8 @@ async def _get_business_context(business_id: int, db: Session = None) -> Dict[st
         "name": business.name,
         "type": business.type or "general",
         "address": business.address or "Our business location",
+        "phone": business.phone or "",
+        "website": business.website or "",
         "services": services,
         "operating_hours": business.settings.get("operating_hours", "Mon-Fri 9AM-5PM") if business.settings else "Mon-Fri 9AM-5PM",
         "available_slots": business.settings.get("available_slots", ["Today 2PM", "Tomorrow 10AM"]) if business.settings else ["Today 2PM", "Tomorrow 10AM"],

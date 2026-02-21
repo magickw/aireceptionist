@@ -257,6 +257,7 @@ class NovaSonicHandler:
 
         # Try streaming SDK first (no S3 required)
         try:
+            print("[Nova Sonic] Attempting streaming transcription...")
             return await self._transcribe_streaming(audio_data)
         except ImportError:
             print("[Nova Sonic] amazon-transcribe SDK not installed, falling back to batch pipeline")
@@ -264,6 +265,7 @@ class NovaSonicHandler:
             print(f"[Nova Sonic] Streaming transcription failed ({e}), trying batch pipeline")
 
         # Fallback: S3 → Transcribe batch pipeline
+        print("[Nova Sonic] Attempting batch transcription...")
         return await self._transcribe_batch(audio_data)
 
     async def _transcribe_streaming(self, audio_data: bytes) -> str:

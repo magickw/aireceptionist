@@ -101,7 +101,7 @@ export function useVoiceStreaming({
   const accumulatedTranscriptRef = useRef('');
   const finalTranscriptTimerRef = useRef<number | null>(null);
   const lastSpeechTimeRef = useRef<number>(0);
-  const silenceThreshold = 1200; // ms of silence before sending
+  const silenceThreshold = 2500; // ms of silence before sending
   const minTranscriptLength = 2; // minimum words to send
 
   // Playback queue
@@ -135,10 +135,6 @@ export function useVoiceStreaming({
     // Check for question words at end (common in queries)
     const questionPatterns = /\b(what|where|when|why|how|who|which|whose)\b.*\?$/i;
     if (questionPatterns.test(trimmed)) return true;
-
-    // Check for command patterns (imperatives)
-    const commandPatterns = /^(please|can you|could you|I need|I want|I would like|book|order|schedule|cancel|help)/i;
-    if (commandPatterns.test(trimmed) && trimmed.length > 10) return true;
 
     return false;
   }, []);
