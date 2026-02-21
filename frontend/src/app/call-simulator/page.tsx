@@ -49,10 +49,23 @@ export default function CallSimulator() {
     playAudioChunk,
     stopPlayback,
     micLevel,
+    interimTranscript,
   } = useVoiceStreaming({
     wsRef,
     onPlaybackStart: () => setIsSpeaking(true),
     onPlaybackEnd: () => setIsSpeaking(false),
+    onTranscript: useCallback((text: string, isFinal: boolean) => {
+      if (!isFinal) return;
+      // Browser STT produced final text → send as user_input (same as text mode)
+      addMessageRef.current(text, 'customer');
+      setIsProcessing(true);
+
+      if (connectionStatus === 'http_fallback') {
+        sendHttpMessage(text);
+      } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'user_input', text }));
+      }
+    }, [connectionStatus]),
   });
 
   // Create HTTP session
@@ -454,34 +467,41 @@ export default function CallSimulator() {
                       {isRecording ? <MicOffIcon /> : <MicIcon />}
                     </IconButton>
                     {isRecording && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                        <Box
-                          sx={{
-                            width: 100,
-                            height: 8,
-                            borderRadius: 4,
-                            bgcolor: 'grey.200',
-                            overflow: 'hidden',
-                          }}
-                        >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexDirection: 'column' }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Box
                             sx={{
-                              width: `${micLevel * 100}%`,
-                              height: '100%',
-                              bgcolor: micLevel > 0.6 ? 'error.main' : micLevel > 0.3 ? 'warning.main' : 'success.main',
-                              transition: 'width 0.05s',
+                              width: 100,
+                              height: 8,
                               borderRadius: 4,
+                              bgcolor: 'grey.200',
+                              overflow: 'hidden',
                             }}
-                          />
+                          >
+                            <Box
+                              sx={{
+                                width: `${micLevel * 100}%`,
+                                height: '100%',
+                                bgcolor: micLevel > 0.6 ? 'error.main' : micLevel > 0.3 ? 'warning.main' : 'success.main',
+                                transition: 'width 0.05s',
+                                borderRadius: 4,
+                              }}
+                            />
+                          </Box>
+                          <Typography variant="caption" color="text.secondary">
+                            Listening...
+                          </Typography>
                         </Box>
-                        <Typography variant="caption" color="text.secondary">
-                          Recording...
-                        </Typography>
+                        {interimTranscript && (
+                          <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', maxWidth: 300, textAlign: 'center' }}>
+                            {interimTranscript}
+                          </Typography>
+                        )}
                       </Box>
                     )}
                     {!isRecording && (
                       <Typography variant="caption" color="text.secondary">
-                        {isStreamingReady ? 'Tap to speak (streaming)' : 'Tap to speak'}
+                        Tap to speak
                       </Typography>
                     )}
                   </Box>

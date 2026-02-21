@@ -2,13 +2,55 @@
 import { useRef, useState, useCallback, useEffect } from 'react';
 
 /**
- * Hook for bidirectional voice streaming over WebSocket.
+ * Hook for voice input (browser-side STT) and audio playback.
  *
- * - Captures microphone audio as PCM16 @ 16kHz mono
- * - Sends audio_start / audio (base64 chunks) / audio_stop over WS
- * - Plays back PCM audio received from the server via AudioContext
- * - Supports both 16kHz (batch) and 24kHz (streaming) playback
+ * STT:  Uses the Web Speech API (SpeechRecognition) built into
+ *        Chrome / Edge / Safari.  No server-side transcription needed.
+ *
+ * Mic:  Captures microphone audio purely for the visual level meter.
+ *        Audio is NOT sent to the server.
+ *
+ * Playback: Plays back PCM audio received from the server via AudioContext.
  */
+
+// -- TypeScript declarations for Web Speech API --
+interface SpeechRecognitionEvent extends Event {
+  resultIndex: number;
+  results: SpeechRecognitionResultList;
+}
+interface SpeechRecognitionResultList {
+  length: number;
+  item(index: number): SpeechRecognitionResult;
+  [index: number]: SpeechRecognitionResult;
+}
+interface SpeechRecognitionResult {
+  isFinal: boolean;
+  length: number;
+  item(index: number): SpeechRecognitionAlternative;
+  [index: number]: SpeechRecognitionAlternative;
+}
+interface SpeechRecognitionAlternative {
+  transcript: string;
+  confidence: number;
+}
+interface SpeechRecognition extends EventTarget {
+  continuous: boolean;
+  interimResults: boolean;
+  lang: string;
+  start(): void;
+  stop(): void;
+  abort(): void;
+  onresult: ((ev: SpeechRecognitionEvent) => void) | null;
+  onerror: ((ev: Event & { error: string }) => void) | null;
+  onend: (() => void) | null;
+  onstart: (() => void) | null;
+}
+declare global {
+  interface Window {
+    SpeechRecognition: new () => SpeechRecognition;
+    webkitSpeechRecognition: new () => SpeechRecognition;
+  }
+}
 
 interface UseVoiceStreamingOptions {
   /** Active WebSocket ref */
@@ -17,6 +59,8 @@ interface UseVoiceStreamingOptions {
   onPlaybackStart?: () => void;
   /** Called when playback ends */
   onPlaybackEnd?: () => void;
+  /** Called when speech is recognised by the browser */
+  onTranscript?: (text: string, isFinal: boolean) => void;
 }
 
 interface UseVoiceStreamingReturn {
@@ -26,49 +70,32 @@ interface UseVoiceStreamingReturn {
   stopRecording: () => void;
   playAudioChunk: (base64Audio: string, sampleRate?: number) => void;
   stopPlayback: () => void;
-  micLevel: number; // 0-1 for visualizer
-}
-
-// Convert Float32 samples [-1, 1] to Int16 PCM
-function float32ToInt16(float32Array: Float32Array): Int16Array {
-  const int16 = new Int16Array(float32Array.length);
-  for (let i = 0; i < float32Array.length; i++) {
-    const s = Math.max(-1, Math.min(1, float32Array[i]));
-    int16[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
-  }
-  return int16;
-}
-
-// Downsample from source rate to target rate
-function downsample(buffer: Float32Array, fromRate: number, toRate: number): Float32Array {
-  if (fromRate === toRate) return buffer;
-  const ratio = fromRate / toRate;
-  const newLength = Math.round(buffer.length / ratio);
-  const result = new Float32Array(newLength);
-  for (let i = 0; i < newLength; i++) {
-    const srcIndex = i * ratio;
-    const low = Math.floor(srcIndex);
-    const high = Math.min(low + 1, buffer.length - 1);
-    const frac = srcIndex - low;
-    result[i] = buffer[low] * (1 - frac) + buffer[high] * frac;
-  }
-  return result;
+  micLevel: number;
+  interimTranscript: string;
 }
 
 export function useVoiceStreaming({
   wsRef,
   onPlaybackStart,
   onPlaybackEnd,
+  onTranscript,
 }: UseVoiceStreamingOptions): UseVoiceStreamingReturn {
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
+  const [interimTranscript, setInterimTranscript] = useState('');
 
+  // Refs for mic capture (visual only)
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const levelTimerRef = useRef<number | null>(null);
+
+  // Ref for SpeechRecognition
+  const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const onTranscriptRef = useRef(onTranscript);
+  onTranscriptRef.current = onTranscript;
 
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
@@ -77,19 +104,21 @@ export function useVoiceStreaming({
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const nextPlayTimeRef = useRef(0);
 
-  // Mic level polling
+  // Mic level polling cleanup
   useEffect(() => {
     return () => {
       if (levelTimerRef.current) cancelAnimationFrame(levelTimerRef.current);
     };
   }, []);
 
+  // ---- Recording (mic capture + browser STT) ----
+
   const startRecording = useCallback(async () => {
     try {
+      // 1. Mic capture (for visual level meter only)
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
-          sampleRate: 16000,
           echoCancellation: true,
           noiseSuppression: true,
           autoGainControl: true,
@@ -97,16 +126,9 @@ export function useVoiceStreaming({
       });
       mediaStreamRef.current = stream;
 
-      const audioCtx = new AudioContext({ sampleRate: 16000 });
+      const audioCtx = new AudioContext();
       audioContextRef.current = audioCtx;
-
-      // Resume if suspended (browser autoplay policy)
-      if (audioCtx.state === 'suspended') {
-        await audioCtx.resume();
-      }
-
-      // If browser forced a different sample rate, we'll downsample
-      const actualRate = audioCtx.sampleRate;
+      if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       const source = audioCtx.createMediaStreamSource(stream);
 
@@ -116,43 +138,14 @@ export function useVoiceStreaming({
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      // ScriptProcessor to get raw PCM (4096 samples per chunk)
+      // ScriptProcessor to keep analyser alive (no audio sent to server)
       const processor = audioCtx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
-
-      const ws = wsRef.current;
-
-      // Send audio_start
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        ws.send(JSON.stringify({ type: 'audio_start' }));
-      }
-
-      processor.onaudioprocess = (e) => {
-        if (!ws || ws.readyState !== WebSocket.OPEN) return;
-        const rawSamples = e.inputBuffer.getChannelData(0);
-
-        // Downsample if needed
-        const samples = actualRate !== 16000
-          ? downsample(rawSamples, actualRate, 16000)
-          : rawSamples;
-
-        const pcm16 = float32ToInt16(samples);
-        const bytes = new Uint8Array(pcm16.buffer);
-
-        // Chunk-safe base64 encoding (avoid stack overflow from spread on large arrays)
-        let binary = '';
-        for (let i = 0; i < bytes.length; i++) {
-          binary += String.fromCharCode(bytes[i]);
-        }
-        const b64 = btoa(binary);
-
-        ws.send(JSON.stringify({ type: 'audio', content: b64 }));
-      };
-
+      processor.onaudioprocess = () => {}; // noop — just keeps node alive
       source.connect(processor);
-      processor.connect(audioCtx.destination); // required for ScriptProcessor to fire
+      processor.connect(audioCtx.destination);
 
-      // Poll mic level
+      // Poll mic level for visualiser
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const pollLevel = () => {
         analyser.getByteTimeDomainData(dataArray);
@@ -162,27 +155,83 @@ export function useVoiceStreaming({
           sum += v * v;
         }
         const rms = Math.sqrt(sum / dataArray.length);
-        setMicLevel(Math.min(1, rms * 3)); // amplify for visibility
-        if (isRecording) {
-          levelTimerRef.current = requestAnimationFrame(pollLevel);
-        }
+        setMicLevel(Math.min(1, rms * 3));
+        levelTimerRef.current = requestAnimationFrame(pollLevel);
       };
       levelTimerRef.current = requestAnimationFrame(pollLevel);
+
+      // 2. Browser-side STT via Web Speech API
+      const SpeechRecognitionCtor =
+        typeof window !== 'undefined'
+          ? window.SpeechRecognition || window.webkitSpeechRecognition
+          : null;
+
+      if (SpeechRecognitionCtor) {
+        const recognition = new SpeechRecognitionCtor();
+        recognition.continuous = true;
+        recognition.interimResults = true;
+        recognition.lang = 'en-US';
+
+        recognition.onresult = (event: SpeechRecognitionEvent) => {
+          let interim = '';
+          for (let i = event.resultIndex; i < event.results.length; i++) {
+            const result = event.results[i];
+            if (result.isFinal) {
+              const text = result[0].transcript.trim();
+              if (text) {
+                setInterimTranscript('');
+                onTranscriptRef.current?.(text, true);
+              }
+            } else {
+              interim += result[0].transcript;
+            }
+          }
+          if (interim) setInterimTranscript(interim);
+        };
+
+        recognition.onerror = (ev) => {
+          // 'no-speech' is normal when user pauses; ignore it
+          if ((ev as any).error !== 'no-speech') {
+            console.error('[useVoiceStreaming] SpeechRecognition error:', (ev as any).error);
+          }
+        };
+
+        recognition.onend = () => {
+          // If still recording, restart recognition (it auto-stops on silence)
+          if (mediaStreamRef.current) {
+            try {
+              recognition.start();
+            } catch {
+              // already started
+            }
+          }
+        };
+
+        recognition.start();
+        recognitionRef.current = recognition;
+      } else {
+        console.warn('[useVoiceStreaming] SpeechRecognition not supported in this browser');
+      }
 
       setIsRecording(true);
     } catch (err) {
       console.error('[useVoiceStreaming] Microphone access denied:', err);
     }
-  }, [wsRef, isRecording]);
+  }, []);
 
   const stopRecording = useCallback(() => {
-    // Send audio_stop
-    const ws = wsRef.current;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'audio_stop' }));
+    // Stop SpeechRecognition
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.onend = null; // prevent auto-restart
+        recognitionRef.current.stop();
+      } catch {
+        // already stopped
+      }
+      recognitionRef.current = null;
     }
 
-    // Cleanup processor
+    // Cleanup mic processor
     if (processorRef.current) {
       processorRef.current.disconnect();
       processorRef.current = null;
@@ -206,8 +255,9 @@ export function useVoiceStreaming({
     }
 
     setMicLevel(0);
+    setInterimTranscript('');
     setIsRecording(false);
-  }, [wsRef]);
+  }, []);
 
   // ---- Playback ----
 
@@ -215,7 +265,6 @@ export function useVoiceStreaming({
     if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
       playbackCtxRef.current = new AudioContext();
     }
-    // Resume if suspended (browser autoplay policy)
     if (playbackCtxRef.current.state === 'suspended') {
       playbackCtxRef.current.resume().catch(() => {});
     }
@@ -233,17 +282,16 @@ export function useVoiceStreaming({
 
     isPlayingNextRef.current = true;
     const ctx = getPlaybackCtx();
-    const source = ctx.createBufferSource();
-    source.buffer = buf;
-    source.connect(ctx.destination);
-    currentSourceRef.current = source;
+    const src = ctx.createBufferSource();
+    src.buffer = buf;
+    src.connect(ctx.destination);
+    currentSourceRef.current = src;
 
-    // Schedule seamlessly
     const startTime = Math.max(ctx.currentTime, nextPlayTimeRef.current);
-    source.start(startTime);
+    src.start(startTime);
     nextPlayTimeRef.current = startTime + buf.duration;
 
-    source.onended = () => {
+    src.onended = () => {
       isPlayingNextRef.current = false;
       currentSourceRef.current = null;
       scheduleNext();
@@ -259,7 +307,6 @@ export function useVoiceStreaming({
           bytes[i] = binary.charCodeAt(i);
         }
 
-        // Decode PCM16 to Float32
         const int16 = new Int16Array(bytes.buffer);
         const float32 = new Float32Array(int16.length);
         for (let i = 0; i < int16.length; i++) {
@@ -269,7 +316,6 @@ export function useVoiceStreaming({
         const ctx = getPlaybackCtx();
         const audioBuffer = ctx.createBuffer(1, float32.length, sampleRate);
         audioBuffer.getChannelData(0).set(float32);
-
         playbackQueueRef.current.push(audioBuffer);
 
         if (!isPlaying) {
@@ -281,7 +327,7 @@ export function useVoiceStreaming({
         console.error('[useVoiceStreaming] playAudioChunk error:', err);
       }
     },
-    [getPlaybackCtx, isPlaying, onPlaybackStart, scheduleNext]
+    [getPlaybackCtx, isPlaying, onPlaybackStart, scheduleNext],
   );
 
   const stopPlayback = useCallback(() => {
@@ -303,6 +349,9 @@ export function useVoiceStreaming({
   // Cleanup on unmount
   useEffect(() => {
     return () => {
+      if (recognitionRef.current) {
+        try { recognitionRef.current.abort(); } catch { /* */ }
+      }
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
       }
@@ -323,5 +372,6 @@ export function useVoiceStreaming({
     playAudioChunk,
     stopPlayback,
     micLevel,
+    interimTranscript,
   };
 }
