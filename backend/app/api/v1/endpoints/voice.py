@@ -847,11 +847,50 @@ async def voice_websocket(
                         reasoning_result["suggested_response"] = f"Great, thank you {ws_session['customer_name']}! Let me check availability for your appointment."
                         agent_response = reasoning_result["suggested_response"]
                 
-                # Handle specific actions from reasoning
+                # --- Pending appointment confirmation ---
+                # If AI previously asked "Would you like me to book?" and user confirms,
+                # actually create the appointment using the stored details.
+                if ws_session.get("pending_appointment"):
+                    confirm_kw = ["yes", "yeah", "yep", "sure", "please", "book", "confirm", "go ahead", "do it", "ok", "okay"]
+                    decline_kw = ["no", "nah", "cancel", "don't", "different", "other", "change", "another"]
+                    user_confirms = any(kw in content_lower for kw in confirm_kw) and not any(kw in content_lower for kw in decline_kw)
+                    user_declines = any(kw in content_lower for kw in decline_kw)
+
+                    if user_confirms:
+                        pending = ws_session.pop("pending_appointment")
+                        try:
+                            from app.services.calendar_service import calendar_service
+                            result = await calendar_service.check_and_book_appointment(
+                                business_id=business_id,
+                                start_time=pending["start_time"],
+                                end_time=pending["end_time"],
+                                customer_name=ws_session.get("customer_name", "Unknown"),
+                                customer_phone=ws_session.get("customer_phone", "Unknown"),
+                                service=pending.get("service", "General Checkup"),
+                                db=db,
+                            )
+                            if result["success"]:
+                                date_fmt = pending["start_time"].strftime("%B %d")
+                                time_fmt = pending["start_time"].strftime("%I:%M %p")
+                                agent_response = f"Great! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                                print(f"[Voice WS] Created appointment {result['appointment'].id} for {ws_session.get('customer_phone')} at {pending['start_time']}")
+                            else:
+                                agent_response = f"I'm sorry, I couldn't book that appointment. {result.get('message', 'Please try a different time.')}"
+                        except Exception as e:
+                            print(f"[Voice WS] Pending appointment booking error: {e}")
+                            agent_response = "I'm having trouble booking that appointment right now. Could you please try again?"
+                    elif user_declines:
+                        ws_session.pop("pending_appointment", None)
+                        agent_response = "No problem! Would you like to check a different time?"
+
+                # Handle specific actions from reasoning (skip if pending appointment already handled)
                 selected_action = reasoning_result.get("selected_action")
+                pending_handled = "pending_appointment" not in ws_session and (
+                    "I've booked your appointment" in agent_response or "I couldn't book" in agent_response
+                )
                 menu_item = entities.get("menu_item") or entities.get("service")
                 quantity = entities.get("quantity", 1) if isinstance(entities.get("quantity"), int) else 1
-                
+
                 # Detect clarification phrases - customer is NOT adding items
                 # (content_lower is already defined above)
                 clarification_phrases = [
@@ -861,9 +900,11 @@ async def voice_websocket(
                     "i was just saying", "just clarifying", "i meant to say"
                 ]
                 is_clarification = any(phrase in content_lower for phrase in clarification_phrases)
-                
+
                 # Handle PLACE_ORDER action - ONLY when explicitly triggered by the model
-                if selected_action == "PLACE_ORDER" and not is_clarification:
+                if pending_handled:
+                    pass  # Appointment already created from pending confirmation
+                elif selected_action == "PLACE_ORDER" and not is_clarification:
                     if menu_item and business_context.get("menu"):
                         menu_lower = menu_item.lower()
                         for item in business_context.get("menu", []):
@@ -1082,8 +1123,13 @@ async def voice_websocket(
                                     else:
                                         agent_response = f"I'm sorry, I couldn't complete the booking. Would you like to try a different time?"
                                 else:
-                                    # Just checking availability
+                                    # Just checking availability - store pending appointment
                                     agent_response = f"Yes, {date_fmt} at {time_fmt} is available! Would you like me to book that for you?"
+                                    ws_session["pending_appointment"] = {
+                                        "start_time": appointment_time,
+                                        "end_time": end_time,
+                                        "service": entities.get("service") or entities.get("service_type") or "General Checkup",
+                                    }
                             else:
                                 agent_response = f"I'm sorry, {date_fmt} at {time_fmt} is not available. Would you like me to check another time?"
                         except Exception as e:
@@ -2350,7 +2396,55 @@ async def send_http_message(
     
     # Also check if the AI response mentions scheduling an appointment
     appointment_created = False
-    
+
+    # --- Pending appointment confirmation (HTTP sessions) ---
+    if http_session and http_session.get("pending_appointment"):
+        confirm_kw = ["yes", "yeah", "yep", "sure", "please", "book", "confirm", "go ahead", "do it", "ok", "okay"]
+        decline_kw = ["no", "nah", "cancel", "don't", "different", "other", "change", "another"]
+        user_confirms = any(kw in message_lower for kw in confirm_kw) and not any(kw in message_lower for kw in decline_kw)
+        user_declines = any(kw in message_lower for kw in decline_kw)
+
+        if user_confirms:
+            pending = http_session.pop("pending_appointment")
+            try:
+                from app.services.calendar_service import calendar_service
+                from datetime import timedelta
+                result = await calendar_service.check_and_book_appointment(
+                    business_id=business_id,
+                    start_time=pending["start_time"],
+                    end_time=pending["end_time"],
+                    customer_name=http_session.get("customer_name") or customer_name or "Unknown",
+                    customer_phone=http_session.get("customer_phone") or customer_phone or "Unknown",
+                    service=pending.get("service", "General Checkup"),
+                    db=db,
+                )
+                if result["success"]:
+                    date_fmt = pending["start_time"].strftime("%B %d")
+                    time_fmt = pending["start_time"].strftime("%I:%M %p")
+                    agent_response = f"Great! I've booked your appointment for {date_fmt} at {time_fmt}. We'll see you then!"
+                    appointment_created = True
+                    print(f"[Voice API] Created appointment {result['appointment'].id} from pending confirmation")
+                else:
+                    agent_response = f"I'm sorry, I couldn't book that appointment. {result.get('message', 'Please try a different time.')}"
+            except Exception as e:
+                print(f"[Voice API] Pending appointment booking error: {e}")
+                agent_response = "I'm having trouble booking that appointment right now. Could you please try again?"
+        elif user_declines:
+            http_session.pop("pending_appointment", None)
+            agent_response = "No problem! Would you like to check a different time?"
+
+        # Update the event with the corrected response
+        session_store.add_event(session_id, {
+            "type": "agent_response",
+            "text": agent_response,
+            "reasoning": reasoning_result,
+        })
+        session["conversation_history"].append({
+            "role": "ai",
+            "content": agent_response,
+        })
+        return {"status": "processed", "text": agent_response}
+
     if selected_action == "CREATE_APPOINTMENT":
         date_str = entities.get("date") or entities.get("preferred_date")
         time_str = entities.get("time") or entities.get("preferred_time")
@@ -2448,6 +2542,12 @@ async def send_http_message(
                             date_str = appointment_time.strftime("%B %d")
                             time_str = appointment_time.strftime("%I:%M %p")
                             agent_response = f"Yes, {date_str} at {time_str} is available! Would you like me to book your appointment for that time?"
+                            if http_session:
+                                http_session["pending_appointment"] = {
+                                    "start_time": appointment_time,
+                                    "end_time": end_time,
+                                    "service": entities.get("service") or entities.get("service_type") or "General Checkup",
+                                }
                         else:
                             # Customer wants to book - proceed with booking
                             result = await calendar_service.check_and_book_appointment(
@@ -2481,6 +2581,12 @@ async def send_http_message(
                             date_str = appointment_time.strftime("%B %d")
                             time_str = appointment_time.strftime("%I:%M %p")
                             agent_response = f"Yes, {date_str} at {time_str} is available! Would you like me to book your appointment for that time?"
+                            if http_session:
+                                http_session["pending_appointment"] = {
+                                    "start_time": appointment_time,
+                                    "end_time": end_time,
+                                    "service": entities.get("service") or entities.get("service_type") or "General Checkup",
+                                }
                         else:
                             # Book it
                             result = await calendar_service.check_and_book_appointment(

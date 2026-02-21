@@ -247,10 +247,78 @@ class NovaSonicHandler:
 
     async def _transcribe_audio_with_nova(self, audio_data: bytes) -> str:
         """
-        Uses Amazon Transcribe to transcribe audio.
-        
-        For real-time streaming, this would use StartStreamTranscription API.
-        For simplicity, we use a file-based approach with S3 as intermediate.
+        Transcribe audio to text.
+
+        Tries Amazon Transcribe Streaming first (no S3 needed), then
+        falls back to the batch S3→Transcribe pipeline.
+        """
+        if not audio_data or len(audio_data) < 1000:
+            return ""
+
+        # Try streaming SDK first (no S3 required)
+        try:
+            return await self._transcribe_streaming(audio_data)
+        except ImportError:
+            print("[Nova Sonic] amazon-transcribe SDK not installed, falling back to batch pipeline")
+        except Exception as e:
+            print(f"[Nova Sonic] Streaming transcription failed ({e}), trying batch pipeline")
+
+        # Fallback: S3 → Transcribe batch pipeline
+        return await self._transcribe_batch(audio_data)
+
+    async def _transcribe_streaming(self, audio_data: bytes) -> str:
+        """Transcribe using Amazon Transcribe Streaming (no S3 needed)."""
+        from amazon_transcribe.client import TranscribeStreamingClient
+        from amazon_transcribe.handlers import TranscriptResultStreamHandler
+        from amazon_transcribe.model import TranscriptEvent
+        import os
+
+        # Ensure credentials are available for awscrt
+        if settings.AWS_ACCESS_KEY_ID:
+            os.environ.setdefault("AWS_ACCESS_KEY_ID", settings.AWS_ACCESS_KEY_ID)
+        if settings.AWS_SECRET_ACCESS_KEY:
+            os.environ.setdefault("AWS_SECRET_ACCESS_KEY", settings.AWS_SECRET_ACCESS_KEY)
+        if settings.AWS_REGION:
+            os.environ.setdefault("AWS_DEFAULT_REGION", settings.AWS_REGION)
+
+        transcript_parts: list[str] = []
+
+        class Handler(TranscriptResultStreamHandler):
+            async def handle_transcript_event(self, transcript_event: TranscriptEvent):
+                results = transcript_event.transcript.results
+                for result in results:
+                    if not result.is_partial:
+                        for alt in result.alternatives:
+                            if alt.transcript:
+                                transcript_parts.append(alt.transcript)
+
+        client = TranscribeStreamingClient(region=settings.AWS_REGION)
+
+        stream = await client.start_stream_transcription(
+            language_code="en-US",
+            media_sample_rate_hz=16000,
+            media_encoding="pcm",
+        )
+
+        # Send audio in chunks (Transcribe Streaming max chunk ≈ 25 KB)
+        chunk_size = 16384
+        for i in range(0, len(audio_data), chunk_size):
+            chunk = audio_data[i : i + chunk_size]
+            await stream.input_stream.send_audio_event(audio_chunk=chunk)
+        await stream.input_stream.end_stream()
+
+        handler = Handler(stream.output_stream)
+        await handler.handle_events()
+
+        transcript = " ".join(transcript_parts).strip()
+        if transcript:
+            print(f"[Nova Sonic] Streaming STT result: {transcript[:80]}...")
+        return transcript
+
+    async def _transcribe_batch(self, audio_data: bytes) -> str:
+        """
+        Fallback: S3 → Amazon Transcribe batch pipeline.
+        Requires S3 CreateBucket / PutObject and Transcribe permissions.
         """
         import uuid
         import time
