@@ -1,18 +1,6 @@
 'use client';
 import { useRef, useState, useCallback, useEffect } from 'react';
 
-/**
- * Hook for voice input (browser-side STT) and audio playback.
- *
- * STT:  Uses the Web Speech API (SpeechRecognition) built into
- *        Chrome / Edge / Safari.  No server-side transcription needed.
- *
- * Mic:  Captures microphone audio purely for the visual level meter.
- *        Audio is NOT sent to the server.
- *
- * Playback: Plays back PCM audio received from the server via AudioContext.
- */
-
 // -- TypeScript declarations for Web Speech API --
 interface SpeechRecognitionEvent extends Event {
   resultIndex: number;
@@ -53,13 +41,9 @@ declare global {
 }
 
 interface UseVoiceStreamingOptions {
-  /** Active WebSocket ref */
   wsRef: React.RefObject<WebSocket | null>;
-  /** Called when playback starts */
   onPlaybackStart?: () => void;
-  /** Called when playback ends */
   onPlaybackEnd?: () => void;
-  /** Called when speech is recognised by the browser */
   onTranscript?: (text: string, isFinal: boolean) => void;
 }
 
@@ -85,24 +69,17 @@ export function useVoiceStreaming({
   const [micLevel, setMicLevel] = useState(0);
   const [interimTranscript, setInterimTranscript] = useState('');
 
-  // Refs for mic capture (visual only)
+  // Refs for mic capture
   const mediaStreamRef = useRef<MediaStream | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const levelTimerRef = useRef<number | null>(null);
 
-  // Ref for SpeechRecognition
+  // Refs for SpeechRecognition
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const finalTranscriptRef = useRef('');
   const onTranscriptRef = useRef(onTranscript);
   onTranscriptRef.current = onTranscript;
-
-  // Refs for sentence completion detection
-  const accumulatedTranscriptRef = useRef('');
-  const finalTranscriptTimerRef = useRef<number | null>(null);
-  const lastSpeechTimeRef = useRef<number>(0);
-  const silenceThreshold = 2500; // ms of silence before sending
-  const minTranscriptLength = 2; // minimum words to send
 
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
@@ -118,63 +95,12 @@ export function useVoiceStreaming({
     };
   }, []);
 
-  // ---- Recording (mic capture + browser STT) ----
-
-  /**
-   * Check if transcript forms a complete sentence
-   * Detects sentence boundaries: . ! ? and common completion patterns
-   */
-  const isCompleteSentence = useCallback((text: string): boolean => {
-    const trimmed = text.trim();
-    if (trimmed.length < minTranscriptLength) return false;
-
-    // Check for sentence-ending punctuation
-    const sentenceEnders = /[.!?]\s*$/;
-    if (sentenceEnders.test(trimmed)) return true;
-
-    // Check for question words at end (common in queries)
-    const questionPatterns = /\b(what|where|when|why|how|who|which|whose)\b.*\?$/i;
-    if (questionPatterns.test(trimmed)) return true;
-
-    return false;
-  }, []);
-
-  /**
-   * Check if we should send the transcript based on silence or sentence completion
-   */
-  const sendTranscriptIfReady = useCallback(() => {
-    const transcript = accumulatedTranscriptRef.current.trim();
-    if (!transcript) {
-      return;
-    }
-
-    const timeSinceLastSpeech = Date.now() - lastSpeechTimeRef.current;
-    const isSilenceDetected = timeSinceLastSpeech >= silenceThreshold;
-
-    // Send if we have a complete sentence OR significant silence
-    if (isCompleteSentence(transcript) || isSilenceDetected) {
-      // Only send if we have enough content
-      const wordCount = transcript.split(/\s+/).length;
-      if (wordCount >= minTranscriptLength) {
-        console.log('[useVoiceStreaming] Sending transcript:', transcript);
-        setInterimTranscript('');
-        accumulatedTranscriptRef.current = '';
-        onTranscriptRef.current?.(transcript, true);
-      }
-    }
-  }, [isCompleteSentence]);
-
   const startRecording = useCallback(async () => {
-    // Reset transcript state
-    accumulatedTranscriptRef.current = '';
-    lastSpeechTimeRef.current = 0;
-    if (finalTranscriptTimerRef.current) {
-      clearTimeout(finalTranscriptTimerRef.current);
-      finalTranscriptTimerRef.current = null;
-    }
+    finalTranscriptRef.current = '';
+    setInterimTranscript('');
 
     try {
-      // 1. Mic capture (for visual level meter only)
+      // 1. Mic capture for visual level meter
       const stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           channelCount: 1,
@@ -190,28 +116,18 @@ export function useVoiceStreaming({
       if (audioCtx.state === 'suspended') await audioCtx.resume();
 
       const source = audioCtx.createMediaStreamSource(stream);
-
-      // Analyser for mic level
       const analyser = audioCtx.createAnalyser();
       analyser.fftSize = 256;
       source.connect(analyser);
       analyserRef.current = analyser;
 
-      // ScriptProcessor to keep analyser alive (no audio sent to server)
-      const processor = audioCtx.createScriptProcessor(4096, 1, 1);
-      processorRef.current = processor;
-      processor.onaudioprocess = () => {}; // noop — just keeps node alive
-      source.connect(processor);
-      processor.connect(audioCtx.destination);
-
-      // Poll mic level for visualiser
       const dataArray = new Uint8Array(analyser.frequencyBinCount);
       const pollLevel = () => {
         analyser.getByteTimeDomainData(dataArray);
         let sum = 0;
-        for (let i = 0; i < dataArray.length; i++) {
-          const v = (dataArray[i] - 128) / 128;
-          sum += v * v;
+        for (const v of dataArray) {
+          const floatV = (v - 128) / 128;
+          sum += floatV * floatV;
         }
         const rms = Math.sqrt(sum / dataArray.length);
         setMicLevel(Math.min(1, rms * 3));
@@ -220,126 +136,67 @@ export function useVoiceStreaming({
       levelTimerRef.current = requestAnimationFrame(pollLevel);
 
       // 2. Browser-side STT via Web Speech API
-      const SpeechRecognitionCtor =
-        typeof window !== 'undefined'
-          ? window.SpeechRecognition || window.webkitSpeechRecognition
-          : null;
+      const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
 
       if (SpeechRecognitionCtor) {
         const recognition = new SpeechRecognitionCtor();
+        recognitionRef.current = recognition;
         recognition.continuous = true;
         recognition.interimResults = true;
         recognition.lang = 'en-US';
 
         recognition.onresult = (event: SpeechRecognitionEvent) => {
           let interim = '';
-          let hasFinalResult = false;
-
-          for (let i = event.resultIndex; i < event.results.length; i++) {
-            const result = event.results[i];
-            const transcript = result[0].transcript;
-
-            if (result.isFinal) {
-              // Browser marked this as final, but we'll use our own completion detection
-              hasFinalResult = true;
+          for (let i = event.resultIndex; i < event.results.length; ++i) {
+            if (event.results[i].isFinal) {
+              finalTranscriptRef.current += event.results[i][0].transcript;
+            } else {
+              interim += event.results[i][0].transcript;
             }
-            // Always accumulate transcript (both final and interim)
-            interim += transcript;
           }
-
-          // Update interim display
-          if (interim) {
-            setInterimTranscript(interim);
-            accumulatedTranscriptRef.current = interim;
-            lastSpeechTimeRef.current = Date.now();
-          }
-
-          // Clear any pending send timer
-          if (finalTranscriptTimerRef.current) {
-            clearTimeout(finalTranscriptTimerRef.current);
-            finalTranscriptTimerRef.current = null;
-          }
-
-          // Start silence detection timer
-          finalTranscriptTimerRef.current = window.setTimeout(() => {
-            sendTranscriptIfReady();
-          }, silenceThreshold);
+          setInterimTranscript(finalTranscriptRef.current + interim);
         };
 
         recognition.onerror = (ev) => {
-          // 'no-speech' is normal when user pauses; ignore it
-          if ((ev as any).error !== 'no-speech') {
+          if ((ev as any).error !== 'no-speech' && (ev as any).error !== 'aborted') {
             console.error('[useVoiceStreaming] SpeechRecognition error:', (ev as any).error);
           }
         };
-
+        
         recognition.onend = () => {
-          // If still recording, restart recognition (it auto-stops on silence)
-          if (mediaStreamRef.current) {
-            try {
-              recognition.start();
-            } catch {
-              // already started
+            // The 'end' event can fire unexpectedly. If we are still in 'recording' state,
+            // it means it was not a user-initiated stop, so we should restart.
+            if (recognitionRef.current) {
+                try {
+                    recognition.start();
+                } catch (e) {
+                    console.error('[useVoiceStreaming] Recognition restart failed:', e);
+                }
             }
-          }
         };
 
         recognition.start();
-        recognitionRef.current = recognition;
+        setIsRecording(true);
       } else {
-        console.warn('[useVoiceStreaming] SpeechRecognition not supported in this browser');
+        console.warn('[useVoiceStreaming] SpeechRecognition not supported in this browser.');
       }
-
-      setIsRecording(true);
     } catch (err) {
       console.error('[useVoiceStreaming] Microphone access denied:', err);
     }
   }, []);
 
   const stopRecording = useCallback(() => {
-    // Send any pending transcript before stopping
-    if (accumulatedTranscriptRef.current.trim()) {
-      const transcript = accumulatedTranscriptRef.current.trim();
-      const wordCount = transcript.split(/\s+/).length;
-      if (wordCount >= minTranscriptLength) {
-        onTranscriptRef.current?.(transcript, true);
-      }
-    }
-
-    // Clear pending timer
-    if (finalTranscriptTimerRef.current) {
-      clearTimeout(finalTranscriptTimerRef.current);
-      finalTranscriptTimerRef.current = null;
-    }
-
-    // Reset transcript state
-    accumulatedTranscriptRef.current = '';
-    lastSpeechTimeRef.current = 0;
-
-    // Stop SpeechRecognition
     if (recognitionRef.current) {
-      try {
-        recognitionRef.current.onend = null; // prevent auto-restart
-        recognitionRef.current.stop();
-      } catch {
-        // already stopped
-      }
+      recognitionRef.current.onend = null; // Prevent automatic restart on manual stop
+      recognitionRef.current.stop();
       recognitionRef.current = null;
     }
 
-    // Cleanup mic processor
-    if (processorRef.current) {
-      processorRef.current.disconnect();
-      processorRef.current = null;
-    }
-
-    // Stop mic tracks
     if (mediaStreamRef.current) {
       mediaStreamRef.current.getTracks().forEach((t) => t.stop());
       mediaStreamRef.current = null;
     }
-
-    // Close capture context
+    
     if (audioContextRef.current) {
       audioContextRef.current.close().catch(() => {});
       audioContextRef.current = null;
@@ -350,12 +207,15 @@ export function useVoiceStreaming({
       levelTimerRef.current = null;
     }
 
-    setMicLevel(0);
-    setInterimTranscript('');
-    setIsRecording(false);
-  }, []);
+    const finalTranscript = interimTranscript.trim();
+    if (finalTranscript) {
+      onTranscriptRef.current?.(finalTranscript, true);
+    }
 
-  // ---- Playback ----
+    setMicLevel(0);
+    setIsRecording(false);
+    // Do not clear interimTranscript here so it remains visible until the next recording starts
+  }, [interimTranscript]);
 
   const getPlaybackCtx = useCallback(() => {
     if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
@@ -417,8 +277,8 @@ export function useVoiceStreaming({
         if (!isPlaying) {
           setIsPlaying(true);
           onPlaybackStart?.();
+          scheduleNext();
         }
-        scheduleNext();
       } catch (err) {
         console.error('[useVoiceStreaming] playAudioChunk error:', err);
       }
@@ -432,9 +292,7 @@ export function useVoiceStreaming({
     if (currentSourceRef.current) {
       try {
         currentSourceRef.current.stop();
-      } catch {
-        // already stopped
-      }
+      } catch {}
       currentSourceRef.current = null;
     }
     isPlayingNextRef.current = false;
@@ -442,14 +300,10 @@ export function useVoiceStreaming({
     onPlaybackEnd?.();
   }, [onPlaybackEnd]);
 
-  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (finalTranscriptTimerRef.current) {
-        clearTimeout(finalTranscriptTimerRef.current);
-      }
       if (recognitionRef.current) {
-        try { recognitionRef.current.abort(); } catch { /* */ }
+        recognitionRef.current.abort();
       }
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
