@@ -30,6 +30,7 @@ interface PricingItem {
   category: string;
   available: boolean;
   is_active: boolean;
+  inventory: number;
 }
 
 const BUSINESS_TYPES = [
@@ -110,7 +111,8 @@ export default function BusinessSetupPage() {
     unit: 'per item',
     category: 'Services',
     available: true,
-    is_active: true
+    is_active: true,
+    inventory: 1,
   };
   
   const [pricingFormData, setPricingFormData] = useState<PricingItem>(emptyPricingItem);
@@ -164,7 +166,8 @@ export default function BusinessSetupPage() {
     try {
       const payload = {
         ...pricingFormData,
-        price: pricingFormData.price ? parseFloat(String(pricingFormData.price)) : null
+        price: pricingFormData.price ? parseFloat(String(pricingFormData.price)) : null,
+        inventory: pricingFormData.inventory ? parseInt(String(pricingFormData.inventory), 10) : 1,
       };
       
       if (editingPricingItem?.id) {
@@ -504,6 +507,17 @@ export default function BusinessSetupPage() {
                 placeholder="Brief description of the product/service"
               />
             </Grid>
+            {profile.type === 'hotel' && (
+              <Grid item xs={12}>
+                <TextField
+                  fullWidth
+                  label="Inventory (e.g., Number of Rooms)"
+                  type="number"
+                  value={pricingFormData.inventory || ''}
+                  onChange={(e) => setPricingFormData({ ...pricingFormData, inventory: e.target.value ? parseInt(e.target.value, 10) : 1 })}
+                />
+              </Grid>
+            )}
             <Grid item xs={12}>
               <FormControlLabel
                 control={

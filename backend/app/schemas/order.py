@@ -27,6 +27,8 @@ class OrderBase(BaseModel):
     customer_name: Optional[str] = None
     customer_phone: Optional[str] = None
     status: str = "pending"
+    delivery_method: Optional[str] = None
+    delivery_address: Optional[str] = None
     notes: Optional[str] = None
     call_session_id: Optional[str] = None
 
@@ -43,6 +45,8 @@ class OrderResponse(OrderBase):
     id: int
     business_id: int
     total_amount: float
+    delivery_method: Optional[str] = None
+    delivery_address: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     items: List[OrderItemResponse] = []

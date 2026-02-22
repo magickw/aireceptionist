@@ -32,7 +32,7 @@ def get_db() -> Generator:
 async def get_current_user(
     db: Session = Depends(get_db),
     token_header: Optional[str] = Depends(reusable_oauth2),
-    token_query: Optional[str] = Query(None, alias="token")
+    token_query: Optional[str] = Query(None, alias="token", deprecated=True)  # Deprecated: Use message-based auth for WebSocket
 ) -> User:
     """
     Dependency to get the current user from a token.
@@ -67,12 +67,12 @@ async def get_current_user(
         )
         user = db.query(User).filter(User.email == firebase_payload.get("email")).first()
         if not user:
-            # Create user if doesn't exist
+            # Create user if doesn't exist (pending approval)
             user = User(
                 email=firebase_payload.get("email"),
                 name=firebase_payload.get("name") or firebase_payload.get("display_name", "") or firebase_payload.get("email", "").split("@")[0],
                 password="",  # Firebase users don't have local password
-                status="active"
+                status="pending"
             )
             db.add(user)
             db.commit()

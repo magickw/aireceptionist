@@ -355,6 +355,52 @@ from app.services.conversation_state import (
 )
 
 
+async def _get_popular_services(business_id: int, db) -> str:
+    """Fetch the top 3 most popular services/products for a business."""
+    if not db or not business_id:
+        return ""
+    
+    try:
+        from app.models.models import OrderItem, Appointment
+        from sqlalchemy import func
+
+        # Get top 3 ordered menu items
+        top_ordered = db.query(
+            OrderItem.item_name,
+            func.sum(OrderItem.quantity).label('total_quantity')
+        ).join(OrderItem.order).filter(
+            Order.business_id == business_id
+        ).group_by(OrderItem.item_name).order_by(
+            func.sum(OrderItem.quantity).desc()
+        ).limit(3).all()
+
+        # Get top 3 booked appointment services
+        top_booked = db.query(
+            Appointment.service_type,
+            func.count(Appointment.id).label('total_bookings')
+        ).filter(
+            Appointment.business_id == business_id,
+            Appointment.service_type.isnot(None)
+        ).group_by(Appointment.service_type).order_by(
+            func.count(Appointment.id).desc()
+        ).limit(3).all()
+
+        popular_items = {name: qty for name, qty in top_ordered}
+        for service, count in top_booked:
+            popular_items[service] = popular_items.get(service, 0) + count
+
+        if not popular_items:
+            return ""
+
+        # Sort by popularity and get top 3
+        sorted_items = sorted(popular_items.items(), key=lambda item: item[1], reverse=True)
+        top_3 = [item[0] for item in sorted_items[:3]]
+
+        return f"- Popular Services/Products: {', '.join(top_3)}\n"
+
+    except Exception as e:
+        print(f"Error fetching popular services: {e}")
+        return ""
 
 
 async def get_training_context(business_id: int, db, conversation: str = "") -> str:
@@ -447,6 +493,9 @@ class NovaReasoningEngine:
             "SEND_DIRECTIONS",
             "PLACE_ORDER",        # Add items to order
             "CONFIRM_ORDER",      # Finalize and save order
+            "GET_MENU_ITEMS_FROM_POS", # Get menu items from integrated POS
+            "SEND_ORDER_TO_POS", # Send order to integrated POS
+            "GET_ORDER_STATUS_FROM_POS", # Get order status from integrated POS
             "HUMAN_INTERVENTION",
         ]
         
@@ -551,7 +600,31 @@ class NovaReasoningEngine:
             except Exception as e:
                 print(f"Training context lookup failed: {e}")
         
-        system_prompt = self._build_system_prompt(business_context, customer_context, knowledge_context, training_context)
+        # Get popular services for dynamic prompting
+        popular_services_context = await _get_popular_services(business_context.get("business_id"), db)
+        
+        # Get integrations context for dynamic prompting
+        integrations_context = ""
+        if db and business_context.get("business_id"):
+            try:
+                from app.services.integration_service import IntegrationService
+                integration_service = IntegrationService(db)
+                active_integrations = integration_service.get_business_integrations(business_context.get("business_id"))
+                if active_integrations:
+                    integrations_context = "\n## Active Integrations:\n"
+                    for integ in active_integrations:
+                        integrations_context += f"- {integ.name} ({integ.integration_type}) - Status: {integ.status}\n"
+            except Exception as e:
+                print(f"Error fetching integrations context: {e}")
+        
+        system_prompt = self._build_system_prompt(
+            business_context, 
+            customer_context, 
+            knowledge_context, 
+            training_context,
+            popular_services_context,
+            integrations_context
+        )
         
         # Build multimodal message if data provided
         content = [{"text": conversation}]
@@ -916,7 +989,9 @@ Return ONLY a JSON list of objects:
         business_context: Dict[str, Any],
         customer_context: Dict[str, Any],
         knowledge_context: str = "",
-        training_context: str = ""
+        training_context: str = "",
+        popular_services_context: str = "",
+        integrations_context: str = "" # New parameter
     ) -> str:
         """
         Build comprehensive system prompt with all context.
@@ -988,7 +1063,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
 - Business Name: {business_context.get('name', 'Unknown')}
 - Business Type: {business_type.title()}
 {contact_section}- Services: {', '.join(business_context.get('services', []))}
-- Operating Hours: {business_context.get('operating_hours', 'Not specified')}
+{popular_services_context}{integrations_context}- Operating Hours: {business_context.get('operating_hours', 'Not specified')}
 - Available Slots: {', '.join(business_context.get('available_slots', []))}
 {menu_section}
 

@@ -131,6 +131,32 @@ def update_menu_item(
     return db_item
 
 
+class MenuItemInventoryUpdate(BaseModel):
+    inventory: int
+
+@router.put("/{item_id}/inventory", response_model=MenuItemResponse)
+def update_inventory(
+    item_id: int,
+    business_id: int,
+    inventory_update: MenuItemInventoryUpdate,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> MenuItem:
+    """Update the inventory for a specific menu item."""
+    db_item = db.query(MenuItem).filter(
+        MenuItem.id == item_id,
+        MenuItem.business_id == business_id
+    ).first()
+
+    if not db_item:
+        raise HTTPException(status_code=404, detail="Menu item not found")
+
+    db_item.inventory = inventory_update.inventory
+    db.commit()
+    db.refresh(db_item)
+    return db_item
+
+
 @router.delete("/{item_id}")
 def delete_menu_item(
     item_id: int,

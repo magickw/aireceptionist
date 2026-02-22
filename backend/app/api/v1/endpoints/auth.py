@@ -27,7 +27,7 @@ def create_user(
             status_code=400,
             detail="The user with this username already exists in the system.",
         )
-    
+
     hashed_password = security.get_password_hash(user_in.password)
     db_user = User(
         email=user_in.email,
@@ -58,7 +58,7 @@ def login_access_token(
             )
         elif user.status != "active":
             raise HTTPException(status_code=400, detail="Inactive user")
-        
+
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = security.create_access_token(
             user.id, expires_delta=access_token_expires
@@ -84,3 +84,31 @@ async def read_users_me(
     Get current user.
     """
     return current_user
+
+@router.post("/approve-user/{user_id}", response_model=UserSchema)
+async def approve_user(
+    user_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Admin-only: approve a pending user"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    user.status = "active"
+    db.commit()
+    db.refresh(user)
+    return user
+
+@router.get("/pending-users")
+async def list_pending_users(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """Admin-only: list users awaiting approval"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    pending = db.query(User).filter(User.status == "pending").all()
+    return [{"id": u.id, "email": u.email, "name": u.name, "created_at": u.created_at} for u in pending]

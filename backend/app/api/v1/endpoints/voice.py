@@ -12,6 +12,7 @@ from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
 from app.services.nova_reasoning import nova_reasoning
 from app.services.nova_sonic import nova_sonic, AudioBuffer, LatencyTracker
+from app.services.integration_service import IntegrationService, POSIntegrationInterface
 from app.core.config import settings as app_settings
 from app.api.deps import get_current_business_id, get_current_active_user, get_db
 from app.models.models import User, Appointment, Order, OrderItem, MenuItem, CallSession, CalendarIntegration
@@ -438,6 +439,50 @@ async def handle_tool_use(
         amount = tool_input.get("amount", 0)
         return {"success": True, "message": f"Payment link sent for ${amount:.2f}."}
 
+    elif tool_name == "interactWithPOS":
+        action = tool_input.get("action")
+        payload = tool_input.get("payload", {})
+        
+        try:
+            integration_svc = IntegrationService(db)
+            # Find any active POS integration
+            active_integrations = integration_svc.get_business_integrations(business_id)
+            pos_integration = next((i for i in active_integrations if "pos" in i.integration_type.lower()), None)
+            
+            if not pos_integration:
+                return {"success": False, "message": "No active POS integration found for this business."}
+            
+            client = integration_svc.get_integration_by_type(business_id, pos_integration.integration_type)
+            if not client or not isinstance(client, POSIntegrationInterface):
+                return {"success": False, "message": "Could not initialize POS integration client."}
+            
+            if action == "send_order":
+                # Ensure we have items to send
+                order_items = payload.get("items", ws_session.get("order_items", []))
+                if not order_items:
+                    return {"success": False, "message": "No items found to send to POS."}
+                
+                result = await client.send_order({"items": order_items, "customer": {"name": ws_session.get("customer_name"), "phone": ws_session.get("customer_phone")}})
+                return {"success": True, "message": f"Order successfully sent to {pos_integration.name}.", "pos_result": result}
+            
+            elif action == "get_menu":
+                menu = await client.get_menu_items()
+                return {"success": True, "menu": menu}
+            
+            elif action == "get_status":
+                order_id = payload.get("order_id")
+                if not order_id:
+                    return {"success": False, "message": "Order ID required for status check."}
+                status_result = await client.get_order_status(order_id)
+                return {"success": True, "status": status_result}
+            
+            else:
+                return {"success": False, "message": f"Unsupported POS action: {action}"}
+                
+        except Exception as e:
+            print(f"[Tool] interactWithPOS error: {e}")
+            return {"success": False, "message": f"POS interaction failed: {str(e)}"}
+
     return {"success": False, "message": f"Unknown tool: {tool_name}"}
 
 
@@ -615,152 +660,165 @@ async def voice_websocket(
     """
     # Accept connection first to avoid immediate timeout/failure
     await websocket.accept()
-    
-    # Handle authentication manually inside the WebSocket
+
+    # Handle authentication - support both query param (deprecated) and message-based
     from app.api.deps import get_db, get_current_user, get_current_business_id
-    
+
     db_gen = get_db()
     db = next(db_gen)
-    
+
     try:
-        # Authenticate user with timeout to prevent hanging
-        try:
-            current_user = await asyncio.wait_for(
-                get_current_user(db=db, token_header=None, token_query=token),
-                timeout=5.0  # 5 second timeout for authentication
-            )
-            business_id = await get_current_business_id(current_user=current_user, db=db)
-        except asyncio.TimeoutError:
-            await websocket.send_json({
-                "type": "error",
-                "message": "Authentication timeout"
-            })
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-        except Exception as e:
-            await websocket.send_json({
-                "type": "error",
-                "message": f"Authentication failed: {str(e)}"
-            })
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
-            return
-
-        session_id = f"session_{business_id}_{asyncio.get_event_loop().time()}"
-        # Track session state (like order items) for the duration of the WebSocket
-        ws_session = {
-            "order_items": [],
-            "created_at": datetime.utcnow(),
-            "business_id": business_id,
-            "customer_name": None,
-            "customer_phone": None
-        }
-        
-        # Store connection in manager (already accepted)
-        manager.active_connections[session_id] = websocket
-        manager.audio_buffers[session_id] = AudioBuffer()
-        manager.latency_trackers[session_id] = LatencyTracker()
-        
-        # Create CallSession record in database
-        _create_call_session(ws_session, session_id)
-        
-        # Send connection acknowledgment with audio config
-        await manager.send_json(session_id, {
-            "type": "connected",
-            "session_id": session_id,
-            "message": "Voice connection established with Nova 2 Sonic",
-            "audio_config": nova_sonic.get_audio_config()
-        })
-        
-        # Store conversation history for context
-        conversation_history = []
-
-        # Track final sentiment for CallSession
-        final_sentiment = "neutral"
-
-        # === Audio Buffer for Batch Mode ===
-        audio_buffer = b""  # Buffer to accumulate audio chunks in batch mode
-        audio_buffer_threshold = 16000 * 2 * 2  # ~2 seconds of 16kHz PCM16 audio
-
-        # === Nova Sonic Streaming Setup ===
-        use_streaming = app_settings.NOVA_SONIC_STREAMING_ENABLED
-        sonic_session = None
-        relay_task = None
-
-        if use_streaming:
+        if token:
+            # Deprecated: token in query parameter (backward compat)
             try:
-                business_context = await _get_business_context(business_id, db)
+                current_user = await asyncio.wait_for(
+                    get_current_user(db=db, token_header=None, token_query=token),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "error", "message": "Authentication timeout"})
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
+        else:
+            # Message-based auth: wait for first message with type "auth"
+            try:
+                auth_data = await asyncio.wait_for(websocket.receive_json(), timeout=10.0)
+                if auth_data.get("type") != "auth" or not auth_data.get("token"):
+                    await websocket.send_json({"type": "error", "message": "Expected auth message with token"})
+                    await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                    return
+                current_user = await asyncio.wait_for(
+                    get_current_user(db=db, token_header=None, token_query=auth_data["token"]),
+                    timeout=5.0
+                )
+            except asyncio.TimeoutError:
+                await websocket.send_json({"type": "error", "message": "Authentication timeout"})
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+                return
 
-                # Fetch knowledge + training context for the prompt
-                _knowledge_ctx = ""
-                _training_ctx = ""
-                if business_context.get("business_id") or business_id:
-                    try:
-                        from app.services.knowledge_base import knowledge_base_service
-                        _knowledge_ctx = await knowledge_base_service.get_relevant_context(
-                            query="", business_id=business_id, db=db, max_chars=1500
-                        )
-                    except Exception:
-                        pass
-                    try:
-                        from app.services.nova_reasoning import get_training_context
-                        _training_ctx = await get_training_context(
-                            business_id=business_id, db=db
-                        )
-                    except Exception:
-                        pass
+        business_id = await get_current_business_id(current_user=current_user, db=db)
+    except Exception as e:
+        await websocket.send_json({"type": "error", "message": f"Authentication failed: {str(e)}"})
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
+        return
 
-                customer_context = {
-                    "name": "Unknown",
-                    "phone": "Unknown",
-                    "call_count": 0,
-                    "last_contact": "Never",
-                    "satisfaction_score": 0,
-                    "preferred_services": [],
-                    "complaint_count": 0,
-                }
+    session_id = f"session_{business_id}_{asyncio.get_event_loop().time()}"
+    # Track session state (like order items) for the duration of the WebSocket
+    ws_session = {
+        "order_items": [],
+        "created_at": datetime.utcnow(),
+        "business_id": business_id,
+        "customer_name": None,
+        "customer_phone": None
+    }
+    
+    # Store connection in manager (already accepted)
+    manager.active_connections[session_id] = websocket
+    manager.audio_buffers[session_id] = AudioBuffer()
+    manager.latency_trackers[session_id] = LatencyTracker()
+    
+    # Create CallSession record in database
+    _create_call_session(ws_session, session_id)
+    
+    # Send connection acknowledgment with audio config
+    await manager.send_json(session_id, {
+        "type": "connected",
+        "session_id": session_id,
+        "message": "Voice connection established with Nova 2 Sonic",
+        "audio_config": nova_sonic.get_audio_config()
+    })
+    
+    # Store conversation history for context
+    conversation_history = []
 
-                sonic_session = await nova_sonic.create_streaming_session(
+    # Track final sentiment for CallSession
+    final_sentiment = "neutral"
+
+    # === Audio Buffer for Batch Mode ===
+    audio_buffer = b""  # Buffer to accumulate audio chunks in batch mode
+    audio_buffer_threshold = 16000 * 2 * 2  # ~2 seconds of 16kHz PCM16 audio
+
+    # === Nova Sonic Streaming Setup ===
+    use_streaming = app_settings.NOVA_SONIC_STREAMING_ENABLED
+    sonic_session = None
+    relay_task = None
+
+    if use_streaming:
+        try:
+            business_context = await _get_business_context(business_id, db)
+
+            # Fetch knowledge + training context for the prompt
+            _knowledge_ctx = ""
+            _training_ctx = ""
+            if business_context.get("business_id") or business_id:
+                try:
+                    from app.services.knowledge_base import knowledge_base_service
+                    _knowledge_ctx = await knowledge_base_service.get_relevant_context(
+                        query="", business_id=business_id, db=db, max_chars=1500
+                    )
+                except Exception:
+                    pass
+                try:
+                    from app.services.nova_reasoning import get_training_context
+                    _training_ctx = await get_training_context(
+                        business_id=business_id, db=db
+                    )
+                except Exception:
+                    pass
+
+            customer_context = {
+                "name": "Unknown",
+                "phone": "Unknown",
+                "call_count": 0,
+                "last_contact": "Never",
+                "satisfaction_score": 0,
+                "preferred_services": [],
+                "complaint_count": 0,
+            }
+
+            sonic_session = await nova_sonic.create_streaming_session(
+                session_id=session_id,
+                business_context=business_context,
+                customer_context=customer_context,
+                knowledge_context=_knowledge_ctx,
+                training_context=_training_ctx,
+                db=db,
+            )
+
+            ws_session["_session_id"] = session_id
+
+            # Start relay task
+            relay_task = asyncio.create_task(
+                _run_streaming_relay(
+                    sonic_session=sonic_session,
+                    websocket=websocket,
                     session_id=session_id,
+                    ws_session=ws_session,
+                    business_id=business_id,
                     business_context=business_context,
-                    customer_context=customer_context,
-                    knowledge_context=_knowledge_ctx,
-                    training_context=_training_ctx,
+                    conversation_history=conversation_history,
                     db=db,
                 )
+            )
 
-                ws_session["_session_id"] = session_id
+            await manager.send_json(session_id, {
+                "type": "streaming_ready",
+                "message": "Nova Sonic bidirectional streaming active",
+            })
+            print(f"[Voice WS] Streaming mode initialized successfully for session {session_id}")
+        except Exception as e:
+            import traceback
+            print(f"[Voice WS] Streaming init failed, falling back to batch: {e}")
+            print(f"[Voice WS] Traceback: {traceback.format_exc()}")
+            use_streaming = False
+            sonic_session = None
+            # Notify client about fallback
+            await manager.send_json(session_id, {
+                "type": "mode_fallback",
+                "message": "Streaming mode unavailable, using batch processing"
+            })
 
-                # Start relay task
-                relay_task = asyncio.create_task(
-                    _run_streaming_relay(
-                        sonic_session=sonic_session,
-                        websocket=websocket,
-                        session_id=session_id,
-                        ws_session=ws_session,
-                        business_id=business_id,
-                        business_context=business_context,
-                        conversation_history=conversation_history,
-                        db=db,
-                    )
-                )
-
-                await manager.send_json(session_id, {
-                    "type": "streaming_ready",
-                    "message": "Nova Sonic bidirectional streaming active",
-                })
-                print(f"[Voice WS] Streaming mode initialized successfully for session {session_id}")
-            except Exception as e:
-                import traceback
-                print(f"[Voice WS] Streaming init failed, falling back to batch: {e}")
-                print(f"[Voice WS] Traceback: {traceback.format_exc()}")
-                use_streaming = False
-                sonic_session = None
-                # Notify client about fallback
-                await manager.send_json(session_id, {
-                    "type": "mode_fallback",
-                    "message": "Streaming mode unavailable, using batch processing"
-                })
-
+    try:
         while True:
             # Receive message from client
             data = await websocket.receive_json()
@@ -840,8 +898,114 @@ async def voice_websocket(
                 if reasoning_result.get("sentiment"):
                     final_sentiment = reasoning_result.get("sentiment")
                 
+                # ===== GOVERNANCE ENGINE INTEGRATION =====
+                # Determine governance tier based on business type, intent, confidence, and action
+                from app.services.business_templates import BusinessTypeTemplate, GovernanceTier
+                business_type = business_context.get('type', 'general')
+                detected_intent = reasoning_result.get("intent", "")
+                confidence = reasoning_result.get("confidence", 0.5)
+                proposed_action = reasoning_result.get("selected_action", "")
+                entities = reasoning_result.get("entities", {})
+                
+                governance_tier = BusinessTypeTemplate.get_governance_tier(
+                    business_type=business_type,
+                    intent=detected_intent,
+                    confidence=confidence,
+                    action=proposed_action,
+                    entities=entities
+                )
+                execution_policy = BusinessTypeTemplate.get_execution_policy(governance_tier)
+                
+                # Log governance decision
+                print(f"[Voice WS] Governance: tier={governance_tier}, action={proposed_action}, confidence={confidence:.2f}")
+                
+                # Send governance info via WebSocket
+                await manager.send_json(session_id, {
+                    "type": "governance_tier",
+                    "data": {
+                        "tier": governance_tier,
+                        "requires_confirmation": execution_policy.get("requires_confirmation", False),
+                        "requires_human_approval": execution_policy.get("requires_human_approval", False)
+                    }
+                })
+                
+                # Handle governance tier actions - these override normal flow
+                governance_handled = False
+                
+                if governance_tier == GovernanceTier.ESCALATE_IMMEDIATE:
+                    # Immediate transfer to human
+                    await manager.send_json(session_id, {
+                        "type": "human_intervention_request",
+                        "reason": f"Governance tier: {governance_tier}",
+                        "context": {
+                            "intent": detected_intent,
+                            "confidence": confidence,
+                            "risk": reasoning_result.get("escalation_risk"),
+                            "governance_tier": governance_tier
+                        }
+                    })
+                    agent_response = reasoning_result.get("suggested_response", "Let me transfer you to someone who can better assist you.")
+                    if execution_policy.get("provide_safety_instructions"):
+                        agent_response = "I'm connecting you with our team right away. In the meantime, " + agent_response
+                    governance_handled = True
+                    
+                elif governance_tier == GovernanceTier.HUMAN_REVIEW:
+                    # Pause for human approval
+                    await manager.send_json(session_id, {
+                        "type": "human_approval_required",
+                        "action": proposed_action,
+                        "context": {
+                            "intent": detected_intent,
+                            "confidence": confidence,
+                            "entities": entities
+                        }
+                    })
+                    agent_response = "I need to verify this with our team. One moment please."
+                    governance_handled = True
+                    
+                elif governance_tier == GovernanceTier.PRIORITY_FLOW:
+                    # Provide safety instructions, then escalate
+                    safety_response = "For your safety, please follow these instructions: "
+                    if business_type == "hvac":
+                        safety_response = "If you smell gas or suspect a leak, please evacuate immediately and call 911. Then I'll connect you with our emergency technician."
+                    elif business_type in ["medical", "dental"]:
+                        safety_response = "For urgent medical concerns, please call 911 or go to your nearest emergency room. I'm connecting you with our medical team now."
+                    elif business_type == "law_firm":
+                        safety_response = "This sounds time-sensitive. I'm connecting you with an attorney right away."
+                    
+                    await manager.send_json(session_id, {
+                        "type": "human_intervention_request",
+                        "reason": f"Priority flow triggered for {detected_intent}",
+                        "context": {
+                            "intent": detected_intent,
+                            "confidence": confidence,
+                            "risk": reasoning_result.get("escalation_risk"),
+                            "governance_tier": governance_tier
+                        }
+                    })
+                    
+                    agent_response = safety_response + " " + reasoning_result.get("suggested_response", "Let me help you.")
+                    governance_handled = True
+                    
+                elif governance_tier == GovernanceTier.CONFIRM_BEFORE_EXECUTE:
+                    # Add confirmation prompt to response
+                    confirmation_prompt = f"Would you like me to proceed with {proposed_action.replace('_', ' ').lower()}? "
+                    base_response = reasoning_result.get("suggested_response", "I'm here to help.")
+                    agent_response = confirmation_prompt + base_response
+                    
+                    # Store that confirmation is pending in ws_session
+                    ws_session["pending_confirmation"] = {
+                        "action": proposed_action,
+                        "entities": entities,
+                        "governance_tier": governance_tier
+                    }
+                # ===== END GOVERNANCE ENGINE =====
+                
                 # Send agent response - streaming text chunks
-                agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
+                # Use the agent_response from governance handling if governance_handled is True
+                # Otherwise, get the default response from reasoning_result
+                if not governance_handled:
+                    agent_response = reasoning_result.get("suggested_response", "I'm here to help you.")
                 
                 # Enhance response with actual pricing if customer asked about menu item
                 entities = reasoning_result.get("entities", {})
@@ -1028,6 +1192,60 @@ async def voice_websocket(
                         ws_session.pop("pending_appointment", None)
                         agent_response = "No problem! Would you like to check a different time?"
 
+                # Extract delivery method from message (Item 10)
+                detected_delivery = None
+                if "pickup" in content_lower or "pick up" in content_lower:
+                    detected_delivery = "pickup"
+                elif "delivery" in content_lower or "deliver" in content_lower:
+                    detected_delivery = "delivery"
+                
+                if detected_delivery:
+                    ws_session["delivery_method"] = detected_delivery
+                    # If delivery selected and no address, ask for it
+                    if detected_delivery == "delivery" and not ws_session.get("delivery_address"):
+                        agent_response = "Great! I'll have that delivered. What's your delivery address?"
+                        # Don't process further - wait for address
+                        # Stream the response
+                        for i in range(0, len(agent_response), 20):
+                            chunk = agent_response[i:i + 20]
+                            is_last = i + 20 >= len(agent_response)
+                            await manager.send_json(session_id, {
+                                "type": "text_chunk",
+                                "chunk": chunk,
+                                "is_last": is_last,
+                                "full_text": agent_response if is_last else None
+                            })
+                            if not is_last:
+                                await asyncio.sleep(0.02)
+                        # Set flag to expect address next
+                        ws_session["awaiting_delivery_address"] = True
+                        continue  # Skip further processing, wait for address
+                
+                # Check if we're awaiting delivery address
+                if ws_session.get("awaiting_delivery_address"):
+                    from app.services.voice_helpers import extract_address
+                    addr = extract_address(content, entities)
+                    if addr:
+                        ws_session["delivery_address"] = addr
+                        ws_session["awaiting_delivery_address"] = False
+                        agent_response = f"Got it! Your order will be delivered to {addr}. Would you like to confirm your order?"
+                    else:
+                        agent_response = "I couldn't quite catch that address. Could you please provide your full street address?"
+                    # Stream the response
+                    for i in range(0, len(agent_response), 20):
+                        chunk = agent_response[i:i + 20]
+                        is_last = i + 20 >= len(agent_response)
+                        await manager.send_json(session_id, {
+                            "type": "text_chunk",
+                            "chunk": chunk,
+                            "is_last": is_last,
+                            "full_text": agent_response if is_last else None
+                        })
+                        if not is_last:
+                            await asyncio.sleep(0.02)
+                    if ws_session.get("awaiting_delivery_address"):
+                        continue
+
                 # Handle specific actions from reasoning (skip if pending appointment already handled)
                 selected_action = reasoning_result.get("selected_action")
                 pending_handled = "pending_appointment" not in ws_session and (
@@ -1054,12 +1272,13 @@ async def voice_websocket(
                         menu_lower = menu_item.lower()
                         for item in business_context.get("menu", []):
                             if menu_lower in item.get("name", "").lower() or item.get("name", "").lower() in menu_lower:
-                                # Check if item already in order (avoid duplicates)
+                                # Check if item already in order - update quantity instead of blocking
                                 existing = next((i for i in ws_session["order_items"] if i["name"].lower() == item["name"].lower()), None)
                                 if existing:
-                                    # Item already exists - don't add again
+                                    # Item already exists - update quantity
+                                    existing["quantity"] = existing.get("quantity", 1) + quantity
                                     total = sum(i.get("price", 0) * i.get("quantity", 1) for i in ws_session["order_items"])
-                                    agent_response = f"You already have {existing.get('quantity', 1)}x {item['name']} in your order. Your total is ${total:.2f}. Would you like to add more, or shall I confirm your order?"
+                                    agent_response = f"Updated! You now have {existing['quantity']}x {item['name']}. Your total is ${total:.2f}. Would you like anything else?"
                                 else:
                                     order_entry = {
                                         "name": item["name"],
@@ -1272,9 +1491,69 @@ async def voice_websocket(
                                 agent_response = f"I'm having trouble booking that appointment right now. Could you please try again or call us directly?"
                         else:
                             agent_response = "I'd be happy to book an appointment for you. What date and time would you prefer?"
-                
+
+                elif selected_action == "SEND_ORDER_TO_POS":
+                    try:
+                        integration_svc = IntegrationService(db)
+                        active_integrations = integration_svc.get_business_integrations(business_id)
+                        pos_integration = next((i for i in active_integrations if "pos" in i.integration_type.lower()), None)
+                        
+                        if pos_integration:
+                            client = integration_svc.get_integration_by_type(business_id, pos_integration.integration_type)
+                            if client and isinstance(client, POSIntegrationInterface):
+                                # Use items from session
+                                order_items = ws_session.get("order_items", [])
+                                if order_items:
+                                    pos_result = await client.send_order({
+                                        "items": order_items,
+                                        "customer": {
+                                            "name": ws_session.get("customer_name"),
+                                            "phone": ws_session.get("customer_phone")
+                                        }
+                                    })
+                                    agent_response = f"I've successfully sent your order to our {pos_integration.name} system. {agent_response}"
+                                    # Clear items after sending to POS
+                                    ws_session["order_items"] = []
+                                else:
+                                    agent_response = "I don't have any items in your order to send to the kitchen. What would you like to get?"
+                            else:
+                                agent_response = f"I'm having trouble connecting to our {pos_integration.name} system right now."
+                        else:
+                            agent_response = "We don't have an active POS system integrated to send orders to."
+                    except Exception as e:
+                        print(f"[Voice WS] SEND_ORDER_TO_POS error: {e}")
+                        agent_response = "I encountered an error while trying to process your order with our integrated system."
+
+                elif selected_action == "GET_MENU_ITEMS_FROM_POS":
+                    try:
+                        integration_svc = IntegrationService(db)
+                        active_integrations = integration_svc.get_business_integrations(business_id)
+                        pos_integration = next((i for i in active_integrations if "pos" in i.integration_type.lower()), None)
+                        
+                        if pos_integration:
+                            client = integration_svc.get_integration_by_type(business_id, pos_integration.integration_type)
+                            if client and isinstance(client, POSIntegrationInterface):
+                                menu_items = await client.get_menu_items()
+                                if menu_items:
+                                    items_text = ", ".join([item['name'] for item in menu_items[:5]])
+                                    agent_response = f"I've retrieved our latest menu from {pos_integration.name}. Some popular items are: {items_text}. {agent_response}"
+                                else:
+                                    agent_response = f"I connected to {pos_integration.name}, but couldn't retrieve any menu items."
+                            else:
+                                agent_response = f"I'm having trouble connecting to {pos_integration.name} to get the menu."
+                        else:
+                            agent_response = "We don't have an active POS system integrated to retrieve the menu from."
+                    except Exception as e:
+                        print(f"[Voice WS] GET_MENU_ITEMS_FROM_POS error: {e}")
+                        agent_response = "I couldn't retrieve the menu from our integrated system at this time."
+
+                elif selected_action == "GET_ORDER_STATUS_FROM_POS":
+                    # This would require an order_id, perhaps from session or user input
+                    agent_response = "I can check your order status if you provide your order number. I'm connecting to our POS system now."
+
                 # Also handle when customer asks about availability (not just CREATE_APPOINTMENT action)
                 # Handle gratitude and closing phrases
+                skip_reasoning = False  # Initialize flag to skip further action processing
                 gratitude_phrases = ["thank you", "thanks", "thank", "thx", "appreciate it"]
                 closing_phrases = ["bye", "goodbye", "good bye", "see you", "take care", "have a nice", "have a great", "talk to you later"]
                 is_gratitude = any(phrase in content_lower for phrase in gratitude_phrases)
@@ -1323,7 +1602,7 @@ async def voice_websocket(
                     skip_reasoning = True
                 
                 # Check if message mentions availability or booking with a specific time
-                elif "available" in content_lower or "book" in content_lower or "appointment" in content_lower:
+                if not skip_reasoning and ("available" in content_lower or "book" in content_lower or "appointment" in content_lower):
                     date_str = entities.get("date") or entities.get("preferred_date")
                     time_str = entities.get("time") or entities.get("preferred_time")
                     
@@ -1707,7 +1986,7 @@ async def _create_order_from_session(ws_session: Dict[str, Any], session_id: str
             for item in ws_session["order_items"]
         )
         
-        # Create order
+        # Create order with delivery info
         order = Order(
             business_id=business_id,
             call_session_id=session_id,
@@ -1715,6 +1994,8 @@ async def _create_order_from_session(ws_session: Dict[str, Any], session_id: str
             customer_phone=ws_session.get("customer_phone"),
             status="confirmed",
             total_amount=total,
+            delivery_method=ws_session.get("delivery_method"),
+            delivery_address=ws_session.get("delivery_address"),
             confirmed_at=datetime.utcnow()
         )
         db.add(order)
@@ -1964,10 +2245,25 @@ from datetime import datetime
 
 class HTTPSessionStore:
     """Simple in-memory session store for HTTP fallback"""
+    SESSION_TTL_SECONDS = 3600  # 1 hour
+    MAX_SESSIONS = 1000
+
     def __init__(self):
         self.sessions: Dict[str, dict] = {}
-    
+
+    def cleanup_expired(self):
+        """Remove sessions older than TTL"""
+        now = datetime.utcnow()
+        expired = [
+            sid for sid, s in self.sessions.items()
+            if (now - s.get("created_at", now)).total_seconds() > self.SESSION_TTL_SECONDS
+        ]
+        for sid in expired:
+            del self.sessions[sid]
+
     def create_session(self, session_id: str, business_id: int, customer_phone: str = "", call_type: str = "simulator"):
+        if len(self.sessions) > self.MAX_SESSIONS:
+            self.cleanup_expired()
         self.sessions[session_id] = {
             "business_id": business_id,
             "customer_phone": customer_phone,
@@ -1983,18 +2279,18 @@ class HTTPSessionStore:
             "active": True
         }
         return self.sessions[session_id]
-    
+
     def get_session(self, session_id: str):
         return self.sessions.get(session_id)
-    
+
     def add_event(self, session_id: str, event: dict):
         if session_id in self.sessions:
             self.sessions[session_id]["events"].append(event)
-    
+
     def end_session(self, session_id: str):
         if session_id in self.sessions:
             self.sessions[session_id]["active"] = False
-    
+
     def get_and_clear_events(self, session_id: str):
         if session_id in self.sessions:
             events = self.sessions[session_id]["events"].copy()
@@ -2496,11 +2792,13 @@ async def send_http_message(
                     if "order_items" not in http_session:
                         http_session["order_items"] = []
                     
-                    # Check if item already in order (avoid duplicates)
+                    # Check if item already in order - update quantity instead of blocking
                     existing = next((i for i in http_session.get("order_items", []) if i["name"].lower() == item["name"].lower()), None)
                     if existing:
-                        # Item already exists - don't add again, just acknowledge
-                        agent_response = f"You already have {existing.get('quantity', 1)}x {item['name']} in your order. Your total is ${sum(i.get('price', 0) * i.get('quantity', 1) for i in http_session['order_items']):.2f}. Would you like to add more, or shall I confirm your order?"
+                        # Item already exists - update quantity
+                        existing["quantity"] = existing.get("quantity", 1) + quantity
+                        total = sum(i.get("price", 0) * i.get("quantity", 1) for i in http_session.get("order_items", []))
+                        agent_response = f"Updated! You now have {existing['quantity']}x {item['name']}. Your total is ${total:.2f}. Would you like anything else?"
                     else:
                         # Add new item
                         order_entry = {

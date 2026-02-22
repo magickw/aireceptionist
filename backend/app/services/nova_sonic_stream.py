@@ -230,7 +230,7 @@ await session.end_user_turn()
 # Stream responses
 async for event in session.text_queue:
     if event and "chunk" in event:
-        print(event["chunk"])
+        logger.debug(event["chunk"])
 
 # Cleanup
 await session.close()
@@ -244,6 +244,9 @@ from typing import Dict, Any, Optional, Callable, List
 from concurrent.futures import ThreadPoolExecutor
 
 from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger("nova_sonic_stream")
 
 
 # Thread pool shared across all streaming sessions
@@ -390,6 +393,7 @@ class NovaSonicStreamSession:
                     "text": transcript,
                     "safety_trigger": safety_result,
                 })
+                await self.text_queue.put({"turn_complete": True})
                 return
 
         # Add to conversation history and generate response
@@ -509,13 +513,18 @@ class NovaSonicStreamSession:
             stop_reason: Optional[str] = None
 
             while True:
-                event = await event_queue.get()
+                try:
+                    event = await asyncio.wait_for(event_queue.get(), timeout=30.0)
+                except asyncio.TimeoutError:
+                    await self.text_queue.put({"error": "Stream timeout"})
+                    await self.text_queue.put({"turn_complete": True})
+                    break
                 if event is None:
                     break
                 if not self.is_active:
                     break
                 if "_error" in event:
-                    print(f"[Nova Sonic Stream] Stream error: {event['_error']}")
+                    logger.error(f"Stream error: {event['_error']}")
                     await self.text_queue.put({"error": event["_error"]})
                     break
 
@@ -621,7 +630,7 @@ class NovaSonicStreamSession:
                     })
 
         except Exception as e:
-            print(f"[Nova Sonic Stream] Error: {e}\n{traceback.format_exc()}")
+            logger.error(f"Error: {e}\n{traceback.format_exc()}")
             await self.text_queue.put({"error": str(e)})
             await self.text_queue.put({"turn_complete": True})
 

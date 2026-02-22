@@ -1,5 +1,5 @@
 from typing import Any, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -112,3 +112,21 @@ async def get_order_payment_status(
         "order_status": order.status,
         "payment_configured": payment_service.api_key is not None,
     }
+
+
+@router.post("/webhook")
+async def stripe_webhook(
+    request: Request,
+    db: Session = Depends(deps.get_db),
+):
+    """Handle Stripe webhook events. No auth -- validated by Stripe signature."""
+    payload = await request.body()
+    sig_header = request.headers.get("stripe-signature", "")
+
+    try:
+        event = payment_service.verify_webhook_signature(payload, sig_header)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    result = await payment_service.handle_webhook_event(event, db)
+    return result

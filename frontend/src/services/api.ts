@@ -1,9 +1,9 @@
 import axios, { AxiosError, InternalAxiosRequestConfig } from 'axios';
 
 // Auto-detect backend URL based on environment
-export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 
-  (typeof window !== 'undefined' && window.location.hostname === 'localhost' 
-    ? 'http://localhost:8000' 
+export const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL ||
+  (typeof window !== 'undefined' && window.location.hostname === 'localhost'
+    ? 'http://localhost:8000'
     : `${window.location.protocol}//${window.location.hostname}`);
 
 // Extend config type to include retry count
@@ -27,39 +27,39 @@ api.interceptors.response.use(
   (response) => response,
   async (error: AxiosError) => {
     const config = error.config as ExtendedAxiosRequestConfig | undefined;
-    
+
     // Only retry on network errors, not on 401/403
     if (!config) return Promise.reject(error);
-    
+
     const isNetworkError = !error.response && (
       error.code === 'ECONNABORTED' ||
       error.message.includes('Network Error') ||
       error.message.includes('timeout')
     );
-    
+
     // Don't retry auth errors
     if (error.response?.status === 401 || error.response?.status === 403) {
       return Promise.reject(error);
     }
-    
+
     // Retry logic for network errors
     if (isNetworkError && !config.__retryCount) {
       config.__retryCount = 0;
     }
-    
+
     if (isNetworkError && config.__retryCount !== undefined && config.__retryCount < MAX_RETRIES) {
       config.__retryCount += 1;
       const delay = RETRY_DELAY * config.__retryCount; // Exponential backoff
-      
+
       console.log(`Retrying request (${config.__retryCount}/${MAX_RETRIES}) after ${delay}ms...`);
-      
+
       return new Promise((resolve) => {
         setTimeout(() => {
           resolve(api(config));
         }, delay);
       });
     }
-    
+
     return Promise.reject(error);
   }
 );
@@ -72,7 +72,7 @@ if (typeof window !== 'undefined') {
     }
     return config;
   });
-  
+
   // Handle 401 responses globally - redirect to login if token is invalid
   api.interceptors.response.use(
     (response) => response,
@@ -89,8 +89,7 @@ if (typeof window !== 'undefined') {
 export const getWebSocketUrl = () => {
   const wsProtocol = BACKEND_URL.startsWith('https') ? 'wss' : 'ws';
   const wsBaseUrl = BACKEND_URL.replace(/^https?:\/\//, '');
-  const token = typeof window !== 'undefined' ? localStorage.getItem('token') : null;
-  return `${wsProtocol}://${wsBaseUrl}/api/voice/ws${token ? `?token=${token}` : ''}`;
+  return `${wsProtocol}://${wsBaseUrl}/api/voice/ws`;
 };
 
 // Webhooks API
@@ -106,7 +105,7 @@ export const calendarApi = {
   list: () => api.get('/calendar'),
   connectGoogle: () => api.get('/calendar/connect/google'),
   connectMicrosoft: () => api.get('/calendar/connect/microsoft'),
-  getEvents: (integrationId: number, startDate?: string, endDate?: string) => 
+  getEvents: (integrationId: number, startDate?: string, endDate?: string) =>
     api.get(`/calendar/${integrationId}/events`, { params: { start_date: startDate, end_date: endDate } }),
   createEvent: (integrationId: number, data: { summary: string; description: string; start_time: string; end_time: string; attendees?: string[] }) =>
     api.post(`/calendar/${integrationId}/events`, data),
@@ -154,7 +153,7 @@ export const reportsApi = {
   getCustomerMetrics: (startDate?: string, endDate?: string) => api.get('/reports/customers', { params: { start_date: startDate, end_date: endDate } }),
   getHourlyDistribution: (startDate?: string, endDate?: string) => api.get('/reports/hourly', { params: { start_date: startDate, end_date: endDate } }),
   getWeeklySummary: (weeks: number = 4) => api.get(`/reports/weekly?weeks=${weeks}`),
-  generateReport: (reportType: string, startDate?: string, endDate?: string) => 
+  generateReport: (reportType: string, startDate?: string, endDate?: string) =>
     api.get('/reports/generate', { params: { report_type: reportType, start_date: startDate, end_date: endDate } }),
   exportCSV: (startDate?: string, endDate?: string) => api.get('/reports/export', { params: { start_date: startDate, end_date: endDate } }),
 };
@@ -199,9 +198,9 @@ export const aiTrainingApi = {
   getCategories: () => api.get('/ai-training/categories'),
   list: (params?: { category?: string; is_active?: boolean }) => api.get('/ai-training/', { params }),
   get: (id: number) => api.get(`/ai-training/${id}`),
-  create: (data: { title: string; user_input: string; expected_response: string; description?: string; category?: string }) => 
+  create: (data: { title: string; user_input: string; expected_response: string; description?: string; category?: string }) =>
     api.post('/ai-training', data),
-  update: (id: number, data: { title?: string; user_input?: string; expected_response?: string; description?: string; category?: string; is_active?: boolean }) => 
+  update: (id: number, data: { title?: string; user_input?: string; expected_response?: string; description?: string; category?: string; is_active?: boolean }) =>
     api.put(`/ai-training/${id}`, data),
   delete: (id: number) => api.delete(`/ai-training/${id}`),
   test: (id: number) => api.post(`/ai-training/test/${id}`),
@@ -211,17 +210,17 @@ export const aiTrainingApi = {
 
 // Menu/Pricing API
 export const menuApi = {
-  list: (businessId: number, params?: { category?: string; available_only?: boolean }) => 
+  list: (businessId: number, params?: { category?: string; available_only?: boolean }) =>
     api.get('/menu/', { params: { business_id: businessId, ...params } }),
-  get: (itemId: number, businessId: number) => 
+  get: (itemId: number, businessId: number) =>
     api.get(`/menu/${itemId}`, { params: { business_id: businessId } }),
-  create: (businessId: number, data: { name: string; description?: string; price?: number; unit?: string; category?: string; available?: boolean }) => 
+  create: (businessId: number, data: { name: string; description?: string; price?: number; unit?: string; category?: string; available?: boolean }) =>
     api.post('/menu/', data, { params: { business_id: businessId } }),
-  update: (itemId: number, businessId: number, data: { name?: string; description?: string; price?: number; unit?: string; category?: string; available?: boolean; is_active?: boolean }) => 
+  update: (itemId: number, businessId: number, data: { name?: string; description?: string; price?: number; unit?: string; category?: string; available?: boolean; is_active?: boolean }) =>
     api.put(`/menu/${itemId}`, data, { params: { business_id: businessId } }),
-  delete: (itemId: number, businessId: number) => 
+  delete: (itemId: number, businessId: number) =>
     api.delete(`/menu/${itemId}`, { params: { business_id: businessId } }),
-  getCategories: (businessId: number) => 
+  getCategories: (businessId: number) =>
     api.get('/menu/categories/list', { params: { business_id: businessId } }),
 };
 

@@ -12,6 +12,9 @@ import base64
 import asyncio
 from typing import AsyncGenerator, Dict, Any, Optional
 from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger("nova_sonic")
 
 
 class NovaSonicHandler:
@@ -239,7 +242,7 @@ class NovaSonicHandler:
             }
             
         except Exception as e:
-            print(f"[Nova Sonic] Error: {e}")
+            logger.error(f"Error: {e}")
             yield {
                 "type": "error",
                 "message": f"Nova Sonic error: {str(e)}"
@@ -257,15 +260,15 @@ class NovaSonicHandler:
 
         # Try streaming SDK first (no S3 required)
         try:
-            print("[Nova Sonic] Attempting streaming transcription...")
+            logger.info("Attempting streaming transcription...")
             return await self._transcribe_streaming(audio_data)
         except ImportError:
-            print("[Nova Sonic] amazon-transcribe SDK not installed, falling back to batch pipeline")
+            logger.info("amazon-transcribe SDK not installed, falling back to batch pipeline")
         except Exception as e:
-            print(f"[Nova Sonic] Streaming transcription failed ({e}), trying batch pipeline")
+            logger.warning(f"Streaming transcription failed ({e}), trying batch pipeline")
 
         # Fallback: S3 → Transcribe batch pipeline
-        print("[Nova Sonic] Attempting batch transcription...")
+        logger.info("Attempting batch transcription...")
         return await self._transcribe_batch(audio_data)
 
     async def _transcribe_streaming(self, audio_data: bytes) -> str:
@@ -314,7 +317,7 @@ class NovaSonicHandler:
 
         transcript = " ".join(transcript_parts).strip()
         if transcript:
-            print(f"[Nova Sonic] Streaming STT result: {transcript[:80]}...")
+            logger.info(f"Streaming STT result: {transcript[:80]}...")
         return transcript
 
     async def _transcribe_batch(self, audio_data: bytes) -> str:
@@ -358,7 +361,7 @@ class NovaSonicHandler:
             except s3.exceptions.BucketAlreadyExists:
                 pass
             except Exception as e:
-                print(f"[Nova Sonic] Warning: Could not create S3 bucket: {e}")
+                logger.warning(f"Could not create S3 bucket: {e}")
                 # Try to continue - bucket might exist or permissions issue
             
             # Upload the audio file
@@ -426,7 +429,7 @@ class NovaSonicHandler:
                     return transcript
                 
                 elif status == 'FAILED':
-                    print(f"Transcription job failed: {result}")
+                    logger.error(f"Transcription job failed: {result}")
                     break
                 
                 await asyncio.sleep(1)
@@ -440,7 +443,7 @@ class NovaSonicHandler:
             return ""
             
         except Exception as e:
-            print(f"[Nova Sonic] Transcription error: {e}")
+            logger.error(f"Transcription error: {e}")
             return ""
     
     def _pcm_to_wav(self, pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, bits: int = 16) -> bytes:
@@ -528,7 +531,7 @@ class NovaSonicHandler:
             return audio_data
             
         except Exception as e:
-            print(f"Speech synthesis error: {e}")
+            logger.error(f"Speech synthesis error: {e}")
             return None
     
     async def process_text_to_speech(self, text: str) -> bytes:

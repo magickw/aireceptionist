@@ -91,6 +91,8 @@ class Order(Base):
     customer_phone = Column(String(20))
     status = Column(String(20), default="pending")  # pending, confirmed, preparing, ready, completed, cancelled
     total_amount = Column(DECIMAL(10, 2), default=0)
+    delivery_method = Column(String(20))   # "pickup" or "delivery"
+    delivery_address = Column(Text)        # Address for delivery orders
     notes = Column(Text)  # Special instructions
     confirmed_at = Column(DateTime)
     completed_at = Column(DateTime)

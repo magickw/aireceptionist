@@ -147,6 +147,28 @@ export default function IntegrationsPage() {
         route: '/webhooks',
         color: '#00838f',
       },
+      {
+        id: 'pos',
+        name: 'Point of Sale (POS)',
+        description: 'Integrate with your restaurant POS system to sync menus and push orders.',
+        icon: <Payment />, // Using Payment icon as a placeholder
+        status: 'loading',
+        statusLabel: '',
+        actionLabel: 'Configure',
+        route: '/integrations/pos',
+        color: '#2e7d32',
+      },
+      {
+        id: 'pms',
+        name: 'Property Management (PMS)',
+        description: 'Connect your hotel PMS to manage room availability and guest bookings.',
+        icon: <CalendarMonth />, // Using Calendar icon as a placeholder
+        status: 'loading',
+        statusLabel: '',
+        actionLabel: 'Configure',
+        route: '/integrations/pms',
+        color: '#0277bd',
+      },
     ];
 
     setIntegrations(defaultIntegrations);
@@ -158,6 +180,7 @@ export default function IntegrationsPage() {
       api.get('/payments/status'),
       api.get('/knowledge-base/documents'),
       api.get('/webhooks'),
+      api.get('/integrations'), // Generic integrations endpoint
     ]);
 
     const updated = defaultIntegrations.map((integration, index) => {
@@ -165,6 +188,12 @@ export default function IntegrationsPage() {
       const copy = { ...integration };
 
       if (result.status === 'rejected') {
+        // Special case for the generic integrations endpoint (index 6)
+        if (index === 6) {
+           // If /integrations fails, mark POS and PMS as not configured
+           return copy;
+        }
+        
         // 404 or network error likely means not configured
         const err = result.reason;
         if (err?.response?.status === 404 || err?.response?.status === 400) {
@@ -179,6 +208,13 @@ export default function IntegrationsPage() {
       }
 
       const data = result.value.data;
+
+      // Handle the generic integrations results for POS and PMS
+      if (index === 6 && Array.isArray(data)) {
+        // This handles both POS and PMS since they are in the same list
+        // Note: The mapping below needs to be smart enough to find the right integration
+        return copy; 
+      }
 
       switch (integration.id) {
         case 'twilio': {
@@ -230,6 +266,36 @@ export default function IntegrationsPage() {
           copy.status = count > 0 ? 'connected' : 'not_configured';
           copy.statusLabel =
             count > 0 ? `${count} webhook${count !== 1 ? 's' : ''} active` : 'No Webhooks';
+          break;
+        }
+        case 'pos': {
+          // Find POS integration in the generic integrations list (results[6])
+          const genericResult = results[6];
+          if (genericResult.status === 'fulfilled' && Array.isArray(genericResult.value.data)) {
+            const pos = genericResult.value.data.find((i: any) => i.integration_type.includes('pos'));
+            if (pos) {
+              copy.status = pos.status === 'active' ? 'connected' : 'error';
+              copy.statusLabel = pos.status === 'active' ? 'Connected' : 'Error';
+            } else {
+              copy.status = 'not_configured';
+              copy.statusLabel = 'Not Configured';
+            }
+          }
+          break;
+        }
+        case 'pms': {
+          // Find PMS integration in the generic integrations list (results[6])
+          const genericResult = results[6];
+          if (genericResult.status === 'fulfilled' && Array.isArray(genericResult.value.data)) {
+            const pms = genericResult.value.data.find((i: any) => i.integration_type.includes('pms'));
+            if (pms) {
+              copy.status = pms.status === 'active' ? 'connected' : 'error';
+              copy.statusLabel = pms.status === 'active' ? 'Connected' : 'Error';
+            } else {
+              copy.status = 'not_configured';
+              copy.statusLabel = 'Not Configured';
+            }
+          }
           break;
         }
       }

@@ -128,18 +128,22 @@ class BusinessTypeTemplate:
                 "menu_item": {"required": False, "validation": "string", "prompt": "What would you like to order?"},
                 "quantity": {"required": False, "validation": "string", "prompt": "How many?"},
                 "delivery_method": {"required": False, "validation": "string", "prompt": "Would you like that for pickup or delivery?"},
+                "special_requests": {"required": False, "validation": "string", "prompt": "Any special requests or modifications?"},
             },
-            "booking_flow": {
-                "type": "order",  # order or appointment
+            "order_food_flow": {
+                "type": "order",
                 "steps": [
                     {"field": "menu_item", "ask_if_missing": True},
                     {"field": "quantity", "ask_if_missing": False, "default": 1},
+                    {"field": "special_requests", "ask_if_missing": True},
+                    {"intent": "add_drink", "prompt": "Would you like to add a drink with that?"},
+                    {"intent": "add_side", "prompt": "Would you like any sides to go with your order?"},
                     {"field": "delivery_method", "ask_if_missing": True},
                     {"field": "customer_name", "ask_if_missing": True},
                     {"field": "phone", "ask_if_missing": True},
                 ],
-                "final_action": "CREATE_ORDER",
-                "confirmation_message": "Your order has been placed. Total: ${total}. Ready for {delivery_method}.",
+                "final_action": "CONFIRM_ORDER",
+                "confirmation_message": "Your order for {menu_item} is confirmed. Your total is ${total}. It will be ready for {delivery_method} shortly.",
             },
             "reservation_flow": {
                 "type": "appointment",
@@ -154,17 +158,14 @@ class BusinessTypeTemplate:
             },
             "system_prompt_addition": """
 ## Restaurant-Specific Guidelines:
-- CRITICAL - PRICING: When customers ask about prices, provide EXACT price from Menu. When ordering multiple items, ALWAYS calculate and provide the TOTAL price.
-- When customer orders multiple items, calculate: item1 price + item2 price = TOTAL. Say "Your total is $XX.XX"
-- After customer confirms items, THEN ask for name and phone for delivery/pickup
-- When customer says yes to ordering, confirm the items and total first, THEN collect contact info
-- Do NOT repeat the price multiple times in one response
-- Handle to-go orders and delivery inquiries
-- Be familiar with menu items, prices, and ingredients
-- DIRECTIONS: If asked for directions, provide them based on the business address. Mention nearby landmarks if known.
-- PAYMENTS: If asked about payment, explain that we accept credit cards, cash, and can process payments securely. If they want to pay now, initiate the PAYMENT_PROCESS action.
-- ORDERS: When a customer wants to place an order, use the `PLACE_ORDER` action to add items to cart, then `CONFIRM_ORDER` to finalize.
-- INTENT FILTERING: DO NOT accept orders for non-food items (auto parts, repairs, services). Redirect appropriately.
+- **Advanced Ordering Flow**: When a user wants to order food, follow the `order_food_flow`.
+- First, get their main `menu_item`. After they choose an item, ask for any `special_requests`.
+- **Upselling**: After handling special requests, ask if they want to add a drink or a side. Be natural, e.g., "Would you like a drink or a side to go with that?"
+- After the full order is assembled, then ask for the `delivery_method` (pickup or delivery).
+- Finally, once the order details are complete, collect the `customer_name` and `phone`.
+- Use the `CONFIRM_ORDER` action only after all items, upsells, and contact info are collected.
+- **Pricing**: When customers ask about prices, provide the EXACT price from the Menu. For multiple items, ALWAYS calculate and state the TOTAL price before finalizing.
+- **DO NOT** repeat questions. If you have the information (e.g., they already said "for pickup"), move to the next step.
 """,
             "example_responses": {
                 "reservation": "I'd be happy to help you reserve a table. How many guests will be joining?",
@@ -963,47 +964,51 @@ class BusinessTypeTemplate:
     def get_next_missing_field(cls, business_type: str, collected: Dict[str, str], intent: str = None) -> Optional[Dict[str, Any]]:
         """
         Determine the next field to ask for based on booking flow configuration.
-        
-        Args:
-            business_type: Type of business
-            collected: Dictionary of already collected fields and their values
-            intent: Current intent (used for conditional field requirements)
-            
-        Returns:
-            Dictionary with field name and prompt, or None if all required fields collected
+        This now supports both field-based and intent-based steps.
         """
         template = cls.get_template(business_type)
-        booking_flow = template.get("booking_flow", {})
-        steps = booking_flow.get("steps", [])
+        
+        # Determine which flow to use (e.g., order_food_flow, reservation_flow)
+        flow = {}
+        if intent == "order_food" and "order_food_flow" in template:
+            flow = template["order_food_flow"]
+        elif intent == "make_reservation" and "reservation_flow" in template:
+            flow = template["reservation_flow"]
+        else:
+            flow = template.get("booking_flow", {})
+
+        steps = flow.get("steps", [])
         fields = template.get("fields", {})
         
         for step in steps:
-            field_name = step.get("field")
-            ask_if_missing = step.get("ask_if_missing", True)
-            for_intents = step.get("for_intents", None)
-            
-            # Skip if not supposed to ask
-            if not ask_if_missing:
-                continue
-            
-            # Skip if this step is only for certain intents and current intent doesn't match
-            if for_intents and intent not in for_intents:
-                continue
-            
-            # Check if already collected
-            if field_name in collected and collected[field_name]:
-                continue
-            
-            # Return the field info with prompt
-            field_config = fields.get(field_name, {})
-            return {
-                "field": field_name,
-                "prompt": field_config.get("prompt", f"Please provide {field_name}"),
-                "validation": field_config.get("validation", "string"),
-                "required": field_config.get("required", False),
-            }
+            if "field" in step:
+                field_name = step["field"]
+                ask_if_missing = step.get("ask_if_missing", True)
+                for_intents = step.get("for_intents")
+
+                if not ask_if_missing or (for_intents and intent not in for_intents):
+                    continue
+                
+                if field_name not in collected or not collected[field_name]:
+                    field_config = fields.get(field_name, {})
+                    return {
+                        "type": "field",
+                        "field": field_name,
+                        "prompt": field_config.get("prompt", f"Please provide {field_name}"),
+                        "validation": field_config.get("validation", "string"),
+                    }
+            elif "intent" in step:
+                # This is a conversational goal, not a data field
+                step_intent = step["intent"]
+                # Check if this conversational step has already been "satisfied"
+                if f"satisfied_{step_intent}" not in collected:
+                    return {
+                        "type": "intent",
+                        "intent": step_intent,
+                        "prompt": step.get("prompt", f"I was wondering about {step_intent}"),
+                    }
         
-        return None  # All fields collected
+        return None  # All steps completed
     
     @classmethod
     def validate_field(cls, field_name: str, value: str, validation_type: str) -> bool:

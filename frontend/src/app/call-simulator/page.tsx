@@ -162,6 +162,11 @@ export default function CallSimulator() {
 
         ws.onopen = () => {
           console.log('[CallSim] WebSocket connected');
+          // Send auth token as first message
+          const token = localStorage.getItem('token');
+          if (token) {
+            ws.send(JSON.stringify({ type: 'auth', token }));
+          }
           connectionStatusRef.current = 'connected';
           setConnectionStatus('connected');
         };
