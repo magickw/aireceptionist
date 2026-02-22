@@ -2,6 +2,8 @@
 AI Training Service - Manage and test training scenarios
 """
 
+from typing import Optional, List, Dict, Any
+from sqlalchemy.orm import Session
 from app.models.models import AITrainingScenario, Business, TrainingSnapshot, BenchmarkResult
 from app.services.nova_reasoning import nova_reasoning
 
