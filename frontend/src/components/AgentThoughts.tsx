@@ -9,7 +9,8 @@ import {
   AccordionDetails,
   Alert,
   Divider,
-  Stack
+  Stack,
+  Snackbar
 } from '@mui/material';
 import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
 import PsychologyIcon from '@mui/icons-material/Psychology';
@@ -58,6 +59,11 @@ interface AgentThoughtsProps {
 
 const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }) => {
   const [isProcessing, setIsProcessing] = useState(false);
+  const [snackbar, setSnackbar] = useState<{ open: boolean; message: string; severity: 'success' | 'error' }>({
+    open: false,
+    message: '',
+    severity: 'success'
+  });
 
   const handleApprove = async () => {
     setIsProcessing(true);
@@ -68,10 +74,10 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
         original_response: reasoningData?.suggested_response,
         context: reasoningData
       });
-      alert('Override approved');
+      setSnackbar({ open: true, message: 'Override approved', severity: 'success' });
     } catch (error) {
       console.error('Failed to approve:', error);
-      alert('Failed to approve');
+      setSnackbar({ open: true, message: 'Failed to approve', severity: 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -85,10 +91,10 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
         call_session_id: reasoningData?.context?.call_session_id,
         context: reasoningData
       });
-      alert('Action rejected');
+      setSnackbar({ open: true, message: 'Action rejected', severity: 'success' });
     } catch (error) {
       console.error('Failed to reject:', error);
-      alert('Failed to reject');
+      setSnackbar({ open: true, message: 'Failed to reject', severity: 'error' });
     } finally {
       setIsProcessing(false);
     }
@@ -411,6 +417,18 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
           </Typography>
         </Box>
       )}
+      
+      {/* Snackbar for notifications */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={() => setSnackbar({ ...snackbar, open: false })}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert severity={snackbar.severity} onClose={() => setSnackbar({ ...snackbar, open: false })}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
     </Box>
   );
 };

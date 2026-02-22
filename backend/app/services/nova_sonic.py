@@ -474,35 +474,6 @@ class NovaSonicHandler:
         
         return header + pcm_data
     
-    async def _get_text_response(
-        self,
-        transcript: str,
-        context: Optional[Dict[str, Any]] = None
-    ) -> str:
-        """
-        Get text response from Nova Lite reasoning engine.
-        
-        This will integrate with the nova_reasoning.py service.
-        """
-        # Import here to avoid circular dependency
-        from app.services.nova_reasoning import nova_reasoning
-        
-        business_context = context.get("business_context", {}) if context else {}
-        customer_context = context.get("customer_context", {}) if context else {}
-        
-        try:
-            reasoning_result = await nova_reasoning.reason(
-                conversation=transcript,
-                business_context=business_context,
-                customer_context=customer_context
-            )
-            
-            return reasoning_result.get("suggested_response", "I'm here to help you.")
-            
-        except Exception as e:
-            # Fallback response
-            return "I understand you'd like to book an appointment. Let me help you with that."
-    
     async def _synthesize_speech(self, text: str) -> Optional[bytes]:
         """
         Synthesize text to speech using Polly or Nova TTS.

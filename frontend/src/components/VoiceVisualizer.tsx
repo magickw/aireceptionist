@@ -138,6 +138,13 @@ const VoiceVisualizer: React.FC<VoiceVisualizerProps> = ({ isActive, isSpeaking 
         ref={canvasRef}
         width={300}
         height={80}
+        role="img"
+        aria-label={
+          isSpeaking ? 'AI speaking visualization' :
+          isRecording ? 'Recording audio visualization' :
+          isActive ? 'Listening for speech' :
+          'Voice visualizer inactive'
+        }
         style={{
           width: '100%',
           height: '100%',
