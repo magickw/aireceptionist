@@ -55,8 +55,11 @@ export default function CallSimulator() {
     onPlaybackStart: () => setIsSpeaking(true),
     onPlaybackEnd: () => setIsSpeaking(false),
     onTranscript: useCallback((text: string, isFinal: boolean) => {
+      // When streaming is ready, don't send browser STT - wait for backend STT
+      // This callback is only used for HTTP fallback mode
+      if (isStreamingReady) return;
       if (!isFinal) return;
-      // Browser STT produced final text → send as user_input (same as text mode)
+      // Browser STT produced final text → send as user_input (HTTP fallback only)
       addMessageRef.current(text, 'customer');
       setIsProcessing(true);
 
@@ -65,7 +68,8 @@ export default function CallSimulator() {
       } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: 'user_input', text }));
       }
-    }, [connectionStatus]),
+    }, [connectionStatus, isStreamingReady]),
+    isStreamingReady,
   });
 
   // Create HTTP session

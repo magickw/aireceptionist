@@ -365,7 +365,11 @@ class NovaSonicStreamSession:
         Transcribe buffered audio, run safety checks, then generate a
         model response via converse_stream.
         """
+        audio_len = len(self._audio_buffer) if self._audio_buffer else 0
+        logger.info(f"end_user_turn called with {audio_len} bytes of audio")
+
         if not self._audio_buffer or len(self._audio_buffer) < 1000:
+            logger.warning(f"Audio buffer too small ({audio_len} bytes), skipping transcription")
             return
 
         audio_data = self._audio_buffer
@@ -373,9 +377,12 @@ class NovaSonicStreamSession:
 
         # --- STT ---
         from app.services.nova_sonic import nova_sonic
+        logger.info("Calling transcription service...")
         transcript = await nova_sonic._transcribe_audio_with_nova(audio_data)
+        logger.info(f"Transcription result: '{transcript[:100] if transcript else 'EMPTY'}...'")
 
         if not transcript:
+            logger.warning("Empty transcript, sending fallback response")
             await self.text_queue.put({
                 "chunk": "I'm sorry, I couldn't understand that. Could you please try again?",
             })
@@ -383,6 +390,7 @@ class NovaSonicStreamSession:
             return
 
         # Emit transcript to client
+        logger.info(f"Sending transcript to client: {transcript}")
         await self.transcript_queue.put({"text": transcript})
 
         # --- Safety check ---

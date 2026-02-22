@@ -286,6 +286,8 @@ class NovaSonicHandler:
         if settings.AWS_REGION:
             os.environ.setdefault("AWS_DEFAULT_REGION", settings.AWS_REGION)
 
+        logger.info(f"Starting streaming transcription with {len(audio_data)} bytes of audio data")
+
         transcript_parts: list[str] = []
 
         class Handler(TranscriptResultStreamHandler):
@@ -296,6 +298,7 @@ class NovaSonicHandler:
                         for alt in result.alternatives:
                             if alt.transcript:
                                 transcript_parts.append(alt.transcript)
+                                logger.debug(f"STT partial result: {alt.transcript}")
 
         client = TranscribeStreamingClient(region=settings.AWS_REGION)
 
@@ -307,17 +310,22 @@ class NovaSonicHandler:
 
         # Send audio in chunks (Transcribe Streaming max chunk ≈ 25 KB)
         chunk_size = 16384
+        chunks_sent = 0
         for i in range(0, len(audio_data), chunk_size):
             chunk = audio_data[i : i + chunk_size]
             await stream.input_stream.send_audio_event(audio_chunk=chunk)
+            chunks_sent += 1
         await stream.input_stream.end_stream()
+        logger.info(f"Sent {chunks_sent} audio chunks to Transcribe")
 
         handler = Handler(stream.output_stream)
         await handler.handle_events()
 
         transcript = " ".join(transcript_parts).strip()
         if transcript:
-            logger.info(f"Streaming STT result: {transcript[:80]}...")
+            logger.info(f"Streaming STT result: {transcript[:100]}...")
+        else:
+            logger.warning("Streaming STT returned empty transcript")
         return transcript
 
     async def _transcribe_batch(self, audio_data: bytes) -> str:
