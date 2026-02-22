@@ -256,12 +256,16 @@ class NovaSonicHandler:
         falls back to the batch S3→Transcribe pipeline.
         """
         if not audio_data or len(audio_data) < 1000:
+            logger.warning("Audio data too small for transcription")
             return ""
 
         # Try streaming SDK first (no S3 required)
         try:
             logger.info("Attempting streaming transcription...")
-            return await self._transcribe_streaming(audio_data)
+            result = await self._transcribe_streaming(audio_data)
+            if result:
+                return result
+            logger.warning("Streaming transcription returned empty result")
         except ImportError:
             logger.info("amazon-transcribe SDK not installed, falling back to batch pipeline")
         except Exception as e:
@@ -269,7 +273,11 @@ class NovaSonicHandler:
 
         # Fallback: S3 → Transcribe batch pipeline
         logger.info("Attempting batch transcription...")
-        return await self._transcribe_batch(audio_data)
+        try:
+            return await self._transcribe_batch(audio_data)
+        except Exception as e:
+            logger.error(f"Batch transcription also failed ({e}), returning empty transcript")
+            return ""
 
     async def _transcribe_streaming(self, audio_data: bytes) -> str:
         """Transcribe using Amazon Transcribe Streaming (no S3 needed)."""

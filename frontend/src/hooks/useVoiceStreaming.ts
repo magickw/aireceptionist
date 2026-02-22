@@ -1,51 +1,11 @@
 'use client';
 import { useRef, useState, useCallback, useEffect } from 'react';
 
-// -- TypeScript declarations for Web Speech API --
-interface SpeechRecognitionEvent extends Event {
-  resultIndex: number;
-  results: SpeechRecognitionResultList;
-}
-interface SpeechRecognitionResultList {
-  length: number;
-  item(index: number): SpeechRecognitionResult;
-  [index: number]: SpeechRecognitionResult;
-}
-interface SpeechRecognitionResult {
-  isFinal: boolean;
-  length: number;
-  item(index: number): SpeechRecognitionAlternative;
-  [index: number]: SpeechRecognitionAlternative;
-}
-interface SpeechRecognitionAlternative {
-  transcript: string;
-  confidence: number;
-}
-interface SpeechRecognition extends EventTarget {
-  continuous: boolean;
-  interimResults: boolean;
-  lang: string;
-  start(): void;
-  stop(): void;
-  abort(): void;
-  onresult: ((ev: SpeechRecognitionEvent) => void) | null;
-  onerror: ((ev: Event & { error: string }) => void) | null;
-  onend: (() => void) | null;
-  onstart: (() => void) | null;
-}
-declare global {
-  interface Window {
-    SpeechRecognition: new () => SpeechRecognition;
-    webkitSpeechRecognition: new () => SpeechRecognition;
-  }
-}
-
 interface UseVoiceStreamingOptions {
   wsRef: React.RefObject<WebSocket | null>;
   onPlaybackStart?: () => void;
   onPlaybackEnd?: () => void;
   onTranscript?: (text: string, isFinal: boolean) => void;
-  isStreamingReady?: boolean; // If true, don't send browser STT - wait for backend
 }
 
 interface UseVoiceStreamingReturn {
@@ -56,7 +16,6 @@ interface UseVoiceStreamingReturn {
   playAudioChunk: (base64Audio: string, sampleRate?: number) => void;
   stopPlayback: () => void;
   micLevel: number;
-  interimTranscript: string;
 }
 
 export function useVoiceStreaming({
@@ -69,24 +28,13 @@ export function useVoiceStreaming({
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
-  const [interimTranscript, setInterimTranscript] = useState('');
 
   // Refs for mic capture
   const mediaStreamRef = useRef<MediaStream | null>(null);
   const audioContextRef = useRef<AudioContext | null>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
-  const processorRef = useRef<ScriptProcessorNode | null>(null); // New ref for audio processor
+  const processorRef = useRef<ScriptProcessorNode | null>(null);
   const levelTimerRef = useRef<number | null>(null);
-
-  // Refs for SpeechRecognition
-  const recognitionRef = useRef<SpeechRecognition | null>(null);
-  const finalTranscriptRef = useRef('');
-  const onTranscriptRef = useRef(onTranscript);
-  onTranscriptRef.current = onTranscript;
-
-  // Track streaming mode - don't send browser STT when backend STT is active
-  const isStreamingReadyRef = useRef(isStreamingReady);
-  isStreamingReadyRef.current = isStreamingReady;
 
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
@@ -103,9 +51,6 @@ export function useVoiceStreaming({
   }, []);
 
   const startRecording = useCallback(async () => {
-    finalTranscriptRef.current = '';
-    setInterimTranscript('');
-
     try {
       // 1. Mic capture
       const stream = await navigator.mediaDevices.getUserMedia({
@@ -180,45 +125,6 @@ export function useVoiceStreaming({
       };
       levelTimerRef.current = requestAnimationFrame(pollLevel);
 
-      // 3. Browser-side STT (Keeping only for local display/UI feedback)
-      const SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-      if (SpeechRecognitionCtor) {
-        const recognition = new SpeechRecognitionCtor();
-        recognitionRef.current = recognition;
-        recognition.continuous = true;
-        recognition.interimResults = true;
-        recognition.lang = 'en-US';
-
-        recognition.onresult = (event: SpeechRecognitionEvent) => {
-          let interim = '';
-          for (let i = event.resultIndex; i < event.results.length; ++i) {
-            if (event.results[i].isFinal) {
-              finalTranscriptRef.current += event.results[i][0].transcript;
-            } else {
-              interim += event.results[i][0].transcript;
-            }
-          }
-          setInterimTranscript(finalTranscriptRef.current + interim);
-        };
-
-        recognition.onerror = (ev) => {
-          if ((ev as any).error !== 'no-speech' && (ev as any).error !== 'aborted') {
-            console.error('[useVoiceStreaming] SpeechRecognition error:', (ev as any).error);
-          }
-        };
-        
-        recognition.onend = () => {
-            if (isRecording && recognitionRef.current) {
-                try {
-                    recognition.start();
-                } catch (e) {}
-            }
-        };
-
-        recognition.start();
-      }
-      
       setIsRecording(true);
     } catch (err) {
       console.error('[useVoiceStreaming] Microphone access denied:', err);
@@ -229,12 +135,6 @@ export function useVoiceStreaming({
     // Send audio_stop to backend
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'audio_stop' }));
-    }
-
-    if (recognitionRef.current) {
-      recognitionRef.current.onend = null;
-      recognitionRef.current.stop();
-      recognitionRef.current = null;
     }
 
     if (processorRef.current) {
@@ -346,9 +246,6 @@ export function useVoiceStreaming({
 
   useEffect(() => {
     return () => {
-      if (recognitionRef.current) {
-        recognitionRef.current.abort();
-      }
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
       }
@@ -369,6 +266,5 @@ export function useVoiceStreaming({
     playAudioChunk,
     stopPlayback,
     micLevel,
-    interimTranscript,
   };
 }

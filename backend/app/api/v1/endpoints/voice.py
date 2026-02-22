@@ -736,7 +736,7 @@ async def voice_websocket(
 
     # === Audio Buffer for Batch Mode ===
     audio_buffer = b""  # Buffer to accumulate audio chunks in batch mode
-    audio_buffer_threshold = 16000 * 2 * 2  # ~2 seconds of 16kHz PCM16 audio
+    audio_buffer_threshold = 16000 * 1 * 2  # ~1 second of 16kHz PCM16 audio
 
     # === Nova Sonic Streaming Setup ===
     use_streaming = app_settings.NOVA_SONIC_STREAMING_ENABLED

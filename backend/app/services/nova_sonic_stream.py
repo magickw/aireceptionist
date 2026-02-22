@@ -383,8 +383,9 @@ class NovaSonicStreamSession:
 
         if not transcript:
             logger.warning("Empty transcript, sending fallback response")
+            # Provide helpful fallback message suggesting text input
             await self.text_queue.put({
-                "chunk": "I'm sorry, I couldn't understand that. Could you please try again?",
+                "chunk": "I'm having trouble understanding your voice right now. Could you please type your request or try speaking again more clearly?",
             })
             await self.text_queue.put({"turn_complete": True})
             return

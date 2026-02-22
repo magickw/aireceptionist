@@ -49,27 +49,10 @@ export default function CallSimulator() {
     playAudioChunk,
     stopPlayback,
     micLevel,
-    interimTranscript,
   } = useVoiceStreaming({
     wsRef,
     onPlaybackStart: () => setIsSpeaking(true),
     onPlaybackEnd: () => setIsSpeaking(false),
-    onTranscript: useCallback((text: string, isFinal: boolean) => {
-      // When streaming is ready, don't send browser STT - wait for backend STT
-      // This callback is only used for HTTP fallback mode
-      if (isStreamingReady) return;
-      if (!isFinal) return;
-      // Browser STT produced final text → send as user_input (HTTP fallback only)
-      addMessageRef.current(text, 'customer');
-      setIsProcessing(true);
-
-      if (connectionStatus === 'http_fallback') {
-        sendHttpMessage(text);
-      } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-        wsRef.current.send(JSON.stringify({ type: 'user_input', text }));
-      }
-    }, [connectionStatus, isStreamingReady]),
-    isStreamingReady,
   });
 
   // Create HTTP session
@@ -501,11 +484,6 @@ export default function CallSimulator() {
                             Listening...
                           </Typography>
                         </Box>
-                        {interimTranscript && (
-                          <Typography variant="caption" color="text.secondary" sx={{ fontStyle: 'italic', maxWidth: 300, textAlign: 'center' }}>
-                            {interimTranscript}
-                          </Typography>
-                        )}
                       </Box>
                     )}
                     {!isRecording && (
