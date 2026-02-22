@@ -66,6 +66,7 @@ class MenuItem(Base):
     description = Column(Text)
     price = Column(DECIMAL(10, 2))
     unit = Column(String(50), default="per item")  # e.g., per item, per lb, per kg, per hour, per ton
+    inventory = Column(Integer, default=1)  # For tracking stock/room availability
     category = Column(String(100))  # e.g., Appetizers, Main Course, Drinks
     available = Column(Boolean, default=True)
     dietary_info = Column(JSON)  # e.g., {"vegetarian": true, "gluten_free": false}

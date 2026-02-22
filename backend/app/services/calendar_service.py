@@ -409,15 +409,53 @@ class CalendarService:
         start_time: datetime,
         end_time: datetime,
         db: Session,
+        service_type: str = None,
         exclude_appointment_id: int = None
     ) -> List[Dict[str, Any]]:
         """
         Check for conflicting appointments in the local database.
         
+        For hotels, this checks inventory. For others, it checks for any overlap.
+        
         Returns list of conflicting appointments.
         """
-        from app.models.models import Appointment
+        from app.models.models import Appointment, MenuItem, Business
         
+        business = db.query(Business).filter(Business.id == business_id).first()
+
+        # If business is a hotel and a service_type (room type) is provided
+        if business and business.type == 'hotel' and service_type:
+            # Find the menu item that represents this room type
+            menu_item = db.query(MenuItem).filter(
+                MenuItem.business_id == business_id,
+                MenuItem.name.ilike(f'%{service_type.split(" Room")[0]}%')
+            ).first()
+
+            if menu_item and menu_item.inventory > 0:
+                # Count overlapping appointments for this room type
+                query = db.query(Appointment).filter(
+                    Appointment.business_id == business_id,
+                    Appointment.status.in_(["scheduled", "confirmed"]),
+                    Appointment.service_type == service_type,
+                    Appointment.appointment_time < end_time,
+                    (Appointment.appointment_time + timedelta(hours=1)) > start_time # A simple overlap check
+                )
+
+                if exclude_appointment_id:
+                    query = query.filter(Appointment.id != exclude_appointment_id)
+
+                booked_count = query.count()
+
+                if booked_count >= menu_item.inventory:
+                    return [{
+                        "id": None,
+                        "reason": "inventory_full",
+                        "message": f"All {menu_item.inventory} rooms of type '{service_type}' are booked for the selected dates."
+                    }]
+                else:
+                    return [] # Inventory available
+
+        # Original logic for non-hotel businesses or if no service_type is specified
         query = db.query(Appointment).filter(
             Appointment.business_id == business_id,
             Appointment.status.in_(["scheduled", "confirmed"]),
