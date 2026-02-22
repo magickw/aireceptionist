@@ -674,15 +674,23 @@ class NovaReasoningEngine:
             high_risk_intents = risk_profile.get("high_risk_intents", [])
             detected_intent = reasoning_result.get("intent", "")
             
-            # Validate intent using intent classifier
+            # Validate intent using intent classifier (only if db is available)
             try:
-                is_valid, suggested_intent, intent_confidence = validate_intent(
-                    detected_intent,
-                    conversation,
-                    business_type,
-                    db,
-                    threshold=confidence_threshold
-                )
+                if db is not None:
+                    is_valid, suggested_intent, intent_confidence = validate_intent(
+                        detected_intent,
+                        conversation,
+                        business_type,
+                        db,
+                        threshold=confidence_threshold
+                    )
+                else:
+                    # Skip intent validation if db not available
+                    is_valid = True
+                    suggested_intent = None
+                    intent_confidence = 0.5
+                    reasoning_result["intent_validated"] = None
+                    reasoning_result["intent_validation_reason"] = "Intent validation skipped (no db session)"
                 
                 if not is_valid:
                     # Intent validation failed

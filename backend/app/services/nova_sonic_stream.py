@@ -378,7 +378,13 @@ class NovaSonicStreamSession:
         # --- STT ---
         from app.services.nova_sonic import nova_sonic
         logger.info("Calling transcription service...")
-        transcript = await nova_sonic._transcribe_audio_with_nova(audio_data)
+        
+        # Callback to send partial transcripts for live preview
+        async def on_partial_transcript(text: str, is_partial: bool = False):
+            # Send partial transcript for live preview (both partial and final updates)
+            await self.transcript_queue.put({"text": text, "is_partial": is_partial})
+        
+        transcript = await nova_sonic._transcribe_audio_with_nova(audio_data, on_partial=on_partial_transcript)
         logger.info(f"Transcription result: '{transcript[:100] if transcript else 'EMPTY'}...'")
 
         if not transcript:
@@ -396,8 +402,12 @@ class NovaSonicStreamSession:
 
         # --- Safety check ---
         if self.safety_checker:
+            logger.info(f"[nova_sonic_stream] Running safety check on transcript: {transcript[:50]}...")
             safety_result = self.safety_checker(transcript)
-            if safety_result:
+            logger.info(f"[nova_sonic_stream] Safety check result: {safety_result}")
+            # Only skip AI response if should_escalate is True
+            if safety_result and safety_result.get('should_escalate'):
+                logger.info(f"[nova_sonic_stream] Safety trigger detected, skipping AI response")
                 await self.transcript_queue.put({
                     "text": transcript,
                     "safety_trigger": safety_result,
@@ -410,7 +420,9 @@ class NovaSonicStreamSession:
             "role": "user",
             "content": [{"text": transcript}],
         })
+        logger.info(f"[nova_sonic_stream] About to call _generate_assistant_response for transcript: {transcript}")
         await self._generate_assistant_response()
+        logger.info(f"[nova_sonic_stream] _generate_assistant_response completed")
 
     # ------------------------------------------------------------------
     # Text input (for text-mode conversations)
@@ -474,6 +486,7 @@ class NovaSonicStreamSession:
         Runs the blocking boto3 iteration in a thread pool and bridges
         events to asyncio queues.
         """
+        logger.info(f"[nova_sonic_stream] _generate_assistant_response called!")
         # Reset thinking-block state for this turn
         self._in_thinking_block = False
         self._partial_text = ""
@@ -494,6 +507,9 @@ class NovaSonicStreamSession:
                         for t in self.tool_definitions
                     ]
                 }
+            
+            logger.info(f"[nova_sonic_stream] Generating assistant response with {len(self._conversation_history)} messages in history")
+            logger.info(f"[nova_sonic_stream] System prompt: {self.system_prompt[:100] if self.system_prompt else 'None'}...")
 
             # Bridge blocking stream -> async via an intermediate queue
             loop = asyncio.get_event_loop()
@@ -630,6 +646,7 @@ class NovaSonicStreamSession:
             # --- TTS: synthesize audio for the full text response ---
             if accumulated_text:
                 from app.services.nova_sonic import nova_sonic
+                logger.info(f"[nova_sonic_stream] Synthesizing speech for: {accumulated_text[:100]}...")
                 audio_data = await nova_sonic._synthesize_speech(accumulated_text)
                 if audio_data:
                     audio_b64 = nova_sonic.encode_audio_base64(audio_data)
@@ -637,6 +654,8 @@ class NovaSonicStreamSession:
                         "audio": audio_b64,
                         "sample_rate": 16000,
                     })
+            else:
+                logger.warning(f"[nova_sonic_stream] accumulated_text is None or empty, skipping TTS")
 
         except Exception as e:
             logger.error(f"Error: {e}\n{traceback.format_exc()}")
@@ -651,6 +670,7 @@ class NovaSonicStreamSession:
         """
         Filter out <thinking>...</thinking> blocks that may span multiple
         chunks. Returns the portion of text that should be emitted.
+        Also sends thinking content to frontend for display.
         """
         self._partial_text += text
         output = ""
@@ -673,6 +693,10 @@ class NovaSonicStreamSession:
             else:
                 idx = self._partial_text.find("</thinking>")
                 if idx != -1:
+                    # Capture and send the thinking content
+                    thinking_content = self._partial_text[:idx].strip()
+                    if thinking_content:
+                        asyncio.create_task(self.text_queue.put({"thinking": thinking_content}))
                     self._partial_text = self._partial_text[idx + 11:]
                     self._in_thinking_block = False
                     continue
@@ -777,7 +801,9 @@ Business Information:
     if services:
         prompt += f"- Services: {', '.join(services)}\n"
 
-    if menu:
+    # Only show menu items for businesses that actually have menus (restaurants, retail, etc.)
+    # Hotels don't have menus - they have room types which are handled differently
+    if menu and business_type not in ["hotel", "dental", "medical", "law_firm", "accounting", "real_estate", "hvac"]:
         menu_items = ", ".join(
             [f"{item.get('name', '')} (${item.get('price', 0)})" for item in menu[:10]]
         )
@@ -790,6 +816,24 @@ Business Information:
 
 Current Customer:
 - Name: {customer_name}
+"""
+
+    # Add business-specific booking flow instructions
+    from app.services.business_templates import BusinessTypeTemplate
+    booking_flow = BusinessTypeTemplate.get_booking_flow(business_type)
+    
+    if booking_flow and booking_flow.get("steps"):
+        steps = booking_flow.get("steps", [])
+        required_fields = [step["field"] for step in steps if step.get("ask_if_missing", True)]
+        
+        prompt += f"""
+
+Booking Instructions for {business_type.title()}:
+Before booking, you MUST collect the following information from the customer:
+{chr(10).join([f"- {field}" for field in required_fields])}
+
+**DO NOT book until ALL required information is collected.**
+Ask for each piece of information naturally, one at a time.
 """
 
     if knowledge_context:
@@ -807,12 +851,10 @@ Voice Interaction Guidelines:
 - Ask clarifying questions when needed
 - If you don't know the answer, offer to transfer to a human
 - Respond directly without thinking or analysis steps - just provide the helpful response
+- **NEVER repeat questions** - If customer already provided information, don't ask again
+- **For hotels: When a customer wants to extend their stay, ask for their name and room number FIRST, then look up their reservation before asking about the extension**
 
 When a customer wants to:
-- Book an appointment -> ask for date, time, and service
-- Place an order -> ask what items they want
-- Get directions -> provide the business address
-- Speak to a human -> transfer the call
 """
 
     return prompt

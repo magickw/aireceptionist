@@ -26,16 +26,21 @@ export default function CallSimulator() {
   const [inputMode, setInputMode] = useState<'text' | 'voice'>('text');
   const [isStreamingReady, setIsStreamingReady] = useState(false);
   const [latencyMetrics, setLatencyMetrics] = useState<any>(null);
+  const [sttPreview, setSttPreview] = useState(''); // Live STT preview while speaking
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string>('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const connectionStatusRef = useRef<'connecting' | 'connected' | 'disconnected' | 'http_fallback'>('connecting');
+  const lastCustomerMessageIdRef = useRef<string | null>(null); // Track last customer message for partial updates
 
   // Stable addMessage using ref to avoid stale closure
   const addMessageRef = useRef<(content: string, sender: 'customer' | 'ai') => void>(() => {});
   const addMessage = useCallback((content: string, sender: 'customer' | 'ai') => {
-    const message = { id: Date.now(), sender, content };
+    // Prevent empty or whitespace-only messages
+    if (!content || !content.trim()) return;
+    // Use timestamp + random to ensure unique keys
+    const message = { id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, sender, content };
     setCurrentCall((prev: any) => prev ? { ...prev, messages: [...(prev.messages || []), message] } : prev);
   }, []);
   addMessageRef.current = addMessage;
@@ -171,6 +176,7 @@ export default function CallSimulator() {
 
         ws.onmessage = (event) => {
           const data = JSON.parse(event.data);
+          console.log('[CallSim] WS message type:', data.type, data);
 
           if (data.type === 'connected') {
             // Server acknowledged connection
@@ -183,7 +189,36 @@ export default function CallSimulator() {
             setThoughts(prev => [...prev, { step: data.step, message: data.message, timestamp: new Date() }]);
           } else if (data.type === 'transcript') {
             // User speech transcript from streaming STT
-            addMessageRef.current(data.text, 'customer');
+            console.log('[CallSim] Transcript received:', data.text, 'is_partial:', data.is_partial);
+            
+            if (data.is_partial) {
+              // Partial transcript - show in preview and update existing message if exists
+              setSttPreview(data.text);
+              
+              // Update the last customer message if it exists
+              setCurrentCall((prev: any) => {
+                if (!prev || !prev.messages || prev.messages.length === 0) return prev;
+                
+                const messages = [...prev.messages];
+                const lastMessage = messages[messages.length - 1];
+                
+                if (lastMessage && lastMessage.sender === 'customer') {
+                  // Update the last customer message in place
+                  messages[messages.length - 1] = {
+                    ...lastMessage,
+                    content: data.text
+                  };
+                  lastCustomerMessageIdRef.current = lastMessage.id;
+                  return { ...prev, messages };
+                }
+                return prev;
+              });
+            } else {
+              // Final transcript - add to conversation
+              lastCustomerMessageIdRef.current = null; // Reset for next turn
+              addMessageRef.current(data.text, 'customer');
+              setSttPreview(data.text);
+            }
             setIsProcessing(true);
           } else if (data.type === 'text_chunk') {
             setStreamingText(prev => prev + data.chunk);
@@ -196,9 +231,16 @@ export default function CallSimulator() {
               }
               setStreamingText('');
             }
+          } else if (data.type === 'thinking') {
+            // Thinking/reasoning content from Nova AI
+            setThoughts(prev => [...prev, { step: 'Reasoning', message: data.thinking || data, timestamp: new Date() }]);
           } else if (data.type === 'agent_response') {
             setIsProcessing(false);
             setIsSpeaking(false);
+            // Clear STT preview when AI responds (transcript already added to conversation)
+            if (sttPreview) {
+              setSttPreview('');
+            }
             addMessageRef.current(data.text, 'ai');
             if (data.reasoning) setReasoningData(data.reasoning);
             setStreamingText('');
@@ -223,6 +265,11 @@ export default function CallSimulator() {
             console.log('[CallSim] Call ended by server');
           } else if (data.type === 'error') {
             console.error('[CallSim] Backend error:', data.message);
+            // Add customer message if we have STT preview
+            if (sttPreview) {
+              addMessageRef.current(sttPreview, 'customer');
+              setSttPreview('');
+            }
             addMessageRef.current(`Error: ${data.message}`, 'ai');
             setIsProcessing(false);
           }
@@ -318,6 +365,7 @@ export default function CallSimulator() {
     setIsSpeaking(false);
     setLatencyMetrics(null);
     setIsStreamingReady(false);
+    setSttPreview('');
 
     if (connectionStatus === 'http_fallback') {
       endHttpSession();
@@ -458,8 +506,8 @@ export default function CallSimulator() {
                     >
                       {isRecording ? <MicOffIcon /> : <MicIcon />}
                     </IconButton>
-                    {isRecording && (
-                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexDirection: 'column' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexDirection: 'column' }}>
+                      {isRecording && (
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Box
                             sx={{
@@ -484,13 +532,18 @@ export default function CallSimulator() {
                             Listening...
                           </Typography>
                         </Box>
-                      </Box>
-                    )}
-                    {!isRecording && (
-                      <Typography variant="caption" color="text.secondary">
-                        Tap to speak
-                      </Typography>
-                    )}
+                      )}
+                      {!isRecording && (
+                        <Typography variant="caption" color="text.secondary">
+                          Tap to speak
+                        </Typography>
+                      )}
+                      {sttPreview && (
+                        <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic', color: 'primary.main', textAlign: 'center', maxWidth: 300 }}>
+                          {sttPreview}
+                        </Typography>
+                      )}
+                    </Box>
                   </Box>
                 )}
               </Box>

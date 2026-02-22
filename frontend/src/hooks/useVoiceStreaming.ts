@@ -36,6 +36,15 @@ export function useVoiceStreaming({
   const processorRef = useRef<ScriptProcessorNode | null>(null);
   const levelTimerRef = useRef<number | null>(null);
 
+  // Pause detection refs
+  const silenceStartRef = useRef<number | null>(null);
+  const recordingStartRef = useRef<number | null>(null);
+  const audioBufferRef = useRef<Int16Array[]>([]);
+  const SILENCE_THRESHOLD = 0.015; // Threshold for silence detection
+  const SILENCE_DURATION = 1200; // 1.2 seconds of silence before auto-stop (more responsive)
+  const MIN_RECORDING_DURATION = 800; // Minimum 0.8 seconds of recording before allowing auto-stop
+  const AUTO_STOP_ENABLED = true; // Enabled for natural voice interaction
+
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
   const playbackQueueRef = useRef<AudioBuffer[]>([]);
@@ -72,7 +81,10 @@ export function useVoiceStreaming({
       
       // Send audio_start to backend
       if (wsRef.current?.readyState === WebSocket.OPEN) {
+        console.log('[useVoiceStreaming] Sending audio_start');
         wsRef.current.send(JSON.stringify({ type: 'audio_start' }));
+      } else {
+        console.log('[useVoiceStreaming] WebSocket not open for audio_start');
       }
 
       // 2. Audio processing for streaming to backend
@@ -83,8 +95,33 @@ export function useVoiceStreaming({
         const inputData = e.inputBuffer.getChannelData(0);
         // Convert Float32 audio to Int16 for backend
         const int16Data = new Int16Array(inputData.length);
+        
+        // Calculate audio level for silence detection
+        let sum = 0;
         for (let i = 0; i < inputData.length; i++) {
-          int16Data[i] = Math.max(-1, Math.min(1, inputData[i])) * 0x7FFF;
+          const sample = inputData[i];
+          int16Data[i] = Math.max(-1, Math.min(1, sample)) * 0x7FFF;
+          sum += Math.abs(sample);
+        }
+        const avgLevel = sum / inputData.length;
+        
+        // Silence detection
+        if (avgLevel < SILENCE_THRESHOLD) {
+          if (silenceStartRef.current === null) {
+            silenceStartRef.current = Date.now();
+          } else {
+            const silenceDuration = Date.now() - silenceStartRef.current;
+            const recordingDuration = recordingStartRef.current ? Date.now() - recordingStartRef.current : 0;
+            // Only auto-stop if we've recorded enough AND silence has lasted long enough
+            if (recordingDuration >= MIN_RECORDING_DURATION && silenceDuration > SILENCE_DURATION) {
+              console.log('[useVoiceStreaming] Silence detected, auto-stopping');
+              stopRecording();
+              return;
+            }
+          }
+        } else {
+          // Reset silence timer when sound is detected
+          silenceStartRef.current = null;
         }
         
         // Send to WebSocket
@@ -126,15 +163,22 @@ export function useVoiceStreaming({
       levelTimerRef.current = requestAnimationFrame(pollLevel);
 
       setIsRecording(true);
+      recordingStartRef.current = Date.now();
     } catch (err) {
       console.error('[useVoiceStreaming] Microphone access denied:', err);
     }
   }, [wsRef]);
 
   const stopRecording = useCallback(() => {
+    // Reset silence timer
+    silenceStartRef.current = null;
+    
     // Send audio_stop to backend
     if (wsRef.current?.readyState === WebSocket.OPEN) {
+      console.log('[useVoiceStreaming] Sending audio_stop');
       wsRef.current.send(JSON.stringify({ type: 'audio_stop' }));
+    } else {
+      console.log('[useVoiceStreaming] WebSocket not open, cannot send audio_stop');
     }
 
     if (processorRef.current) {

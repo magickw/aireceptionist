@@ -209,8 +209,8 @@ async def handle_tool_use(
     Maps streaming tool calls to existing business operations.
     """
     if tool_name == "bookAppointment":
-        customer_name = tool_input.get("customer_name", ws_session.get("customer_name", "Unknown"))
-        customer_phone = tool_input.get("customer_phone", ws_session.get("customer_phone", "Unknown"))
+        customer_name = tool_input.get("customer_name") or ws_session.get("customer_name") or "Unknown"
+        customer_phone = tool_input.get("customer_phone") or ws_session.get("customer_phone") or "000-000-0000"
         
         ws_session["customer_name"] = customer_name
         ws_session["customer_phone"] = customer_phone
@@ -318,7 +318,7 @@ async def handle_tool_use(
                     is_available = availability.get("available", False)
                 else:
                     from app.services.calendar_service import calendar_service as cal_svc
-                    db_conflicts = cal_svc.check_db_conflicts(business_id, check_in_date, check_out_date, db, service=hotel_service_description)
+                    db_conflicts = cal_svc.check_db_conflicts(business_id, check_in_date, check_out_date, db, service_type=hotel_service_description)
                     is_available = not db_conflicts
 
                 check_in_fmt = check_in_date.strftime("%B %d, %Y")
@@ -508,11 +508,15 @@ async def _run_streaming_relay(
             text = item.get("text", "")
             safety_trigger = item.get("safety_trigger")
 
+            print(f"[Voice WS] Relay: Sending transcript to WebSocket: {text}")
+
             conversation_history.append({"role": "customer", "content": text})
 
             try:
                 await websocket.send_json({"type": "transcript", "text": text})
-            except Exception:
+                print(f"[Voice WS] Relay: Transcript sent successfully")
+            except Exception as e:
+                print(f"[Voice WS] Relay: Error sending transcript: {e}")
                 break
 
             if safety_trigger:
@@ -566,6 +570,17 @@ async def _run_streaming_relay(
                 if accumulated_text:
                     conversation_history.append({"role": "ai", "content": accumulated_text})
                 break
+
+            # Handle thinking/reasoning events
+            if item.get("thinking"):
+                try:
+                    await websocket.send_json({
+                        "type": "thinking",
+                        "thinking": item["thinking"],
+                    })
+                except Exception:
+                    break
+                continue
 
             if item.get("turn_complete"):
                 # Assistant turn finished — send final signal and record in history
@@ -1714,17 +1729,23 @@ async def voice_websocket(
                 
             elif message_type == "audio_start":
                 # Mark beginning of user voice turn (streaming mode)
+                print(f"[Voice WS] Received audio_start: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}")
                 if use_streaming and sonic_session and sonic_session.is_active:
                     await sonic_session.start_user_turn()
+                    print(f"[Voice WS] Started user turn")
                 elif use_streaming and sonic_session and not sonic_session.is_active:
                     # Stream died — tell client to switch modes
+                    print(f"[Voice WS] Stream died, switching to batch mode")
                     use_streaming = False
                     await manager.send_json(session_id, {
                         "type": "streaming_failed",
                         "message": "Voice stream disconnected. Please use text input.",
                     })
+                else:
+                    print(f"[Voice WS] Not using streaming mode, audio_start ignored")
 
             elif message_type == "audio_stop":
+                print(f"[Voice WS] Received audio_stop: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}")
                 if use_streaming and sonic_session and sonic_session.is_active:
                     # STREAMING PATH: end user turn triggers STT + model response
                     await sonic_session.end_user_turn()
@@ -1800,12 +1821,14 @@ async def voice_websocket(
                         })
 
             elif message_type == "audio":
+                print(f"[Voice WS] Received audio chunk: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}")
                 if use_streaming and sonic_session and sonic_session.is_active:
                     # STREAMING PATH: forward audio chunk immediately
                     try:
                         audio_data = nova_sonic.decode_audio_base64(content)
                         await sonic_session.send_audio_chunk(audio_data)
                     except Exception as e:
+                        print(f"[Voice WS] Streaming audio error: {e}")
                         await manager.send_json(session_id, {
                             "type": "error",
                             "message": f"Streaming audio error: {str(e)}"

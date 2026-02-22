@@ -248,7 +248,7 @@ class NovaSonicHandler:
                 "message": f"Nova Sonic error: {str(e)}"
             }
 
-    async def _transcribe_audio_with_nova(self, audio_data: bytes) -> str:
+    async def _transcribe_audio_with_nova(self, audio_data: bytes, on_partial=None) -> str:
         """
         Transcribe audio to text.
 
@@ -279,12 +279,13 @@ class NovaSonicHandler:
             logger.error(f"Batch transcription also failed ({e}), returning empty transcript")
             return ""
 
-    async def _transcribe_streaming(self, audio_data: bytes) -> str:
+    async def _transcribe_streaming(self, audio_data: bytes, on_partial=None) -> str:
         """Transcribe using Amazon Transcribe Streaming (no S3 needed)."""
         from amazon_transcribe.client import TranscribeStreamingClient
         from amazon_transcribe.handlers import TranscriptResultStreamHandler
         from amazon_transcribe.model import TranscriptEvent
         import os
+        import asyncio
 
         # Ensure credentials are available for awscrt
         if settings.AWS_ACCESS_KEY_ID:
@@ -297,16 +298,34 @@ class NovaSonicHandler:
         logger.info(f"Starting streaming transcription with {len(audio_data)} bytes of audio data")
 
         transcript_parts: list[str] = []
+        
+        # Create a queue for partial results
+        partial_queue = asyncio.Queue()
 
         class Handler(TranscriptResultStreamHandler):
+            def __init__(self, output_stream):
+                super().__init__(output_stream)
+
             async def handle_transcript_event(self, transcript_event: TranscriptEvent):
                 results = transcript_event.transcript.results
                 for result in results:
-                    if not result.is_partial:
-                        for alt in result.alternatives:
-                            if alt.transcript:
-                                transcript_parts.append(alt.transcript)
+                    for alt in result.alternatives:
+                        if alt.transcript:
+                            if result.is_partial:
+                                # Put partial transcript in queue
                                 logger.debug(f"STT partial result: {alt.transcript}")
+                                try:
+                                    partial_queue.put_nowait({"text": alt.transcript, "is_partial": True})
+                                except Exception as cb_err:
+                                    logger.error(f"Error queuing partial transcript: {cb_err}")
+                            else:
+                                # Collect final results
+                                transcript_parts.append(alt.transcript)
+                                logger.debug(f"STT final result: {alt.transcript}")
+                                try:
+                                    partial_queue.put_nowait({"text": alt.transcript, "is_partial": False})
+                                except Exception as cb_err:
+                                    logger.error(f"Error queuing final transcript: {cb_err}")
 
         client = TranscribeStreamingClient(region=settings.AWS_REGION)
 
@@ -326,8 +345,29 @@ class NovaSonicHandler:
         await stream.input_stream.end_stream()
         logger.info(f"Sent {chunks_sent} audio chunks to Transcribe")
 
+        # Start handler and partial consumer in parallel
         handler = Handler(stream.output_stream)
-        await handler.handle_events()
+        
+        async def consume_partials():
+            """Consume partial transcripts from queue and send via callback"""
+            while True:
+                try:
+                    item = await asyncio.wait_for(partial_queue.get(), timeout=1.0)
+                    if on_partial and item:
+                        await on_partial(item.get("text"), is_partial=item.get("is_partial", False))
+                except asyncio.TimeoutError:
+                    # Check if handler is still processing
+                    break
+                except Exception as e:
+                    logger.error(f"Error consuming partial transcript: {e}")
+                    break
+        
+        # Run handler and consumer in parallel
+        await asyncio.gather(
+            handler.handle_events(),
+            consume_partials(),
+            return_exceptions=True
+        )
 
         transcript = " ".join(transcript_parts).strip()
         if transcript:
@@ -407,8 +447,7 @@ class NovaSonicHandler:
                 MediaFormat='wav',
                 LanguageCode='en-US',
                 Settings={
-                    'ShowSpeakerLabels': False,
-                    'MaxSpeakerLabels': 1
+                    'ShowSpeakerLabels': False
                 }
             )
             

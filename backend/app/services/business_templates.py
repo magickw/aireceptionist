@@ -190,7 +190,8 @@ class BusinessTypeTemplate:
                 "book_room", "check_availability", "amenities_inquiry",
                 "check_in_out", "room_service", "pool_gym", "wifi_password",
                 "late_checkout", "early_checkin", "parking", "pet_policy",
-                "conference_rooms", "airport_shuttle", "breakfast_included"
+                "conference_rooms", "airport_shuttle", "breakfast_included",
+                "extend_stay"
             ],
             "fields": {
                 "customer_name": {"required": True, "validation": "string", "prompt": "May I have the name for the reservation?"},
@@ -199,6 +200,10 @@ class BusinessTypeTemplate:
                 "check_out_date": {"required": True, "validation": "future_date", "prompt": "What's your check-out date?"},
                 "room_type": {"required": True, "validation": "string", "prompt": "What room type would you prefer? (standard, deluxe, suite)"},
                 "number_of_guests": {"required": True, "validation": "string", "prompt": "How many guests?"},
+                # Extend stay specific fields
+                "room_number": {"required": True, "validation": "string", "prompt": "What's your room number?"},
+                "extension_days": {"required": False, "validation": "string", "prompt": "How many days would you like to extend?"},
+                "new_checkout_date": {"required": False, "validation": "future_date", "prompt": "What would be your new check-out date?"},
             },
             "booking_flow": {
                 "type": "appointment",
@@ -231,6 +236,7 @@ class BusinessTypeTemplate:
                 "booking": "I'd be happy to help you book a room. What dates are you looking at?",
                 "amenities": "Our hotel features a fitness center, outdoor pool, on-site restaurant, and free WiFi.",
                 "confirm": "Your reservation is confirmed. See you soon!",
+                "extend_stay": "I'd be happy to help you extend your stay. Could you please provide your name and room number so I can look up your reservation?",
             }
         },
         
