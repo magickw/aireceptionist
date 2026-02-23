@@ -5,9 +5,12 @@ Handles real-time voice communication via Twilio Media Streams with full AI reas
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Request, Response, Depends, Query
 from fastapi.responses import HTMLResponse, PlainTextResponse
 from sqlalchemy.orm import Session
+import array
 import json
 import base64
 import asyncio
+import math
+from datetime import datetime
 from typing import Dict, Any, Optional
 import os
 import boto3
@@ -24,6 +27,11 @@ router = APIRouter()
 TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
+
+# Silence detection constants (matching browser useVoiceStreaming.ts)
+SILENCE_THRESHOLD_INT16 = 500    # RMS below this = silence
+SILENCE_DURATION_MS = 1200       # ms of silence before end_user_turn
+MIN_RECORDING_DURATION_MS = 800  # minimum ms before silence detection engages
 
 
 @router.post("/incoming-call")
@@ -75,6 +83,18 @@ async def incoming_call(request: Request, db: Session = Depends(deps.get_db)):
     return Response(content=twiml_response, media_type="application/xml")
 
 
+def _rms_amplitude(pcm16_bytes: bytes) -> float:
+    """Compute RMS amplitude of PCM16 audio on the int16 scale (0-32768)."""
+    if len(pcm16_bytes) < 2:
+        return 0.0
+    samples = array.array('h')
+    samples.frombytes(pcm16_bytes)
+    if not samples:
+        return 0.0
+    sum_sq = sum(s * s for s in samples)
+    return math.sqrt(sum_sq / len(samples))
+
+
 @router.websocket("/ws")
 async def websocket_endpoint(
     websocket: WebSocket,
@@ -86,23 +106,20 @@ async def websocket_endpoint(
     """
     WebSocket endpoint for Twilio Media Streams.
     Handles bidirectional audio streaming with full Nova AI processing.
-    
-    This implementation matches the call simulator experience:
-    - Real-time STT (Amazon Transcribe)
-    - Full Nova 2 Lite reasoning engine
-    - Tool execution (bookings, orders, etc.)
-    - Business context from database
-    - Conversation history tracking
-    - Auto-stop on silence detection
+
+    Matches the call simulator experience with:
+    - Server-side silence detection for turn management
+    - 4-queue relay pattern (transcripts, audio, text, tools)
+    - Barge-in support (clear Twilio audio when user speaks)
     """
     await websocket.accept()
-    
+
     # Get business context from database
     business = db.query(Business).filter(Business.id == business_id).first()
     if not business:
         await websocket.close(code=4000, reason="Business not found")
         return
-    
+
     # Build business context for Nova
     business_context = {
         "name": business.name,
@@ -114,13 +131,13 @@ async def websocket_endpoint(
         "menu": business.menu or [],
         "business_id": business.id,
     }
-    
+
     # Check for custom welcome greeting to personalize AI response
     from app.services.voice_greeting_service import voice_greeting_service
     welcome_greeting = voice_greeting_service.get_active_greeting(db, business_id, "welcome")
     if welcome_greeting and welcome_greeting.get("text"):
         business_context["welcome_message"] = welcome_greeting["text"]
-    
+
     customer_context = {
         "name": "Unknown",
         "phone": from_number,
@@ -130,7 +147,7 @@ async def websocket_endpoint(
         "preferred_services": [],
         "complaint_count": 0,
     }
-    
+
     # Create Nova Sonic streaming session
     sonic_session = await nova_sonic.create_streaming_session(
         session_id=call_sid,
@@ -138,192 +155,239 @@ async def websocket_endpoint(
         customer_context=customer_context,
         db=db,
     )
-    
+
     if not sonic_session:
         await websocket.close(code=4000, reason="Failed to create AI session")
         return
-    
-    # Audio buffers
-    audio_buffer = []
+
     conversation_history = []
-    
+
+    # Session dict for tool execution (matches voice.py ws_session pattern)
+    ws_session = {
+        "order_items": [],
+        "created_at": datetime.utcnow(),
+        "business_id": business_id,
+        "customer_name": None,
+        "customer_phone": from_number,
+        "_session_id": call_sid,
+    }
+
     # Twilio stream state
     stream_sid = None
-    
+    relay_task = None
+
+    # Silence detection state
+    _in_user_turn = False
+    _silence_start = None   # loop-time when silence began
+    _turn_start = None      # loop-time when current turn began
+
     try:
         while True:
             message = await websocket.receive_text()
             data = json.loads(message)
-            
+
             if data["event"] == "connected":
                 print(f"[Twilio WS] Connected for call {call_sid} from {from_number}")
-                # Send configuration to Twilio
-                await websocket.send_json({
-                    "event": "configure",
-                    "encoding": "audio/mulaw",
-                    "sampleRate": 8000,
-                    "bitsPerSample": 16,
-                    "channels": 1
-                })
-                
+
             elif data["event"] == "start":
                 stream_sid = data["start"]["streamSid"]
                 print(f"[Twilio WS] Stream started: {stream_sid}")
-                
-                # Start background tasks first
-                asyncio.create_task(_relay_twilio_messages(websocket, sonic_session, stream_sid))
-                asyncio.create_task(_relay_twilio_tools(sonic_session, business_id, db))
-                
-                # Start Nova Sonic session and trigger initial greeting
-                await sonic_session.start_user_turn()
-                
-                # Immediately end the turn to trigger AI greeting
-                # This will make the AI say hello first
-                await sonic_session.end_user_turn()
-                
+
+                # Launch 4-queue relay as background task
+                relay_task = asyncio.create_task(
+                    _run_twilio_relay(
+                        sonic_session=sonic_session,
+                        websocket=websocket,
+                        stream_sid=stream_sid,
+                        ws_session=ws_session,
+                        business_id=business_id,
+                        business_context=business_context,
+                        conversation_history=conversation_history,
+                        db=db,
+                    )
+                )
+
+                # Trigger AI greeting via text message
+                await sonic_session.send_text_message("Please greet the caller.")
+                print(f"[Twilio WS] AI greeting triggered")
+
             elif data["event"] == "media":
-                # Twilio sends base64-encoded mulaw audio at 8kHz
+                if not sonic_session.is_active:
+                    continue
+
                 payload = data["media"]["payload"]
-                
                 try:
-                    # Decode base64
                     mulaw_audio = base64.b64decode(payload)
-                    
-                    # Convert mulaw 8kHz → PCM16 16kHz for Nova
                     pcm16_audio = mulaw_to_pcm16(mulaw_audio)
-                    
-                    # Stream to Nova Sonic
-                    if sonic_session.is_active:
+                    rms = _rms_amplitude(pcm16_audio)
+                    now = asyncio.get_event_loop().time()
+
+                    if rms >= SILENCE_THRESHOLD_INT16:
+                        # Non-silent frame
+                        _silence_start = None
+
+                        if not _in_user_turn:
+                            # User started speaking — begin new turn + barge-in
+                            _in_user_turn = True
+                            _turn_start = now
+                            await sonic_session.start_user_turn()
+
+                            # Barge-in: clear any in-flight TTS audio
+                            try:
+                                await websocket.send_json({
+                                    "event": "clear",
+                                    "streamSid": stream_sid,
+                                })
+                            except Exception:
+                                pass
+                            print(f"[Twilio WS] User turn started (barge-in)")
+
                         await sonic_session.send_audio_chunk(pcm16_audio)
-                    
+
+                    else:
+                        # Silent frame
+                        if _in_user_turn:
+                            await sonic_session.send_audio_chunk(pcm16_audio)
+
+                            if _silence_start is None:
+                                _silence_start = now
+
+                            elapsed_silence = (now - _silence_start) * 1000  # ms
+                            elapsed_turn = (now - _turn_start) * 1000 if _turn_start else 0
+
+                            if (elapsed_silence >= SILENCE_DURATION_MS
+                                    and elapsed_turn >= MIN_RECORDING_DURATION_MS):
+                                # Enough silence after enough speech — end the turn
+                                _in_user_turn = False
+                                _silence_start = None
+                                _turn_start = None
+                                await sonic_session.end_user_turn()
+                                print(f"[Twilio WS] User turn ended (silence detected)")
+
                 except Exception as e:
                     print(f"[Twilio WS] Error processing audio: {e}")
-                    
+
             elif data["event"] == "stop":
                 print(f"[Twilio WS] Stream stopped: {stream_sid}")
-                
-                # End user turn
-                if sonic_session.is_active:
+
+                # Flush remaining turn if active
+                if _in_user_turn and sonic_session.is_active:
+                    _in_user_turn = False
                     await sonic_session.end_user_turn()
-                
-                # Close session
-                await sonic_session.close()
+
+                if sonic_session.is_active:
+                    await sonic_session.close()
                 break
-                
+
             elif data["event"] == "clear":
-                # Twilio sends this when audio stream is cleared
                 pass
-                
+
     except WebSocketDisconnect:
         print(f"[Twilio WS] WebSocket disconnected for call {call_sid}")
     except Exception as e:
         print(f"[Twilio WS] Error: {e}")
     finally:
-        # Clean up session
         if sonic_session.is_active:
             await sonic_session.close()
+        if relay_task and not relay_task.done():
+            relay_task.cancel()
 
 
-async def _relay_twilio_messages(
+async def _run_twilio_relay(
+    sonic_session,
     websocket: WebSocket,
-    sonic_session: Any,
     stream_sid: str,
-):
-    """
-    Relay messages from Nova Sonic to Twilio WebSocket.
-    
-    Handles:
-    - Text chunks (for transcription display)
-    - Audio chunks (converted from PCM16 16kHz to mulaw 8kHz)
-    - Thinking/reasoning events
-    - Tool execution results
-    """
-    try:
-        while sonic_session.is_active:
-            item = await sonic_session.text_queue.get()
-            if item is None:
-                break
-            
-            # Handle thinking/reasoning events
-            if item.get("thinking"):
-                # Could log reasoning for analytics
-                continue
-            
-            # Handle text chunks (transcription)
-            if item.get("chunk"):
-                # Twilio doesn't have a way to display text to the caller
-                # but we could log it for analytics
-                continue
-            
-            # Handle audio chunks
-            if item.get("audio"):
-                try:
-                    # Decode base64 PCM16 16kHz
-                    pcm16_audio = base64.b64decode(item["audio"])
-                    
-                    # Convert PCM16 16kHz → mulaw 8kHz for Twilio
-                    mulaw_audio = pcm16_to_mulaw(pcm16_audio)
-                    
-                    # Encode to base64
-                    mulaw_b64 = base64.b64encode(mulaw_audio).decode('utf-8')
-                    
-                    # Send to Twilio
-                    await websocket.send_json({
-                        "event": "media",
-                        "streamSid": stream_sid,
-                        "media": {
-                            "payload": mulaw_b64
-                        }
-                    })
-                    
-                except Exception as e:
-                    print(f"[Twilio Relay] Error sending audio: {e}")
-            
-            # Handle turn complete
-            if item.get("turn_complete"):
-                # Could send a marker event
-                pass
-                
-    except WebSocketDisconnect:
-        print("[Twilio Relay] WebSocket disconnected")
-    except Exception as e:
-        print(f"[Twilio Relay] Error: {e}")
-
-
-async def _relay_twilio_tools(
-    sonic_session: Any,
+    ws_session: Dict[str, Any],
     business_id: int,
+    business_context: Dict[str, Any],
+    conversation_history: list,
     db: Session,
 ):
     """
-    Relay tool execution results from Nova to Twilio.
+    Background task that reads from NovaSonicStreamSession queues
+    and relays events to the Twilio WebSocket.
+    Mirrors _run_streaming_relay in voice.py with 4 concurrent coroutines.
     """
-    try:
+
+    async def _relay_transcripts():
+        while sonic_session.is_active:
+            item = await sonic_session.transcript_queue.get()
+            if item is None:
+                break
+            text = item.get("text", "")
+            is_partial = item.get("is_partial", False)
+            if not is_partial and text:
+                conversation_history.append({"role": "customer", "content": text})
+                print(f"[Twilio Relay] Transcript: {text}")
+
+    async def _relay_audio():
+        while sonic_session.is_active:
+            item = await sonic_session.audio_queue.get()
+            if item is None:
+                break
+            try:
+                pcm16_audio = base64.b64decode(item.get("audio", ""))
+                mulaw_audio = pcm16_to_mulaw(pcm16_audio)
+                mulaw_b64 = base64.b64encode(mulaw_audio).decode('utf-8')
+                await websocket.send_json({
+                    "event": "media",
+                    "streamSid": stream_sid,
+                    "media": {"payload": mulaw_b64},
+                })
+            except Exception as e:
+                print(f"[Twilio Relay] Error sending audio: {e}")
+                break
+
+    async def _relay_text():
+        accumulated_text = ""
+        while sonic_session.is_active:
+            item = await sonic_session.text_queue.get()
+            if item is None:
+                if accumulated_text:
+                    conversation_history.append({"role": "ai", "content": accumulated_text})
+                break
+            if item.get("thinking"):
+                continue
+            if item.get("turn_complete"):
+                if accumulated_text:
+                    conversation_history.append({"role": "ai", "content": accumulated_text})
+                    print(f"[Twilio Relay] AI response: {accumulated_text[:100]}...")
+                accumulated_text = ""
+                continue
+            chunk = item.get("chunk", "")
+            accumulated_text += chunk
+
+    async def _relay_tools():
+        from app.api.v1.endpoints.voice import handle_tool_use
         while sonic_session.is_active:
             item = await sonic_session.tool_queue.get()
-            
+            if item is None:
+                break
             tool_name = item.get("name", "")
             tool_input = item.get("input", {})
             tool_use_id = item.get("tool_use_id", "")
-            
-            # Execute tool (reuse voice.py tool handler)
-            from app.api.v1.endpoints.voice import handle_tool_use
-            
-            result = await handle_tool_use(
-                tool_name=tool_name,
-                tool_input=tool_input,
-                business_id=business_id,
-                db=db,
-                ws_session={},  # No WebSocket session for Twilio
-                business_context=sonic_session.business_context,
-                customer_context=sonic_session.customer_context,
-            )
-            
-            # Send tool result back to Nova
+            try:
+                result = await handle_tool_use(
+                    tool_name=tool_name,
+                    tool_input=tool_input,
+                    ws_session=ws_session,
+                    business_id=business_id,
+                    business_context=business_context,
+                    db=db,
+                )
+            except Exception as e:
+                print(f"[Twilio Relay] Tool error for {tool_name}: {e}")
+                result = {"success": False, "message": f"Tool execution failed: {str(e)}"}
             await sonic_session.send_tool_result(tool_use_id, result)
-            
-    except Exception as e:
-        print(f"[Twilio Tools] Error: {e}")
+
+    await asyncio.gather(
+        _relay_transcripts(),
+        _relay_audio(),
+        _relay_text(),
+        _relay_tools(),
+        return_exceptions=True,
+    )
+    print("[Twilio Relay] All relays stopped")
 
 
 @router.post("/outbound-call")
