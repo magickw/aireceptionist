@@ -5,11 +5,152 @@ These functions operate on a session dict (either ws_session or http_session)
 and return values without side effects (no WebSocket sends, no DB writes).
 """
 import re
+import array
+import struct
 from typing import Dict, Any, Optional, Tuple, List
 
 from app.core.logging import get_logger
 
 logger = get_logger("voice_helpers")
+
+
+# ── Audio conversion utilities (for Twilio integration) ────────────────
+
+
+def mulaw_to_pcm16(mulaw_bytes: bytes) -> bytes:
+    """
+    Convert 8kHz mulaw audio to 16kHz PCM16.
+    
+    Twilio sends mulaw at 8kHz, but Nova expects PCM16 at 16kHz.
+    This does two things:
+    1. Decode mulaw to 16-bit PCM
+    2. Resample from 8kHz to 16kHz (linear interpolation)
+    
+    Args:
+        mulaw_bytes: Raw mulaw-encoded audio bytes at 8kHz
+        
+    Returns:
+        PCM16 audio bytes at 16kHz (little-endian)
+    """
+    # Mulaw lookup table (standard ITU-T G.711)
+    MULAW_TABLE = [
+        -32124, -31100, -30076, -29052, -28028, -27004, -25980, -24956,
+        -23932, -22908, -21884, -20860, -19836, -18812, -17788, -16764,
+        -15996, -15484, -14972, -14460, -13948, -13436, -12924, -12412,
+        -11900, -11388, -10876, -10364, -9852, -9340, -8828, -8316,
+        -7932, -7676, -7420, -7164, -6908, -6652, -6396, -6140,
+        -5884, -5628, -5372, -5116, -4860, -4604, -4348, -4092,
+        -3900, -3772, -3644, -3516, -3388, -3260, -3132, -3004,
+        -2876, -2748, -2620, -2492, -2364, -2236, -2108, -1980,
+        -1884, -1820, -1756, -1692, -1628, -1564, -1500, -1436,
+        -1372, -1308, -1244, -1180, -1116, -1052, -988, -924,
+        -876, -844, -812, -780, -748, -716, -684, -652,
+        -620, -588, -556, -524, -492, -460, -428, -396,
+        -372, -356, -340, -324, -308, -292, -276, -260,
+        -244, -228, -212, -196, -180, -164, -148, -132,
+        -120, -112, -104, -96, -88, -80, -72, -64,
+        -56, -48, -40, -32, -24, -16, -8, 0,
+        32124, 31100, 30076, 29052, 28028, 27004, 25980, 24956,
+        23932, 22908, 21884, 20860, 19836, 18812, 17788, 16764,
+        15996, 15484, 14972, 14460, 13948, 13436, 12924, 12412,
+        11900, 11388, 10876, 10364, 9852, 9340, 8828, 8316,
+        7932, 7676, 7420, 7164, 6908, 6652, 6396, 6140,
+        5884, 5628, 5372, 5116, 4860, 4604, 4348, 4092,
+        3900, 3772, 3644, 3516, 3388, 3260, 3132, 3004,
+        2876, 2748, 2620, 2492, 2364, 2236, 2108, 1980,
+        1884, 1820, 1756, 1692, 1628, 1564, 1500, 1436,
+        1372, 1308, 1244, 1180, 1116, 1052, 988, 924,
+        876, 844, 812, 780, 748, 716, 684, 652,
+        620, 588, 556, 524, 492, 460, 428, 396,
+        372, 356, 340, 324, 308, 292, 276, 260,
+        244, 228, 212, 196, 180, 164, 148, 132,
+        120, 112, 104, 96, 88, 80, 72, 64,
+        56, 48, 40, 32, 24, 16, 8, 0,
+    ]
+    
+    if not mulaw_bytes:
+        return b''
+    
+    # Step 1: Decode mulaw to 16-bit PCM
+    pcm16_8khz = array.array('h', [MULAW_TABLE[b] for b in mulaw_bytes])
+    
+    # Step 2: Resample from 8kHz to 16kHz (simple linear interpolation)
+    # We need 2 output samples for every 1 input sample
+    pcm16_16khz = array.array('h', [0] * (len(pcm16_8khz) * 2))
+    
+    for i in range(len(pcm16_8khz) - 1):
+        sample1 = pcm16_8khz[i]
+        sample2 = pcm16_8khz[i + 1]
+        
+        # Linear interpolation
+        pcm16_16khz[i * 2] = sample1
+        pcm16_16khz[i * 2 + 1] = (sample1 + sample2) // 2
+    
+    # Handle last sample
+    if pcm16_8khz:
+        pcm16_16khz[-2] = pcm16_8khz[-1]
+        pcm16_16khz[-1] = pcm16_8khz[-1]
+    
+    return pcm16_16khz.tobytes()
+
+
+def pcm16_to_mulaw(pcm16_bytes: bytes) -> bytes:
+    """
+    Convert 16kHz PCM16 audio to 8kHz mulaw.
+    
+    Nova generates PCM16 at 16kHz, but Twilio expects mulaw at 8kHz.
+    This does two things:
+    1. Resample from 16kHz to 8kHz (downsampling)
+    2. Encode to mulaw
+    
+    Args:
+        pcm16_bytes: PCM16 audio bytes at 16kHz (little-endian)
+        
+    Returns:
+        Mulaw-encoded audio bytes at 8kHz
+    """
+    # Inverse mulaw lookup table (approximate)
+    PCM16_TO_MULAW = {}
+    # Build a simplified inverse lookup (this is an approximation)
+    for i, val in enumerate([
+        -32124, -31100, -30076, -29052, -28028, -27004, -25980, -24956,
+        -23932, -22908, -21884, -20860, -19836, -18812, -17788, -16764,
+        -15996, -15484, -14972, -14460, -13948, -13436, -12924, -12412,
+        -11900, -11388, -10876, -10364, -9852, -9340, -8828, -8316,
+        -7932, -7676, -7420, -7164, -6908, -6652, -6396, -6140,
+        -5884, -5628, -5372, -5116, -4860, -4604, -4348, -4092,
+        -3900, -3772, -3644, -3516, -3388, -3260, -3132, -3004,
+        -2876, -2748, -2620, -2492, -2364, -2236, -2108, -1980,
+        -1884, -1820, -1756, -1692, -1628, -1564, -1500, -1436,
+        -1372, -1308, -1244, -1180, -1116, -1052, -988, -924,
+        -876, -844, -812, -780, -748, -716, -684, -652,
+        -620, -588, -556, -524, -492, -460, -428, -396,
+        -372, -356, -340, -324, -308, -292, -276, -260,
+        -244, -228, -212, -196, -180, -164, -148, -132,
+        -120, -112, -104, -96, -88, -80, -72, -64,
+        -56, -48, -40, -32, -24, -16, -8, 0,
+    ]):
+        PCM16_TO_MULAW[val] = i
+    
+    if not pcm16_bytes:
+        return b''
+    
+    # Step 1: Decode PCM16 bytes to integers
+    pcm16_array = array.array('h')
+    pcm16_array.frombytes(pcm16_bytes)
+    
+    # Step 2: Downsample from 16kHz to 8kHz (take every other sample)
+    pcm16_8khz = pcm16_array[::2]
+    
+    # Step 3: Encode to mulaw
+    mulaw_bytes = bytes()
+    for sample in pcm16_8khz:
+        # Find closest value in lookup table
+        mulaw_index = PCM16_TO_MULAW.get(sample, 0)
+        # Invert the bits for standard mulaw encoding
+        mulaw_bytes += bytes([~mulaw_index & 0xFF])
+    
+    return mulaw_bytes
 
 
 # ── Customer info extraction ────────────────────────────────────────────

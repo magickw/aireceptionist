@@ -780,6 +780,9 @@ def build_nova_sonic_system_prompt(
     hours = business_context.get("hours", {})
 
     customer_name = customer_context.get("name", "Unknown")
+    
+    # Use custom welcome message if provided
+    custom_welcome = business_context.get("welcome_message", "")
 
     prompt = f"""You are an AI voice receptionist for {business_name}, a {business_type} business.
 
@@ -790,7 +793,17 @@ Your role is to:
 - Take orders for products or services
 - Transfer to a human when needed
 
-Business Information:
+"""
+
+    # Add custom welcome instruction if provided
+    if custom_welcome:
+        prompt += f"""Custom Greeting: {custom_welcome}
+
+When you first greet the customer, use this message: "{custom_welcome}"
+
+"""
+
+    prompt += f"""Business Information:
 - Name: {business_name}
 - Type: {business_type}
 """
