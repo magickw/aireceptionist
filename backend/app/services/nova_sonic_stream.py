@@ -485,12 +485,6 @@ class NovaSonicStreamSession:
             "temperature": 0.7,
             "topP": 0.9,
         }
-        # Enable thinking/reasoning mode for Nova Lite
-        kwargs["additionalModelRequestFields"] = {
-            "reasoning_config": {
-                "type": "enabled"
-            }
-        }
         if tool_config:
             kwargs["toolConfig"] = tool_config
         return self._bedrock.converse_stream(**kwargs)
