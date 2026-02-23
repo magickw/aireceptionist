@@ -34,6 +34,9 @@ class CustomerIntelligenceService:
         # Using Titan Multimodal Embeddings for text analysis
         self.embedding_model = "amazon.nova-embed-text-v1:0"
         
+        # Initialize prediction models
+        self.prediction_models = {}
+        
     async def generate_embedding(self, text: str) -> List[float]:
         """
         Generate text embedding using Nova-compatible embedding model
@@ -581,6 +584,407 @@ class CustomerIntelligenceService:
                     recommendations.append("Enhance communication protocols and follow-up procedures")
         
         return recommendations
+
+    async def predict_customer_behavior(
+        self,
+        customer_phone: str,
+        business_id: int,
+        db: Session,
+        prediction_type: str = "next_action"
+    ) -> Dict[str, Any]:
+        """
+        Predict customer behavior using advanced analytics
+        
+        Args:
+            customer_phone: Customer phone number
+            business_id: Business ID
+            db: Database session
+            prediction_type: Type of prediction (next_action, purchase_likelihood, etc.)
+            
+        Returns:
+            Dictionary with prediction results and confidence scores
+        """
+        try:
+            # Gather customer data
+            call_sessions = db.query(CallSession).filter(
+                CallSession.business_id == business_id,
+                CallSession.customer_phone == customer_phone
+            ).order_by(desc(CallSession.started_at)).all()
+            
+            if not call_sessions:
+                return {
+                    "prediction_type": prediction_type,
+                    "prediction": "unknown",
+                    "confidence": 0.0,
+                    "reason": "Insufficient customer history"
+                }
+            
+            # Analyze behavioral patterns
+            behavior_patterns = self._analyze_behavioral_patterns(call_sessions)
+            
+            # Get recent interactions for context
+            recent_sessions = call_sessions[:5]
+            recent_interactions = []
+            for session in recent_sessions:
+                messages = db.query(ConversationMessage).filter(
+                    ConversationMessage.call_session_id == session.id
+                ).all()
+                interaction_text = " ".join([msg.content for msg in messages if msg.sender == 'customer'])
+                recent_interactions.append(interaction_text)
+            
+            # Use Nova Lite to make predictions based on patterns
+            prediction_prompt = f"""
+Based on the following customer behavioral patterns and recent interactions, predict the customer's next action.
+
+Behavioral Patterns:
+- Total calls: {behavior_patterns['total_calls']}
+- Average call duration: {behavior_patterns['avg_duration_minutes']:.1f} minutes
+- Call frequency: {behavior_patterns['calls_per_month']:.1f} calls/month
+- Primary intents: {', '.join(behavior_patterns['primary_intents'])}
+- Sentiment trend: {behavior_patterns['sentiment_trend']}
+- Time of day preferences: {behavior_patterns['preferred_times']}
+- Day of week preferences: {behavior_patterns['preferred_days']}
+
+Recent Interactions:
+{chr(10).join([f"{i+1}. {interaction[:100]}..." for i, interaction in enumerate(recent_interactions[:3])])}
+
+Prediction Type: {prediction_type}
+
+Provide a JSON response with the following structure:
+{{
+  "prediction_type": "{prediction_type}",
+  "prediction": "predicted action or behavior",
+  "confidence": float (0.0-1.0),
+  "reasoning": "explanation for the prediction",
+  "factors": ["list", "of", "key", "factors"],
+  "alternative_predictions": [
+    {{
+      "prediction": "alternative prediction",
+      "probability": float
+    }}
+  ],
+  "recommended_actions": ["list", "of", "recommended", "actions"]
+}}
+"""
+            
+            response = self.bedrock_runtime.invoke_model(
+                modelId=self.embedding_model,
+                body=json.dumps({
+                    "messages": [{"role": "user", "content": prediction_prompt}],
+                    "inferenceConfig": {
+                        "maxTokens": 1024,
+                        "temperature": 0.3
+                    }
+                })
+            )
+            
+            response_body = json.loads(response["body"].read().decode())
+            content = response_body["messages"][0]["content"]
+            
+            # Extract JSON response
+            import re
+            json_match = re.search(r'\{.*\}', content[0]["text"], re.DOTALL)
+            if json_match:
+                prediction_result = json.loads(json_match.group())
+                return prediction_result
+            else:
+                # Fallback prediction
+                return {
+                    "prediction_type": prediction_type,
+                    "prediction": "general_inquiry",
+                    "confidence": 0.5,
+                    "reasoning": "Unable to generate detailed prediction",
+                    "factors": ["limited_history"],
+                    "alternative_predictions": [],
+                    "recommended_actions": ["Provide excellent customer service"]
+                }
+                
+        except Exception as e:
+            print(f"Error predicting customer behavior: {e}")
+            return {
+                "prediction_type": prediction_type,
+                "prediction": "unknown",
+                "confidence": 0.0,
+                "reason": f"Prediction error: {str(e)}"
+            }
+    
+    def _analyze_behavioral_patterns(self, call_sessions: List) -> Dict[str, Any]:
+        """
+        Analyze behavioral patterns from call sessions
+        
+        Args:
+            call_sessions: List of call sessions
+            
+        Returns:
+            Dictionary with behavioral pattern analysis
+        """
+        if not call_sessions:
+            return {}
+        
+        # Calculate basic statistics
+        total_calls = len(call_sessions)
+        total_duration = sum([session.duration_seconds or 0 for session in call_sessions])
+        avg_duration = total_duration / total_calls if total_calls > 0 else 0
+        
+        # Calculate call frequency
+        if len(call_sessions) > 1:
+            date_range_days = (call_sessions[0].started_at - call_sessions[-1].started_at).days
+            calls_per_month = (total_calls / date_range_days) * 30 if date_range_days > 0 else 0
+        else:
+            calls_per_month = 0
+        
+        # Analyze time preferences
+        hours = [session.started_at.hour for session in call_sessions]
+        preferred_times = ["morning" if 6 <= hour < 12 else "afternoon" if 12 <= hour < 18 else "evening" for hour in hours]
+        time_counts = {time: preferred_times.count(time) for time in set(preferred_times)}
+        preferred_time = max(time_counts.items(), key=lambda x: x[1])[0] if time_counts else "unknown"
+        
+        # Analyze day preferences
+        days = [session.started_at.strftime("%A") for session in call_sessions]
+        day_counts = {day: days.count(day) for day in set(days)}
+        preferred_day = max(day_counts.items(), key=lambda x: x[1])[0] if day_counts else "unknown"
+        
+        # Sentiment trend (simplified)
+        sentiment_trend = "stable"  # Would need actual sentiment analysis
+        
+        # Primary intents (would need to analyze conversation content)
+        primary_intents = ["general_inquiry"]  # Placeholder
+        
+        return {
+            "total_calls": total_calls,
+            "avg_duration_minutes": avg_duration / 60,
+            "calls_per_month": calls_per_month,
+            "preferred_times": preferred_time,
+            "preferred_days": preferred_day,
+            "sentiment_trend": sentiment_trend,
+            "primary_intents": primary_intents
+        }
+    
+    async def analyze_behavioral_patterns(
+        self,
+        customer_phone: str,
+        business_id: int,
+        db: Session,
+        days: int = 90
+    ) -> Dict[str, Any]:
+        """
+        Comprehensive behavioral pattern analysis
+        
+        Args:
+            customer_phone: Customer phone number
+            business_id: Business ID
+            db: Database session
+            days: Number of days to analyze
+            
+        Returns:
+            Dictionary with detailed behavioral analysis
+        """
+        try:
+            cutoff_date = datetime.now() - timedelta(days=days)
+            
+            # Get recent call sessions
+            call_sessions = db.query(CallSession).filter(
+                CallSession.business_id == business_id,
+                CallSession.customer_phone == customer_phone,
+                CallSession.started_at >= cutoff_date
+            ).order_by(desc(CallSession.started_at)).all()
+            
+            if not call_sessions:
+                return {
+                    "customer_phone": customer_phone,
+                    "analysis_period_days": days,
+                    "total_interactions": 0,
+                    "patterns": {},
+                    "recommendations": ["No recent interactions to analyze"]
+                }
+            
+            # Analyze patterns
+            pattern_analysis = self._analyze_behavioral_patterns(call_sessions)
+            
+            # Get interaction content for deeper analysis
+            interaction_content = []
+            for session in call_sessions[:10]:  # Limit to 10 recent sessions
+                messages = db.query(ConversationMessage).filter(
+                    ConversationMessage.call_session_id == session.id
+                ).all()
+                content = " ".join([msg.content for msg in messages if msg.sender == 'customer'])
+                interaction_content.append(content)
+            
+            # Use Nova Lite to identify behavioral patterns
+            pattern_prompt = f"""
+Analyze the following customer interactions to identify behavioral patterns and provide recommendations.
+
+Interaction Summary:
+- Total calls in last {days} days: {pattern_analysis['total_calls']}
+- Average call duration: {pattern_analysis['avg_duration_minutes']:.1f} minutes
+- Call frequency: {pattern_analysis['calls_per_month']:.1f} calls/month
+- Preferred times: {pattern_analysis['preferred_times']}
+- Preferred days: {pattern_analysis['preferred_days']}
+
+Recent Interactions:
+{chr(10).join([f"{i+1}. {interaction[:150]}..." for i, interaction in enumerate(interaction_content[:5])])}
+
+Provide a JSON response with the following structure:
+{{
+  "behavioral_patterns": {{
+    "communication_style": "formal/casual/direct",
+    "preferred_channels": ["list", "of", "preferred", "channels"],
+    "decision_making_speed": "quick/considered/hesitant",
+    "information_requirements": ["what", "information", "they", "typically", "need"],
+    "relationship_building": "how", "they", "build", "relationships"
+  }},
+  "engagement_indicators": {{
+    "engagement_level": "high/medium/low",
+    "satisfaction_trend": "improving/stable/declining",
+    "loyalty_signals": ["list", "of", "loyalty", "indicators"],
+    "risk_factors": ["list", "of", "potential", "risks"]
+  }},
+  "recommendations": [
+    "specific recommendation 1",
+    "specific recommendation 2"
+  ],
+  "next_best_actions": [
+    "recommended action 1",
+    "recommended action 2"
+  ]
+}}
+"""
+            
+            response = self.bedrock_runtime.invoke_model(
+                modelId=self.embedding_model,
+                body=json.dumps({
+                    "messages": [{"role": "user", "content": pattern_prompt}],
+                    "inferenceConfig": {
+                        "maxTokens": 1024,
+                        "temperature": 0.3
+                    }
+                })
+            )
+            
+            response_body = json.loads(response["body"].read().decode())
+            content = response_body["messages"][0]["content"]
+            
+            # Extract JSON response
+            import re
+            json_match = re.search(r'\{.*\}', content[0]["text"], re.DOTALL)
+            if json_match:
+                behavioral_analysis = json.loads(json_match.group())
+                return {
+                    "customer_phone": customer_phone,
+                    "analysis_period_days": days,
+                    "total_interactions": len(call_sessions),
+                    "basic_patterns": pattern_analysis,
+                    **behavioral_analysis
+                }
+            else:
+                # Return basic analysis
+                return {
+                    "customer_phone": customer_phone,
+                    "analysis_period_days": days,
+                    "total_interactions": len(call_sessions),
+                    "basic_patterns": pattern_analysis,
+                    "recommendations": ["Continue providing excellent service"],
+                    "behavioral_patterns": {},
+                    "engagement_indicators": {},
+                    "next_best_actions": []
+                }
+                
+        except Exception as e:
+            print(f"Error analyzing behavioral patterns: {e}")
+            return {
+                "customer_phone": customer_phone,
+                "analysis_period_days": days,
+                "total_interactions": 0,
+                "error": str(e),
+                "recommendations": ["Unable to analyze patterns due to error"]
+            }
+    
+    async def get_real_time_customer_score(
+        self,
+        customer_phone: str,
+        business_id: int,
+        db: Session,
+        current_session: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate real-time customer intelligence score during live interaction
+        
+        Args:
+            customer_phone: Customer phone number
+            business_id: Business ID
+            db: Database session
+            current_session: Optional current session data for real-time analysis
+            
+        Returns:
+            Dictionary with real-time intelligence scores and recommendations
+        """
+        try:
+            # Get churn risk
+            churn_risk = await self.calculate_churn_risk(customer_phone, business_id, db)
+            
+            # Get behavioral patterns
+            behavior = await self.analyze_behavioral_patterns(customer_phone, business_id, db, days=30)
+            
+            # Calculate real-time score
+            engagement_score = 0.0
+            if behavior.get("engagement_indicators"):
+                engagement_indicators = behavior["engagement_indicators"]
+                if engagement_indicators.get("engagement_level") == "high":
+                    engagement_score = 0.8
+                elif engagement_indicators.get("engagement_level") == "medium":
+                    engagement_score = 0.5
+                else:
+                    engagement_score = 0.3
+            
+            # Combine scores
+            overall_score = (1.0 - churn_risk["churn_risk_score"]) * 0.6 + engagement_score * 0.4
+            
+            # Determine customer segment
+            if overall_score >= 0.7:
+                segment = "high_value"
+            elif overall_score >= 0.5:
+                segment = "medium_value"
+            else:
+                segment = "at_risk"
+            
+            # Generate real-time recommendations
+            recommendations = []
+            if churn_risk["churn_risk_score"] > 0.6:
+                recommendations.extend(churn_risk["recommendations"])
+            
+            if behavior.get("next_best_actions"):
+                recommendations.extend(behavior["next_best_actions"])
+            
+            return {
+                "customer_phone": customer_phone,
+                "timestamp": datetime.now().isoformat(),
+                "scores": {
+                    "overall_score": round(overall_score, 2),
+                    "engagement_score": round(engagement_score, 2),
+                    "churn_risk_score": churn_risk["churn_risk_score"],
+                    "satisfaction_score": round(1.0 - churn_risk["churn_risk_score"], 2)
+                },
+                "segment": segment,
+                "churn_risk_level": churn_risk["risk_level"],
+                "factors": churn_risk.get("factors", {}),
+                "behavioral_patterns": behavior.get("behavioral_patterns", {}),
+                "recommendations": recommendations[:5],  # Limit to top 5
+                "real_time_insights": {
+                    "priority_handling": segment in ["high_value", "at_risk"],
+                    "personalization_opportunities": behavior.get("behavioral_patterns", {}).get("information_requirements", []),
+                    "relationship_status": behavior.get("engagement_indicators", {}).get("satisfaction_trend", "unknown")
+                }
+            }
+            
+        except Exception as e:
+            print(f"Error calculating real-time customer score: {e}")
+            return {
+                "customer_phone": customer_phone,
+                "error": str(e),
+                "scores": {"overall_score": 0.5},
+                "segment": "unknown",
+                "recommendations": ["Unable to generate real-time score"]
+            }
 
 
 # Singleton instance

@@ -133,6 +133,12 @@ class NovaActAutomation:
     - Data extraction
     
     Uses real Playwright browser automation with Nova Lite verification.
+    
+    Enhanced with:
+    - Cognitive automation capabilities
+    - Dynamic workflow generation
+    - Self-healing automation
+    - Advanced workflow optimization
     """
     
     def __init__(self):
@@ -153,6 +159,11 @@ class NovaActAutomation:
         
         # Async lock for browser operations
         self._browser_lock = asyncio.Lock()
+        
+        # Cognitive automation components
+        self._workflow_cache: Dict[str, AutomationWorkflow] = {}
+        self._performance_metrics: Dict[str, Dict[str, Any]] = {}
+        self._adaptive_learning_data: Dict[str, List[Dict[str, Any]]] = {}
     
     async def _get_page_for_workflow(self, context: Optional[Dict[str, Any]] = None) -> Any:
         """Get or create a Playwright page for the current workflow"""
@@ -1085,3 +1096,410 @@ Output format (JSON):
 
 # Singleton instance
 nova_act = NovaActAutomation()
+
+
+class CognitiveAutomationEngine:
+    """
+    Enhanced cognitive automation engine for Nova Act
+    
+    Provides:
+    - Dynamic workflow generation
+    - Self-healing automation
+    - Performance optimization
+    - Adaptive learning
+    """
+    
+    def __init__(self, bedrock_runtime):
+        self.bedrock_runtime = bedrock_runtime
+        self.model_id = "amazon.nova-lite-v1:0"
+        self._workflow_templates = {}
+        self._performance_history = {}
+        self._learning_cache = {}
+    
+    async def generate_dynamic_workflow(
+        self,
+        task_description: str,
+        context: Dict[str, Any],
+        target_url: Optional[str] = None
+    ) -> List[AutomationStep]:
+        """
+        Generate a dynamic workflow based on task description and context
+        
+        Args:
+            task_description: Natural language description of the task
+            context: Additional context about the task
+            target_url: Optional URL of the target application
+            
+        Returns:
+            List of automation steps
+        """
+        prompt = f"""
+You are an intelligent workflow generator for browser automation.
+
+Task: {task_description}
+Context: {json.dumps(context, indent=2)}
+Target URL: {target_url or 'Not specified'}
+
+Generate a step-by-step automation plan to complete this task automatically.
+Consider the following:
+1. Navigation to the correct page
+2. Locating and interacting with UI elements
+3. Handling potential errors or edge cases
+4. Verifying successful completion
+5. Optimizing for reliability and speed
+
+Available actions:
+- navigate: Go to a URL
+- click: Click an element
+- type: Enter text in a field
+- select: Select from a dropdown
+- wait: Wait for an element or time
+- submit: Submit a form
+- verify: Verify a condition
+- scroll: Scroll the page
+- extract: Extract data
+
+Output format (JSON):
+{{
+  "steps": [
+    {{
+      "action": "navigate",
+      "description": "Clear description of the step",
+      "target": "URL if applicable",
+      "selector": "CSS selector if applicable",
+      "value": "Value to type/select if applicable",
+      "wait_ms": 2000,
+      "verification": "What to verify after this step"
+    }}
+  ],
+  "fallback_strategies": [
+    "Alternative approach if primary strategy fails"
+  ],
+  "optimization_notes": "Performance optimization suggestions"
+}}
+
+Generate a comprehensive, robust workflow plan.
+"""
+        
+        try:
+            response = self.bedrock_runtime.invoke_model(
+                modelId=self.model_id,
+                body=json.dumps({
+                    "messages": [{"role": "user", "content": prompt}],
+                    "inferenceConfig": {
+                        "maxTokens": 2048,
+                        "temperature": 0.3
+                    }
+                })
+            )
+            
+            response_body = json.loads(response["body"].read().decode())
+            content = response_body["messages"][0]["content"]
+            
+            # Extract JSON from response
+            import re
+            json_match = re.search(r'\{[^{}]*\{[^{}]*\}[^{}]*\}', content, re.DOTALL)
+            if json_match:
+                plan_data = json.loads(json_match.group())
+            else:
+                # Try simpler pattern
+                json_match = re.search(r'\{.*\}', content, re.DOTALL)
+                if json_match:
+                    plan_data = json.loads(json_match.group())
+                else:
+                    return []
+            
+            # Convert to AutomationStep objects
+            steps = []
+            for i, step_data in enumerate(plan_data.get("steps", [])):
+                step = AutomationStep(
+                    step_id=i + 1,
+                    action=AutomationAction(step_data["action"]),
+                    description=step_data["description"],
+                    target=step_data.get("target"),
+                    value=step_data.get("value"),
+                    selector=step_data.get("selector"),
+                    wait_ms=step_data.get("wait_ms"),
+                    verification=step_data.get("verification")
+                )
+                steps.append(step)
+            
+            return steps
+            
+        except Exception as e:
+            print(f"Error generating dynamic workflow: {e}")
+            return []
+    
+    async def self_heal_automation(
+        self,
+        failed_step: AutomationStep,
+        page,
+        context: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Attempt to automatically heal a failed automation step
+        
+        Args:
+            failed_step: The step that failed
+            page: Playwright page object
+            context: Context about the automation
+            
+        Returns:
+            Dictionary with healing result and alternative approach
+        """
+        # Take a screenshot for analysis
+        try:
+            screenshot = await page.screenshot(full_page=False)
+            screenshot_b64 = base64.b64encode(screenshot).decode()
+        except:
+            screenshot_b64 = None
+        
+        # Analyze the failure and generate alternative approaches
+        prompt = f"""
+Analyze this automation failure and generate a self-healing strategy.
+
+Failed Step:
+- Action: {failed_step.action.value}
+- Description: {failed_step.description}
+- Target: {failed_step.target}
+- Selector: {failed_step.selector}
+- Value: {failed_step.value}
+
+Context:
+{json.dumps(context, indent=2)}
+
+Generate a recovery strategy with the following structure (JSON):
+{{
+  "failure_analysis": {{
+    "likely_cause": "most likely cause of the failure",
+    "confidence": float (0.0-1.0)
+  }},
+  "alternative_approaches": [
+    {{
+      "approach": "description of alternative approach",
+      "steps": ["step 1", "step 2"],
+      "success_probability": float (0.0-1.0)
+    }}
+  ],
+  "fallback_action": {{
+    "action": "alternative action type",
+    "target": "alternative target",
+    "selector": "alternative selector",
+    "value": "alternative value"
+  }},
+  "retry_recommendation": "whether to retry or skip"
+}}
+"""
+        
+        try:
+            messages = [{"role": "user", "content": [{"text": prompt}]}]
+            
+            if screenshot_b64:
+                messages[0]["content"].append({
+                    "image": {
+                        "format": "png",
+                        "source": {"bytes": screenshot_b64}
+                    }
+                })
+            
+            response = self.bedrock_runtime.invoke_model(
+                modelId=self.model_id,
+                body=json.dumps({
+                    "messages": messages,
+                    "inferenceConfig": {
+                        "maxTokens": 1024,
+                        "temperature": 0.3
+                    }
+                })
+            )
+            
+            response_body = json.loads(response["body"].read().decode())
+            content = response_body["messages"][0]["content"]
+            
+            # Extract JSON response
+            import re
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                healing_result = json.loads(json_match.group())
+                return healing_result
+            
+            return {
+                "failure_analysis": {"likely_cause": "unknown", "confidence": 0.0},
+                "alternative_approaches": [],
+                "fallback_action": None,
+                "retry_recommendation": "skip"
+            }
+            
+        except Exception as e:
+            print(f"Error in self-healing analysis: {e}")
+            return {
+                "failure_analysis": {"likely_cause": "error", "confidence": 0.0},
+                "alternative_approaches": [],
+                "fallback_action": None,
+                "retry_recommendation": "skip"
+            }
+    
+    async def optimize_workflow_performance(
+        self,
+        workflow: AutomationWorkflow,
+        performance_data: Dict[str, Any]
+    ) -> List[Dict[str, Any]]:
+        """
+        Analyze workflow performance and generate optimization recommendations
+        
+        Args:
+            workflow: The workflow to optimize
+            performance_data: Performance metrics and data
+            
+        Returns:
+            List of optimization recommendations
+        """
+        prompt = f"""
+Analyze this workflow's performance and generate optimization recommendations.
+
+Workflow: {workflow.name}
+Description: {workflow.description}
+Steps: {len(workflow.steps)}
+
+Performance Data:
+{json.dumps(performance_data, indent=2)}
+
+Generate optimization recommendations with the following structure (JSON):
+{{
+  "performance_analysis": {{
+    "bottlenecks": ["identified bottlenecks"],
+    "slow_steps": [
+      {{"step_id": 1, "avg_duration_ms": 5000, "reason": "why it's slow"}}
+    ],
+    "failure_prone_steps": [step_ids],
+    "overall_efficiency": float (0.0-1.0)
+  }},
+  "optimizations": [
+    {{
+      "type": "step_optimization|workflow_restructuring|parallel_execution",
+      "target_step_id": int,
+      "description": "description of optimization",
+      "expected_improvement": "expected performance gain",
+      "complexity": "low|medium|high"
+    }}
+  ],
+  "restructured_workflow": {{
+    "steps": ["optimized step sequence"],
+    "expected_speedup": float (e.g., 1.5 for 50% faster)
+  }}
+}}
+"""
+        
+        try:
+            response = self.bedrock_runtime.invoke_model(
+                modelId=self.model_id,
+                body=json.dumps({
+                    "messages": [{"role": "user", "content": prompt}],
+                    "inferenceConfig": {
+                        "maxTokens": 2048,
+                        "temperature": 0.3
+                    }
+                })
+            )
+            
+            response_body = json.loads(response["body"].read().decode())
+            content = response_body["messages"][0]["content"]
+            
+            # Extract JSON response
+            import re
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                optimization_result = json.loads(json_match.group())
+                return optimization_result.get("optimizations", [])
+            
+            return []
+            
+        except Exception as e:
+            print(f"Error optimizing workflow performance: {e}")
+            return []
+    
+    async def learn_from_execution(
+        self,
+        workflow_id: str,
+        execution_result: Dict[str, Any],
+        page_screenshot: Optional[bytes] = None
+    ):
+        """
+        Learn from automation execution to improve future performance
+        
+        Args:
+            workflow_id: ID of the workflow that was executed
+            execution_result: Result of the execution
+            page_screenshot: Optional screenshot of the final page state
+        """
+        if workflow_id not in self._learning_cache:
+            self._learning_cache[workflow_id] = []
+        
+        learning_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "execution_result": execution_result,
+            "success": execution_result.get("status") == "completed",
+            "duration": execution_result.get("duration_seconds", 0),
+            "errors": execution_result.get("errors", []),
+            "screenshot_available": page_screenshot is not None
+        }
+        
+        self._learning_cache[workflow_id].append(learning_entry)
+        
+        # Keep only recent learning data (last 100 executions)
+        if len(self._learning_cache[workflow_id]) > 100:
+            self._learning_cache[workflow_id] = self._learning_cache[workflow_id][-100:]
+    
+    def get_learned_insights(self, workflow_id: str) -> Dict[str, Any]:
+        """
+        Get insights learned from previous executions
+        
+        Args:
+            workflow_id: ID of the workflow
+            
+        Returns:
+            Dictionary with learned insights
+        """
+        if workflow_id not in self._learning_cache:
+            return {"insights": [], "recommendations": []}
+        
+        executions = self._learning_cache[workflow_id]
+        
+        # Calculate success rate
+        successful = sum(1 for e in executions if e["success"])
+        success_rate = successful / len(executions) if executions else 0
+        
+        # Calculate average duration
+        avg_duration = sum(e["duration"] for e in executions) / len(executions) if executions else 0
+        
+        # Identify common errors
+        all_errors = []
+        for e in executions:
+            all_errors.extend(e["errors"])
+        
+        error_counts = {}
+        for error in all_errors:
+            error_counts[error] = error_counts.get(error, 0) + 1
+        
+        common_errors = sorted(error_counts.items(), key=lambda x: x[1], reverse=True)[:5]
+        
+        return {
+            "total_executions": len(executions),
+            "success_rate": round(success_rate, 2),
+            "average_duration_seconds": round(avg_duration, 2),
+            "common_errors": [{"error": err, "count": count} for err, count in common_errors],
+            "insights": [
+                f"Success rate: {success_rate:.1%}",
+                f"Average duration: {avg_duration:.1f}s",
+                f"Most common error: {common_errors[0][0] if common_errors else 'None'}"
+            ],
+            "recommendations": [
+                "Review common failure patterns for optimization",
+                "Consider adding additional error handling",
+                "Optimize slow steps if average duration is high"
+            ]
+        }
+
+
+# Cognitive automation engine instance
+cognitive_automation = None

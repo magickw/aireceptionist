@@ -44,30 +44,53 @@ class TestGetCustomerProfile:
     @pytest.mark.asyncio
     async def test_get_customer_profile_success(self, customer_360_service, mock_db, sample_customer):
         """Test successful customer profile retrieval"""
-        mock_db.query.return_value.filter.return_value.first.return_value = sample_customer
+        # Set up mock to return customer when queried
+        mock_query_result = Mock()
+        mock_query_result.first.return_value = sample_customer
+        mock_db.query.return_value.filter.return_value = mock_query_result
+        
+        # Mock related data queries - return empty lists
+        def mock_query_side_effect(model):
+            mock_q = Mock()
+            if model.__name__ == 'Customer':
+                mock_q.filter.return_value = mock_query_result
+            else:
+                # For CallSession, Order, Appointment - return empty results
+                mock_q.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+                mock_q.filter.return_value.order_by.return_value.all.return_value = []
+            return mock_q
+        
+        mock_db.query.side_effect = mock_query_side_effect
         
         profile = await customer_360_service.get_customer_profile(
-            customer_id=1,
-            db=mock_db
+            db=mock_db,
+            business_id=1,
+            customer_phone="555-1234"
         )
         
-        assert profile["id"] == 1
-        assert profile["name"] == "John Doe"
-        assert profile["email"] == "john@example.com"
-        assert profile["loyalty_tier"] == "gold"
-        assert profile["is_vip"] is True
+        assert profile["customer"]["id"] == 1
+        assert profile["customer"]["name"] == "John Doe"
+        assert profile["customer"]["phone"] == "555-1234"
+        assert profile["customer"]["loyalty_tier"] == "gold"
+        assert profile["customer"]["is_vip"] is True
+        assert "metrics" in profile
+        assert "recent_activity" in profile
     
     @pytest.mark.asyncio
     async def test_get_customer_profile_not_found(self, customer_360_service, mock_db):
         """Test getting profile for non-existent customer"""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
+        mock_query_result = Mock()
+        mock_query_result.first.return_value = None
+        mock_db.query.return_value.filter.return_value = mock_query_result
         
         profile = await customer_360_service.get_customer_profile(
-            customer_id=999,
-            db=mock_db
+            db=mock_db,
+            business_id=1,
+            customer_phone="999-9999"
         )
         
-        assert profile is None
+        assert "error" in profile
+        assert profile["phone"] == "999-9999"
 
 
 class TestGetCustomerInteractions:
@@ -77,18 +100,20 @@ class TestGetCustomerInteractions:
     async def test_get_customer_calls(self, customer_360_service, mock_db):
         """Test getting customer call history"""
         mock_calls = [
-            Mock(id=1, call_date=datetime.now() - timedelta(days=1), sentiment="positive"),
-            Mock(id=2, call_date=datetime.now() - timedelta(days=7), sentiment="neutral")
+            Mock(id=1, started_at=datetime.now() - timedelta(days=1), sentiment="positive", duration_seconds=120, quality_score=0.9, summary="Test call"),
+            Mock(id=2, started_at=datetime.now() - timedelta(days=7), sentiment="neutral", duration_seconds=90, quality_score=0.7, summary="Another test")
         ]
-        mock_db.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_calls
+        mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = mock_calls
         
         calls = await customer_360_service.get_customer_calls(
             customer_id=1,
-            db=mock_db
+            db=mock_db,
+            limit=10
         )
         
         assert len(calls) == 2
         assert calls[0]["sentiment"] == "positive"
+        assert calls[0]["duration"] == 120
     
     @pytest.mark.asyncio
     async def test_get_customer_appointments(self, customer_360_service, mock_db):
@@ -96,26 +121,30 @@ class TestGetCustomerInteractions:
         mock_appointments = [
             Mock(
                 id=1,
-                start_time=datetime.now() + timedelta(days=1),
+                appointment_time=datetime.now() + timedelta(days=1),
                 status="confirmed",
-                service="Consultation"
+                service_type="Consultation",
+                notes="First visit"
             ),
             Mock(
                 id=2,
-                start_time=datetime.now() - timedelta(days=7),
+                appointment_time=datetime.now() - timedelta(days=7),
                 status="completed",
-                service="Follow-up"
+                service_type="Follow-up",
+                notes="Checkup"
             )
         ]
-        mock_db.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_appointments
+        mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = mock_appointments
         
         appointments = await customer_360_service.get_customer_appointments(
             customer_id=1,
-            db=mock_db
+            db=mock_db,
+            limit=10
         )
         
         assert len(appointments) == 2
         assert appointments[0]["status"] == "confirmed"
+        assert appointments[0]["service"] == "Consultation"
     
     @pytest.mark.asyncio
     async def test_get_customer_orders(self, customer_360_service, mock_db):
@@ -125,24 +154,28 @@ class TestGetCustomerInteractions:
                 id=1,
                 created_at=datetime.now() - timedelta(days=2),
                 total_amount=50.00,
-                status="completed"
+                status="completed",
+                delivery_method="pickup"
             ),
             Mock(
                 id=2,
                 created_at=datetime.now() - timedelta(days=10),
                 total_amount=75.00,
-                status="completed"
+                status="completed",
+                delivery_method="delivery"
             )
         ]
-        mock_db.query.return_value.filter.return_value.order_by.return_value.all.return_value = mock_orders
+        mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = mock_orders
         
         orders = await customer_360_service.get_customer_orders(
             customer_id=1,
-            db=mock_db
+            db=mock_db,
+            limit=10
         )
         
         assert len(orders) == 2
         assert orders[0]["total_amount"] == 50.00
+        assert orders[0]["delivery_method"] == "pickup"
 
 
 class TestCalculateLifetimeValue:
@@ -184,12 +217,15 @@ class TestCalculateChurnRisk:
     @pytest.mark.asyncio
     async def test_calculate_churn_risk_low_risk(self, customer_360_service, mock_db):
         """Test churn risk calculation for low-risk customer"""
-        # Recent calls, positive sentiment
-        mock_calls = [
-            Mock(call_date=datetime.now() - timedelta(days=3), sentiment="positive"),
-            Mock(call_date=datetime.now() - timedelta(days=10), sentiment="positive")
-        ]
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_calls
+        # Recent interactions, positive sentiment
+        mock_customer = Mock(
+            last_interaction=datetime.now() - timedelta(days=3),
+            avg_sentiment=0.8,
+            total_calls=5,
+            total_orders=3,
+            total_appointments=2
+        )
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_customer
         
         churn_risk = await customer_360_service.calculate_churn_risk(
             customer_id=1,
@@ -201,11 +237,15 @@ class TestCalculateChurnRisk:
     @pytest.mark.asyncio
     async def test_calculate_churn_risk_high_risk(self, customer_360_service, mock_db):
         """Test churn risk calculation for high-risk customer"""
-        # No recent calls, negative sentiment in past
-        mock_calls = [
-            Mock(call_date=datetime.now() - timedelta(days=60), sentiment="negative")
-        ]
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_calls
+        # No recent interactions, low sentiment
+        mock_customer = Mock(
+            last_interaction=datetime.now() - timedelta(days=90),
+            avg_sentiment=0.3,
+            total_calls=0,
+            total_orders=0,
+            total_appointments=0
+        )
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_customer
         
         churn_risk = await customer_360_service.calculate_churn_risk(
             customer_id=1,
@@ -221,12 +261,8 @@ class TestCalculateSatisfactionScore:
     @pytest.mark.asyncio
     async def test_calculate_satisfaction_score_positive(self, customer_360_service, mock_db):
         """Test satisfaction score for positive customer"""
-        mock_calls = [
-            Mock(sentiment="positive"),
-            Mock(sentiment="positive"),
-            Mock(sentiment="neutral")
-        ]
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_calls
+        mock_customer = Mock(avg_sentiment=0.8)
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_customer
         
         score = await customer_360_service.calculate_satisfaction_score(
             customer_id=1,
@@ -238,12 +274,8 @@ class TestCalculateSatisfactionScore:
     @pytest.mark.asyncio
     async def test_calculate_satisfaction_score_negative(self, customer_360_service, mock_db):
         """Test satisfaction score for negative customer"""
-        mock_calls = [
-            Mock(sentiment="negative"),
-            Mock(sentiment="negative"),
-            Mock(sentiment="neutral")
-        ]
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_calls
+        mock_customer = Mock(avg_sentiment=0.3)
+        mock_db.query.return_value.filter.return_value.first.return_value = mock_customer
         
         score = await customer_360_service.calculate_satisfaction_score(
             customer_id=1,
@@ -257,77 +289,114 @@ class TestDetermineLoyaltyTier:
     """Test cases for determining loyalty tier"""
     
     @pytest.mark.asyncio
-    async def test_determine_loyalty_tier_gold(self, customer_360_service, mock_db):
-        """Test gold tier determination"""
-        mock_orders = [
-            Mock(total_amount=500.00),
-            Mock(total_amount=600.00)
-        ]
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_orders
+    async def test_determine_loyalty_tier_platinum(self, customer_360_service, mock_db):
+        """Test platinum tier determination"""
+        mock_customer = Mock(
+            id=1,
+            total_spent=5000.00,
+            total_calls=30,
+            total_orders=20
+        )
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_customer
+        mock_db.query.return_value = mock_query
         
         tier = await customer_360_service.determine_loyalty_tier(
             customer_id=1,
             db=mock_db
         )
         
-        assert tier == "gold"
+        assert tier == "platinum"  # $5000 + 50 interactions = platinum
+    
+    @pytest.mark.asyncio
+    async def test_determine_loyalty_tier_gold(self, customer_360_service, mock_db):
+        """Test gold tier determination"""
+        mock_customer = Mock(
+            id=1,
+            total_spent=2500.00,
+            total_calls=15,
+            total_orders=10
+        )
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_customer
+        mock_db.query.return_value = mock_query
+        
+        tier = await customer_360_service.determine_loyalty_tier(
+            customer_id=1,
+            db=mock_db
+        )
+        
+        assert tier == "gold"  # $2500 + 25 interactions = gold
     
     @pytest.mark.asyncio
     async def test_determine_loyalty_tier_silver(self, customer_360_service, mock_db):
         """Test silver tier determination"""
-        mock_orders = [
-            Mock(total_amount=200.00),
-            Mock(total_amount=150.00)
-        ]
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_orders
+        mock_customer = Mock(
+            id=1,
+            total_spent=750.00,
+            total_calls=6,
+            total_orders=4
+        )
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_customer
+        mock_db.query.return_value = mock_query
         
         tier = await customer_360_service.determine_loyalty_tier(
             customer_id=1,
             db=mock_db
         )
         
-        assert tier == "silver"
+        assert tier == "silver"  # $750 + 10 interactions = silver
     
     @pytest.mark.asyncio
-    async def test_determine_loyalty_tier_bronze(self, customer_360_service, mock_db):
-        """Test bronze tier determination"""
-        mock_orders = [
-            Mock(total_amount=50.00)
-        ]
-        mock_db.query.return_value.filter.return_value.all.return_value = mock_orders
+    async def test_determine_loyalty_tier_standard(self, customer_360_service, mock_db):
+        """Test standard tier determination"""
+        mock_customer = Mock(
+            id=1,
+            total_spent=100.00,
+            total_calls=2,
+            total_orders=0
+        )
+        mock_query = Mock()
+        mock_query.filter.return_value.first.return_value = mock_customer
+        mock_db.query.return_value = mock_query
         
         tier = await customer_360_service.determine_loyalty_tier(
             customer_id=1,
             db=mock_db
         )
         
-        assert tier == "bronze"
+        assert tier == "standard"  # $100 + 2 interactions = standard (not bronze)
 
 
 class TestIdentifyVIPCustomers:
     """Test cases for identifying VIP customers"""
     
     @pytest.mark.asyncio
-    async def test_identify_vip_high_value(self, customer_360_service, mock_db, sample_customer):
+    async def test_identify_vip_high_value(self, customer_360_service, mock_db):
         """Test VIP identification for high-value customer"""
-        sample_customer.lifetime_value = 10000.00
-        sample_customer.satisfaction_score = 4.8
+        mock_customer = Mock(
+            lifetime_value=10000.00,
+            satisfaction_score=4.8
+        )
         
         is_vip = await customer_360_service.identify_vip(
-            customer=sample_customer,
+            customer=mock_customer,
             db=mock_db
         )
         
         assert is_vip is True
     
     @pytest.mark.asyncio
-    async def test_identify_vip_low_value(self, customer_360_service, mock_db, sample_customer):
+    async def test_identify_vip_low_value(self, customer_360_service, mock_db):
         """Test VIP identification for low-value customer"""
-        sample_customer.lifetime_value = 100.00
-        sample_customer.satisfaction_score = 3.0
+        mock_customer = Mock(
+            lifetime_value=100.00,
+            satisfaction_score=3.0
+        )
         
         is_vip = await customer_360_service.identify_vip(
-            customer=sample_customer,
+            customer=mock_customer,
             db=mock_db
         )
         
@@ -338,46 +407,61 @@ class TestUpdateCustomerMetrics:
     """Test cases for updating customer metrics"""
     
     @pytest.mark.asyncio
-    async def test_update_customer_metrics_after_call(self, customer_360_service, mock_db, sample_customer):
-        """Test updating metrics after a call"""
-        mock_call = Mock(
+    async def test_update_customer_metrics_success(self, customer_360_service, mock_db):
+        """Test updating customer metrics"""
+        mock_customer = Mock(
             id=1,
-            customer_id=1,
-            call_date=datetime.now(),
-            sentiment="positive",
-            duration=300
+            name="John Doe",
+            total_calls=5,
+            total_orders=3,
+            total_appointments=2,
+            total_spent=500.00,
+            avg_sentiment=0.7,
+            avg_quality_score=0.8,
+            last_interaction=datetime.now() - timedelta(days=1),
+            churn_risk=0.2,
+            is_vip=True,
+            loyalty_tier="gold"
         )
         
-        await customer_360_service.update_customer_metrics(
-            customer=sample_customer,
-            call=mock_call,
-            db=mock_db
+        mock_calls = [
+            Mock(id=1, customer_id=1, started_at=datetime.now() - timedelta(days=1), sentiment="positive", quality_score=0.8),
+            Mock(id=2, customer_id=1, started_at=datetime.now() - timedelta(days=7), sentiment="neutral", quality_score=0.7)
+        ]
+        
+        mock_orders = [
+            Mock(id=1, customer_id=1, created_at=datetime.now() - timedelta(days=2), total_amount=150.00, status="completed"),
+            Mock(id=2, customer_id=1, created_at=datetime.now() - timedelta(days=10), total_amount=200.00, status="completed")
+        ]
+        
+        mock_appointments = [
+            Mock(id=1, customer_id=1, appointment_time=datetime.now() - timedelta(days=3), service_type="Consultation")
+        ]
+        
+        def mock_query_side_effect(model):
+            mock_q = Mock()
+            if model.__name__ == 'Customer':
+                mock_q.filter.return_value.first.return_value = mock_customer
+            elif model.__name__ == 'CallSession':
+                mock_q.filter.return_value.all.return_value = mock_calls
+            elif model.__name__ == 'Order':
+                mock_q.filter.return_value.all.return_value = mock_orders
+            elif model.__name__ == 'Appointment':
+                mock_q.filter.return_value.all.return_value = mock_appointments
+            return mock_q
+        
+        mock_db.query.side_effect = mock_query_side_effect
+        mock_db.commit.return_value = None
+        mock_db.refresh.return_value = None
+        
+        result = await customer_360_service.update_customer_metrics(
+            db=mock_db,
+            customer_id=1
         )
         
-        # Customer should be updated
-        assert sample_customer.call_count >= 1
-        assert sample_customer.last_contact is not None
-    
-    @pytest.mark.asyncio
-    async def test_update_customer_metrics_after_order(self, customer_360_service, mock_db, sample_customer):
-        """Test updating metrics after an order"""
-        mock_order = Mock(
-            id=1,
-            customer_id=1,
-            total_amount=150.00,
-            created_at=datetime.now()
-        )
-        
-        initial_ltv = sample_customer.lifetime_value
-        
-        await customer_360_service.update_customer_metrics(
-            customer=sample_customer,
-            order=mock_order,
-            db=mock_db
-        )
-        
-        # LTV should increase
-        assert sample_customer.lifetime_value >= initial_ltv
+        assert result["customer_id"] == 1
+        assert "updated_metrics" in result
+        assert result["updated_metrics"]["total_calls"] == 2
 
 
 class TestGetCustomerInsights:

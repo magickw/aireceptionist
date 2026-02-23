@@ -338,7 +338,7 @@ import re
 import asyncio
 import random
 from typing import Dict, List, Optional, Any
-from datetime import datetime
+from datetime import datetime, timedelta
 from botocore.exceptions import ClientError, ReadTimeoutError, ConnectTimeoutError
 
 from app.core.config import settings
@@ -456,6 +456,56 @@ async def get_training_context(business_id: int, db, conversation: str = "") -> 
         return ""
 
 
+class MemoryStore:
+    """
+    Long-term memory store for persistent customer context across sessions
+    """
+    
+    def __init__(self):
+        # In production, this would connect to a persistent database
+        # For demo purposes, we'll use an in-memory store
+        self.customer_memories = {}
+    
+    async def store_memory(self, customer_id: str, key: str, value: Any, session_id: str = None):
+        """Store memory for a customer"""
+        if customer_id not in self.customer_memories:
+            self.customer_memories[customer_id] = {}
+        
+        memory_entry = {
+            "value": value,
+            "timestamp": datetime.now(),
+            "session_id": session_id,
+            "key": key
+        }
+        
+        self.customer_memories[customer_id][key] = memory_entry
+    
+    async def retrieve_memory(self, customer_id: str, key: str = None) -> Optional[Dict[str, Any]]:
+        """Retrieve memory for a customer"""
+        if customer_id not in self.customer_memories:
+            return None
+        
+        if key is None:
+            # Return all memories for this customer
+            return self.customer_memories[customer_id]
+        
+        if key in self.customer_memories[customer_id]:
+            return self.customer_memories[customer_id][key]
+        
+        return None
+    
+    async def update_memory(self, customer_id: str, key: str, value: Any):
+        """Update an existing memory"""
+        if customer_id in self.customer_memories and key in self.customer_memories[customer_id]:
+            self.customer_memories[customer_id][key]["value"] = value
+            self.customer_memories[customer_id][key]["timestamp"] = datetime.now()
+    
+    async def delete_memory(self, customer_id: str, key: str):
+        """Delete a specific memory"""
+        if customer_id in self.customer_memories and key in self.customer_memories[customer_id]:
+            del self.customer_memories[customer_id][key]
+
+
 class NovaReasoningEngine:
     """
     Nova 2 Lite-powered reasoning engine for autonomous business operations.
@@ -466,6 +516,8 @@ class NovaReasoningEngine:
     - Safety gate layer with deterministic triggers
     - Structured response validator
     - Visualization builder
+    - Long-term memory persistence
+    - Advanced multi-step reasoning
     """
     
     def __init__(self):
@@ -476,6 +528,9 @@ class NovaReasoningEngine:
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
         self.model_id = "amazon.nova-lite-v1:0"
+        
+        # Initialize memory store
+        self.memory_store = MemoryStore()
         
         # Available actions for the agent
         # NOTE: CREATE_ORDER is deprecated - use PLACE_ORDER + CONFIRM_ORDER flow
@@ -1445,9 +1500,22 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
         if "next_questions" not in result or not isinstance(result["next_questions"], list):
             result["next_questions"] = []
         
-        # Ensure memory_update exists
+        # Handle memory updates
         if "memory_update" not in result:
             result["memory_update"] = {"key": "none", "value": None}
+        else:
+            # Apply memory updates if customer context is available
+            memory_update = result["memory_update"]
+            if memory_update and memory_update.get("key") != "none" and "customer_context" in locals():
+                customer_id = customer_context.get("id") or customer_context.get("phone") or "unknown"
+                if customer_id != "unknown":
+                    asyncio.create_task(
+                        self.memory_store.store_memory(
+                            customer_id, 
+                            memory_update["key"], 
+                            memory_update["value"]
+                        )
+                    )
         
         return result
     
@@ -1593,6 +1661,407 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
             ]
         }
 
+    async def retrieve_customer_memory(self, customer_context: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Retrieve customer memories for context enrichment
+        
+        Args:
+            customer_context: Customer information containing ID or phone
+            
+        Returns:
+            Dictionary containing customer memories
+        """
+        customer_id = customer_context.get("id") or customer_context.get("phone") or "unknown"
+        if customer_id == "unknown":
+            return {}
+        
+        memories = await self.memory_store.retrieve_memory(customer_id)
+        if not memories:
+            return {}
+        
+        # Filter to only return the memory values with their keys
+        memory_values = {}
+        for key, memory_entry in memories.items():
+            memory_values[key] = memory_entry["value"]
+        
+        return memory_values
+
+    async def update_customer_memory(self, customer_context: Dict[str, Any], memory_key: str, memory_value: Any):
+        """
+        Update customer memory with new information
+        
+        Args:
+            customer_context: Customer information containing ID or phone
+            memory_key: Key for the memory entry
+            memory_value: Value to store
+        """
+        customer_id = customer_context.get("id") or customer_context.get("phone") or "unknown"
+        if customer_id != "unknown":
+            await self.memory_store.store_memory(customer_id, memory_key, memory_value)
+
+    async def perform_multi_step_reasoning(
+        self,
+        conversation: str,
+        business_context: Dict[str, Any],
+        customer_context: Dict[str, Any],
+        db=None,
+        max_steps: int = 5
+    ) -> Dict[str, Any]:
+        """
+        Perform advanced multi-step reasoning for complex tasks
+        
+        Args:
+            conversation: Current conversation transcript
+            business_context: Business information
+            customer_context: Customer information
+            db: Database session
+            max_steps: Maximum number of reasoning steps
+            
+        Returns:
+            Structured reasoning result with multi-step analysis
+        """
+        # Retrieve any existing customer memories
+        customer_memories = await self.retrieve_customer_memory(customer_context)
+        
+        # Build enhanced system prompt with multi-step reasoning instructions
+        system_prompt = self._build_multi_step_system_prompt(
+            business_context, 
+            customer_context, 
+            customer_memories
+        )
+        
+        # Create the multi-step reasoning prompt
+        multi_step_prompt = f"""
+Analyze this conversation using multi-step reasoning to understand the customer's needs and determine the best course of action.
+
+Conversation: {conversation}
+
+Follow these steps in your analysis:
+1. Identify the customer's primary goal or request
+2. Identify any constraints or special requirements
+3. Consider the customer's history and preferences
+4. Determine what information is needed to fulfill the request
+5. Plan the sequence of actions needed to address the request
+6. Identify any potential risks or issues
+7. Formulate an appropriate response
+
+Provide your response in the following JSON format:
+{{
+  "multi_step_analysis": {{
+    "primary_goal": "string",
+    "constraints": ["list", "of", "constraints"],
+    "customer_history_considerations": "string",
+    "required_information": ["list", "of", "required", "information"],
+    "action_sequence": [
+      {{
+        "step": 1,
+        "action": "string",
+        "description": "string"
+      }}
+    ],
+    "potential_risks": ["list", "of", "risks"],
+    "recommended_response": "string"
+  }},
+  "intent": "string",
+  "confidence": float,
+  "entities": {{"key": "value"}},
+  "selected_action": "string",
+  "action_reasoning": "string",
+  "next_questions": ["string"],
+  "sentiment": "string",
+  "escalation_risk": float,
+  "memory_update": {{"key": "string", "value": "string"}},
+  "suggested_response": "string",
+  "requires_approval": boolean,
+  "intent_validated": boolean
+}}
+
+Focus on providing a detailed, step-by-step analysis of the situation.
+"""
+        
+        messages = [
+            {"role": "user", "content": [{"text": multi_step_prompt}]}
+        ]
+        
+        try:
+            response = await self._invoke_nova_lite(system_prompt, messages)
+            
+            # Parse the response
+            result = self._parse_reasoning_response(response)
+            
+            # Add multi-step analysis if available
+            if "multi_step_analysis" not in result:
+                # Create a prompt specifically for multi-step analysis
+                analysis_prompt = f"""
+Analyze the conversation using multi-step reasoning:
+
+Conversation: {conversation}
+
+Provide only the multi_step_analysis part of the response in JSON format:
+{{
+  "multi_step_analysis": {{
+    "primary_goal": "Identify customer's main request",
+    "constraints": ["list any constraints mentioned"],
+    "customer_history_considerations": "Consider customer history and preferences",
+    "required_information": ["information needed to help customer"],
+    "action_sequence": [
+      {{
+        "step": 1,
+        "action": "first action to take",
+        "description": "what the action accomplishes"
+      }}
+    ],
+    "potential_risks": ["any potential issues to be aware of"],
+    "recommended_response": "suggested response to customer"
+  }}
+}}
+"""
+                analysis_response = await self._invoke_nova_lite(system_prompt, 
+                    [{"role": "user", "content": [{"text": analysis_prompt}]}])
+                
+                # Try to extract the multi-step analysis
+                analysis_result = self._parse_reasoning_response(analysis_response)
+                if "multi_step_analysis" in analysis_result:
+                    result["multi_step_analysis"] = analysis_result["multi_step_analysis"]
+            
+            return result
+            
+        except Exception as e:
+            # Fallback to regular reasoning if multi-step reasoning fails
+            print(f"[Nova Multi-Step Reasoning] Error: {e}")
+            return await self.reason(
+                conversation=conversation,
+                business_context=business_context,
+                customer_context=customer_context,
+                db=db
+            )
+
+    def _build_multi_step_system_prompt(
+        self,
+        business_context: Dict[str, Any],
+        customer_context: Dict[str, Any],
+        customer_memories: Dict[str, Any]
+    ) -> str:
+        """
+        Build system prompt for multi-step reasoning
+        
+        Args:
+            business_context: Business information
+            customer_context: Customer information
+            customer_memories: Customer memories
+            
+        Returns:
+            System prompt string
+        """
+        prompt = f"""
+You are Nova 2 Lite, the reasoning core of an autonomous business operations agent.
+
+Your role: Analyze customer calls using multi-step reasoning to determine intent, select appropriate actions, and guide autonomous workflows.
+
+## Available Actions:
+{self._format_actions_list()}
+
+## Business Context:
+- Business Name: {business_context.get('name', 'Unknown')}
+- Business Type: {business_context.get('type', 'general').title()}
+- Services: {', '.join(business_context.get('services', []))}
+- Operating Hours: {business_context.get('operating_hours', 'Not specified')}
+- Available Slots: {', '.join(business_context.get('available_slots', []))}
+
+## Customer Context:
+- Name: {customer_context.get('name', 'Unknown')}
+- Phone: {customer_context.get('phone', 'Unknown')}
+- Previous Calls: {customer_context.get('call_count', 0)}
+- Last Contact: {customer_context.get('last_contact', 'Never')}
+- Satisfaction Score: {customer_context.get('satisfaction_score', 0)}/5.0
+- Preferred Services: {', '.join(customer_context.get('preferred_services', []))}
+- Previous Complaints: {customer_context.get('complaint_count', 0)}
+
+## Customer Memories:
+{json.dumps(customer_memories, indent=2) if customer_memories else 'No previous memories'}
+
+## Multi-Step Reasoning Requirements:
+1. Analyze the conversation thoroughly
+2. Consider historical context and customer preferences
+3. Identify the customer's primary goal
+4. Determine required information to fulfill the request
+5. Plan the sequence of actions needed
+6. Identify potential risks or issues
+7. Formulate an appropriate response
+
+## Response Format (strict JSON):
+{{
+  "multi_step_analysis": {{
+    "primary_goal": "string",
+    "constraints": ["list", "of", "constraints"],
+    "customer_history_considerations": "string",
+    "required_information": ["list", "of", "required", "information"],
+    "action_sequence": [
+      {{
+        "step": 1,
+        "action": "string",
+        "description": "string"
+      }}
+    ],
+    "potential_risks": ["list", "of", "risks"],
+    "recommended_response": "string"
+  }},
+  "intent": "string",
+  "confidence": float,
+  "entities": {{"key": "value"}},
+  "selected_action": "string",
+  "action_reasoning": "string",
+  "next_questions": ["string"],
+  "sentiment": "string",
+  "escalation_risk": float,
+  "memory_update": {{"key": "string", "value": "string"}},
+  "suggested_response": "string"
+}}
+
+Apply thorough multi-step reasoning to understand and address the customer's needs.
+"""
+        return prompt
+
 
 # Singleton instance
 nova_reasoning = NovaReasoningEngine()
+
+
+class CustomerMemoryStore:
+    """
+    Persistent memory store for customer information and preferences.
+    Enables long-term learning and personalization across sessions.
+    """
+    
+    def __init__(self):
+        self._memory_store: Dict[str, Dict[str, Any]] = {}
+        self._timestamps: Dict[str, datetime] = {}
+    
+    async def store_memory(
+        self,
+        customer_id: str,
+        memory_key: str,
+        memory_value: Any,
+        ttl_hours: Optional[int] = None
+    ):
+        """
+        Store customer memory with optional TTL.
+        
+        Args:
+            customer_id: Unique customer identifier
+            memory_key: Key for the memory entry
+            memory_value: Value to store
+            ttl_hours: Optional time-to-live in hours
+        """
+        if customer_id not in self._memory_store:
+            self._memory_store[customer_id] = {}
+        
+        self._memory_store[customer_id][memory_key] = {
+            "value": memory_value,
+            "stored_at": datetime.now().isoformat(),
+            "ttl_hours": ttl_hours
+        }
+        
+        self._timestamps[customer_id] = datetime.now()
+    
+    async def retrieve_memory(
+        self,
+        customer_id: str,
+        memory_key: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Retrieve customer memory.
+        
+        Args:
+            customer_id: Unique customer identifier
+            memory_key: Optional specific key to retrieve, or all if None
+            
+        Returns:
+            Dictionary containing memory entries
+        """
+        if customer_id not in self._memory_store:
+            return {}
+        
+        memories = self._memory_store[customer_id]
+        
+        # Check TTL and clean expired entries
+        current_time = datetime.now()
+        valid_memories = {}
+        
+        for key, memory_data in memories.items():
+            if memory_key and key != memory_key:
+                continue
+            
+            # Check if memory has expired
+            if memory_data.get("ttl_hours"):
+                stored_time = datetime.fromisoformat(memory_data["stored_at"])
+                expiry_time = stored_time + timedelta(hours=memory_data["ttl_hours"])
+                if current_time > expiry_time:
+                    continue  # Skip expired memory
+            
+            valid_memories[key] = memory_data
+        
+        return valid_memories
+    
+    async def get_customer_context(
+        self,
+        customer_id: str
+    ) -> Dict[str, Any]:
+        """
+        Get comprehensive customer context from stored memories.
+        
+        Args:
+            customer_id: Unique customer identifier
+            
+        Returns:
+            Dictionary with customer context
+        """
+        memories = await self.retrieve_memory(customer_id)
+        
+        context = {
+            "customer_id": customer_id,
+            "stored_preferences": {},
+            "interaction_history": {},
+            "behavioral_patterns": {}
+        }
+        
+        for key, memory_data in memories.items():
+            value = memory_data["value"]
+            
+            if key.startswith("preference_"):
+                context["stored_preferences"][key.replace("preference_", "")] = value
+            elif key.startswith("history_"):
+                context["interaction_history"][key.replace("history_", "")] = value
+            elif key.startswith("pattern_"):
+                context["behavioral_patterns"][key.replace("pattern_", "")] = value
+        
+        return context
+    
+    async def cleanup_expired_memories(self):
+        """Clean up expired memories for all customers."""
+        current_time = datetime.now()
+        
+        for customer_id in list(self._memory_store.keys()):
+            memories = self._memory_store[customer_id]
+            valid_memories = {}
+            
+            for key, memory_data in memories.items():
+                if memory_data.get("ttl_hours"):
+                    stored_time = datetime.fromisoformat(memory_data["stored_at"])
+                    expiry_time = stored_time + timedelta(hours=memory_data["ttl_hours"])
+                    if current_time > expiry_time:
+                        continue  # Skip expired memory
+                
+                valid_memories[key] = memory_data
+            
+            if valid_memories:
+                self._memory_store[customer_id] = valid_memories
+            else:
+                # Remove customer entry if no valid memories
+                del self._memory_store[customer_id]
+                if customer_id in self._timestamps:
+                    del self._timestamps[customer_id]
+
+
+# Singleton memory store instance
+memory_store = CustomerMemoryStore()

@@ -41,6 +41,8 @@ class GovernanceTier(str, Enum):
     PRIORITY_FLOW = "priority"         # Execute with safety instructions, then escalate
     HUMAN_REVIEW = "human_review"      # Pause for human approval before any action
     ESCALATE_IMMEDIATE = "escalate"    # Immediate transfer to human, AI provides initial response
+    ADAPTIVE_MONITORING = "adaptive"    # Dynamic adjustment based on real-time conditions
+    ENHANCED_OVERSIGHT = "enhanced"     # Extra oversight with explainable AI
 
 
 class ActionRisk(str, Enum):
@@ -1391,3 +1393,254 @@ class BusinessTypeTemplate:
 - DO NOT repeat information already provided
 """
         return context
+    
+    @classmethod
+    def calculate_dynamic_risk_score(
+        cls,
+        business_type: str,
+        intent: str,
+        confidence: float,
+        action: str,
+        entities: Dict[str, Any],
+        conversation_history: List[Dict[str, Any]] = None,
+        real_time_context: Dict[str, Any] = None
+    ) -> Dict[str, Any]:
+        """
+        Calculate dynamic risk score based on multiple factors
+        
+        Args:
+            business_type: Type of business
+            intent: Detected intent
+            confidence: Model confidence score
+            action: Selected action
+            entities: Extracted entities
+            conversation_history: Recent conversation history
+            real_time_context: Real-time context (sentiment, urgency, etc.)
+            
+        Returns:
+            Dictionary with risk score and contributing factors
+        """
+        risk_profile = cls.get_risk_profile(business_type)
+        high_risk_intents = risk_profile.get("high_risk_intents", [])
+        
+        # Base risk from intent
+        base_risk = 0.3  # Default baseline risk
+        
+        # Intent risk factor
+        if intent in high_risk_intents:
+            base_risk += 0.4
+        
+        # Confidence risk factor (lower confidence = higher risk)
+        if confidence < 0.5:
+            base_risk += 0.3
+        elif confidence < 0.7:
+            base_risk += 0.15
+        
+        # Action risk factor
+        high_risk_actions = ["HUMAN_INTERVENTION", "PAYMENT_PROCESS", "HANDLE_COMPLAINT"]
+        if action in high_risk_actions:
+            base_risk += 0.2
+        
+        # Conversation history analysis
+        history_risk = 0.0
+        if conversation_history:
+            recent_messages = conversation_history[-5:]  # Last 5 messages
+            
+            # Check for escalation patterns
+            escalation_keywords = ["manager", "supervisor", "complaint", "unhappy", "angry"]
+            escalation_count = sum(
+                1 for msg in recent_messages
+                if any(keyword in msg.get("content", "").lower() for keyword in escalation_keywords)
+            )
+            history_risk += escalation_count * 0.1
+            
+            # Check for repeated issues
+            if len(conversation_history) > 10:
+                history_risk += 0.1
+        
+        # Real-time context factors
+        context_risk = 0.0
+        if real_time_context:
+            # Sentiment factor
+            sentiment = real_time_context.get("sentiment", "neutral")
+            if sentiment == "negative":
+                context_risk += 0.2
+            elif sentiment == "angry":
+                context_risk += 0.4
+            
+            # Urgency factor
+            urgency = real_time_context.get("urgency", "low")
+            if urgency == "high":
+                context_risk += 0.15
+            elif urgency == "critical":
+                context_risk += 0.3
+            
+            # Customer value factor
+            is_vip = real_time_context.get("is_vip", False)
+            if is_vip:
+                context_risk += 0.1  # Slightly higher risk for VIPs to ensure quality
+        
+        # Combine all risk factors with weights
+        total_risk = (
+            base_risk * 0.4 +
+            history_risk * 0.3 +
+            context_risk * 0.3
+        )
+        
+        # Cap at 1.0
+        total_risk = min(total_risk, 1.0)
+        
+        # Determine risk level
+        if total_risk >= 0.7:
+            risk_level = "critical"
+        elif total_risk >= 0.5:
+            risk_level = "high"
+        elif total_risk >= 0.3:
+            risk_level = "medium"
+        else:
+            risk_level = "low"
+        
+        return {
+            "risk_score": round(total_risk, 2),
+            "risk_level": risk_level,
+            "factors": {
+                "intent_risk": 0.4 if intent in high_risk_intents else 0.0,
+                "confidence_risk": 0.3 if confidence < 0.5 else 0.0,
+                "action_risk": 0.2 if action in high_risk_actions else 0.0,
+                "history_risk": round(history_risk, 2),
+                "context_risk": round(context_risk, 2)
+            },
+            "thresholds": {
+                "governance_threshold": risk_profile.get("auto_escalate_threshold", 0.5),
+                "confidence_threshold": risk_profile.get("confidence_threshold", 0.6)
+            }
+        }
+    
+    @classmethod
+    def detect_bias(cls, conversation: str, entities: Dict[str, Any], db=None) -> Dict[str, Any]:
+        """
+        Detect potential biases in conversation and decision-making
+        
+        Args:
+            conversation: Conversation text to analyze
+            entities: Extracted entities
+            db: Database session for historical analysis
+            
+        Returns:
+            Dictionary with bias detection results
+        """
+        import re
+        
+        # Define bias indicators
+        bias_indicators = {
+            "age_bias": ["young", "old", "elderly", "teenager", "senior"],
+            "gender_bias": ["he", "she", "him", "her", "male", "female", "man", "woman"],
+            "racial_bias": ["ethnicity", "race", "nationality", "accent"],
+            "socioeconomic_bias": ["wealthy", "poor", "rich", "expensive", "cheap"]
+        }
+        
+        detected_biases = []
+        bias_evidence = {}
+        
+        # Analyze conversation for bias indicators
+        conversation_lower = conversation.lower()
+        
+        for bias_type, keywords in bias_indicators.items():
+            found_keywords = [kw for kw in keywords if kw in conversation_lower]
+            if found_keywords:
+                detected_biases.append(bias_type)
+                bias_evidence[bias_type] = {
+                    "keywords": found_keywords,
+                    "context": cls._extract_bias_context(conversation, found_keywords)
+                }
+        
+        # Analyze entity-based bias
+        entity_bias_risk = 0.0
+        if entities:
+            # Check for demographic-based entity selection
+            demographic_fields = ["age", "gender", "ethnicity", "income_level"]
+            has_demographic_fields = any(field in entities for field in demographic_fields)
+            
+            if has_demographic_fields:
+                entity_bias_risk = 0.3
+                detected_biases.append("demographic_entity_usage")
+        
+        # Check for bias in treatment patterns (if historical data available)
+        historical_bias = cls._analyze_historical_bias(entities, db) if db else {}
+        
+        # Calculate overall bias risk score
+        bias_count = len(detected_biases)
+        overall_bias_risk = min(0.1 + (bias_count * 0.2) + entity_bias_risk, 1.0)
+        
+        # Determine bias level
+        if overall_bias_risk >= 0.6:
+            bias_level = "high"
+        elif overall_bias_risk >= 0.3:
+            bias_level = "medium"
+        elif overall_bias_risk > 0:
+            bias_level = "low"
+        else:
+            bias_level = "none"
+        
+        return {
+            "bias_detected": len(detected_biases) > 0,
+            "bias_level": bias_level,
+            "bias_score": round(overall_bias_risk, 2),
+            "detected_biases": detected_biases,
+            "evidence": bias_evidence,
+            "historical_analysis": historical_bias,
+            "recommendations": cls._get_bias_mitigation_recommendations(detected_biases, bias_level)
+        }
+    
+    @classmethod
+    def _extract_bias_context(cls, conversation: str, keywords: List[str]) -> str:
+        """Extract context around bias keywords."""
+        import re
+        
+        context = []
+        for keyword in keywords:
+            # Find keyword and surrounding text
+            pattern = rf'.{{0,50}}{re.escape(keyword)}.{{0,50}}'
+            matches = re.findall(pattern, conversation, re.IGNORECASE)
+            if matches:
+                context.extend(matches)
+        
+        return " ... ".join(context[:3])  # Limit to 3 contexts
+    
+    @classmethod
+    def _analyze_historical_bias(cls, entities: Dict[str, Any], db) -> Dict[str, Any]:
+        """Analyze historical data for bias patterns."""
+        # This would query historical data to identify patterns
+        # For now, return empty dict as placeholder
+        return {
+            "analyzed": False,
+            "reason": "Historical bias analysis not implemented"
+        }
+    
+    @classmethod
+    def _get_bias_mitigation_recommendations(cls, detected_biases: List[str], bias_level: str) -> List[str]:
+        """Get recommendations for mitigating detected biases."""
+        recommendations = []
+        
+        if bias_level == "none":
+            return ["No bias detected - continue current practices"]
+        
+        recommendations.append("Review and adjust response to ensure equitable treatment")
+        
+        if "age_bias" in detected_biases:
+            recommendations.append("Remove age-related references or assumptions")
+        
+        if "gender_bias" in detected_biases:
+            recommendations.append("Use gender-neutral language and avoid gender-based assumptions")
+        
+        if "racial_bias" in detected_biases:
+            recommendations.append("Remove references to ethnicity, race, or nationality unless relevant")
+        
+        if "socioeconomic_bias" in detected_biases:
+            recommendations.append("Avoid assumptions based on perceived wealth or income level")
+        
+        if bias_level == "high":
+            recommendations.append("Consider human review before proceeding")
+            recommendations.append("Document the situation for bias monitoring")
+        
+        return recommendations
