@@ -38,6 +38,8 @@ async def list_greetings(
     db: Session = Depends(deps.get_db)
 ):
     greetings = voice_greeting_service.get_greetings(db, business_id)
+    print(f"[Voice Greetings] Business ID: {business_id}")
+    print(f"[Voice Greetings] Greetings data: {greetings}")
     return {"greetings": greetings}
 
 
@@ -48,6 +50,7 @@ async def create_greeting(
     db: Session = Depends(deps.get_db)
 ):
     try:
+        print(f"[Voice Greetings] Creating greeting: {greeting_data}")
         greeting = voice_greeting_service.create_greeting(
             db=db,
             business_id=business_id,
@@ -56,8 +59,10 @@ async def create_greeting(
             text=greeting_data.text,
             language=greeting_data.language
         )
+        print(f"[Voice Greetings] Created greeting: {greeting}")
         return {"success": True, "greeting": greeting}
     except ValueError as e:
+        print(f"[Voice Greetings] Error creating greeting: {e}")
         return {"success": False, "error": str(e)}
 
 

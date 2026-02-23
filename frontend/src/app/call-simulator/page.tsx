@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper, Chip, ToggleButtonGroup, ToggleButton, Tooltip } from '@mui/material';
+import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper, Chip, ToggleButtonGroup, ToggleButton, Tooltip, Snackbar, Alert, useTheme, useMediaQuery } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
@@ -13,7 +13,16 @@ import { getWebSocketUrl } from '@/services/api';
 import api from '@/services/api';
 import { useVoiceStreaming } from '@/hooks/useVoiceStreaming';
 
+interface SnackbarState {
+  open: boolean;
+  message: string;
+  severity: 'success' | 'error' | 'info' | 'warning';
+}
+
 export default function CallSimulator() {
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
   const [currentCall, setCurrentCall] = useState<any>(null);
   const [messageInput, setMessageInput] = useState('');
   const [isProcessing, setIsProcessing] = useState(false);
@@ -26,20 +35,34 @@ export default function CallSimulator() {
   const [inputMode, setInputMode] = useState<'text' | 'voice'>('text');
   const [isStreamingReady, setIsStreamingReady] = useState(false);
   const [latencyMetrics, setLatencyMetrics] = useState<any>(null);
-  const [sttPreview, setSttPreview] = useState(''); // Live STT preview while speaking
+  const [sttPreview, setSttPreview] = useState('');
+  const [snackbar, setSnackbar] = useState<SnackbarState>({ open: false, message: '', severity: 'info' });
+
   const wsRef = useRef<WebSocket | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const sessionIdRef = useRef<string>('');
   const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
   const connectionStatusRef = useRef<'connecting' | 'connected' | 'disconnected' | 'http_fallback'>('connecting');
-  const lastCustomerMessageIdRef = useRef<string | null>(null); // Track last customer message for partial updates
+  const lastEventIdRef = useRef<number>(0);
+
+  // Reconnect state
+  const reconnectAttemptsRef = useRef(0);
+  const userEndedCallRef = useRef(false);
+  const unmountedRef = useRef(false);
+  const MAX_RECONNECT_ATTEMPTS = 5;
+
+  const showSnackbar = useCallback((message: string, severity: SnackbarState['severity'] = 'info') => {
+    setSnackbar({ open: true, message, severity });
+  }, []);
+
+  const handleCloseSnackbar = () => {
+    setSnackbar(prev => ({ ...prev, open: false }));
+  };
 
   // Stable addMessage using ref to avoid stale closure
   const addMessageRef = useRef<(content: string, sender: 'customer' | 'ai') => void>(() => {});
   const addMessage = useCallback((content: string, sender: 'customer' | 'ai') => {
-    // Prevent empty or whitespace-only messages
     if (!content || !content.trim()) return;
-    // Use timestamp + random to ensure unique keys
     const message = { id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`, sender, content };
     setCurrentCall((prev: any) => prev ? { ...prev, messages: [...(prev.messages || []), message] } : prev);
   }, []);
@@ -58,6 +81,7 @@ export default function CallSimulator() {
     wsRef,
     onPlaybackStart: () => setIsSpeaking(true),
     onPlaybackEnd: () => setIsSpeaking(false),
+    onError: (msg) => showSnackbar(msg, 'error'),
   });
 
   // Create HTTP session
@@ -68,22 +92,30 @@ export default function CallSimulator() {
         call_type: 'simulator'
       });
       sessionIdRef.current = response.data.session_id;
+      lastEventIdRef.current = 0;
       return response.data.session_id;
     } catch (error) {
       console.error('Failed to create HTTP session:', error);
+      showSnackbar('Failed to create session', 'error');
       return null;
     }
   };
 
-  // Poll for HTTP events
+  // Poll for HTTP events (cursor-based)
   const pollHttpEvents = async () => {
     if (!sessionIdRef.current) return;
 
     try {
-      const response = await api.get(`/voice/session/${sessionIdRef.current}/events`);
+      const params = lastEventIdRef.current > 0 ? `?last_event_id=${lastEventIdRef.current}` : '';
+      const response = await api.get(`/voice/session/${sessionIdRef.current}/events${params}`);
       const events = response.data.events || [];
 
       for (const event of events) {
+        // Track cursor
+        if (event._event_id) {
+          lastEventIdRef.current = Math.max(lastEventIdRef.current, event._event_id);
+        }
+
         if (event.type === 'thought') {
           setThoughts(prev => [...prev, { step: event.step, message: event.message, timestamp: new Date() }]);
         } else if (event.type === 'text_chunk') {
@@ -108,7 +140,7 @@ export default function CallSimulator() {
           setAutonomyMode('GUARDED');
         } else if (event.type === 'error') {
           console.error('Backend poll error:', event.message);
-          addMessageRef.current(`Error: ${event.message}`, 'ai');
+          showSnackbar(`Backend error: ${event.message}`, 'error');
           setIsProcessing(false);
         }
       }
@@ -124,6 +156,7 @@ export default function CallSimulator() {
       await api.post(`/voice/session/${sessionIdRef.current}/message`, { text });
     } catch (error: any) {
       console.error('[CallSim] Failed to send HTTP message:', error?.response?.data || error?.message || error);
+      showSnackbar('Failed to send message', 'error');
     }
   };
 
@@ -144,178 +177,194 @@ export default function CallSimulator() {
   const playAudioChunkRef = useRef(playAudioChunk);
   playAudioChunkRef.current = playAudioChunk;
 
-  useEffect(() => {
-    const connect = async () => {
-      console.log('[CallSim] Connecting to WebSocket...');
+  // Ref for showSnackbar inside WS handler
+  const showSnackbarRef = useRef(showSnackbar);
+  showSnackbarRef.current = showSnackbar;
 
-      try {
-        const ws = new WebSocket(getWebSocketUrl());
-        wsRef.current = ws;
+  // Switch to HTTP fallback
+  const switchToHttpFallback = useCallback(() => {
+    connectionStatusRef.current = 'http_fallback';
+    setConnectionStatus('http_fallback');
+    createHttpSession().then(sessionId => {
+      if (sessionId) {
+        pollIntervalRef.current = setInterval(pollHttpEvents, 2000);
+      }
+    });
+  }, []);
 
-        ws.onopen = () => {
-          console.log('[CallSim] WebSocket connected');
-          // Send auth token as first message
-          const token = localStorage.getItem('token');
-          if (token) {
-            ws.send(JSON.stringify({ type: 'auth', token }));
+  // Connect WebSocket with optional reconnect support
+  const connectWs = useCallback((isReconnect = false) => {
+    if (unmountedRef.current) return;
+
+    console.log(`[CallSim] ${isReconnect ? 'Reconnecting' : 'Connecting'} to WebSocket...`);
+    if (!isReconnect) {
+      connectionStatusRef.current = 'connecting';
+      setConnectionStatus('connecting');
+    }
+
+    try {
+      const ws = new WebSocket(getWebSocketUrl());
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        console.log('[CallSim] WebSocket connected');
+        const token = localStorage.getItem('token');
+        if (token) {
+          ws.send(JSON.stringify({ type: 'auth', token }));
+        }
+        connectionStatusRef.current = 'connected';
+        setConnectionStatus('connected');
+        reconnectAttemptsRef.current = 0;
+        if (isReconnect) {
+          showSnackbarRef.current('Reconnected to server', 'success');
+        }
+      };
+
+      ws.onclose = () => {
+        console.log('[CallSim] WebSocket closed');
+        setIsStreamingReady(false);
+
+        if (unmountedRef.current || userEndedCallRef.current) return;
+
+        // Attempt reconnect
+        if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
+          const attempt = reconnectAttemptsRef.current;
+          reconnectAttemptsRef.current += 1;
+          const delay = Math.min(1000 * Math.pow(2, attempt), 16000);
+          console.log(`[CallSim] Reconnecting in ${delay}ms (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
+          setConnectionStatus('disconnected');
+          showSnackbarRef.current(`Connection lost. Reconnecting (${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})...`, 'warning');
+          setTimeout(() => connectWs(true), delay);
+        } else {
+          console.log('[CallSim] Max reconnect attempts reached, falling back to HTTP');
+          showSnackbarRef.current('Connection lost. Switched to HTTP fallback.', 'error');
+          switchToHttpFallback();
+        }
+      };
+
+      ws.onerror = () => {
+        console.error('[CallSim] WebSocket error');
+        // onclose will fire after onerror, reconnect handled there
+      };
+
+      ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        console.log('[CallSim] WS message type:', data.type, data);
+
+        if (data.type === 'connected') {
+          console.log('[CallSim] Server connected:', data.session_id);
+        } else if (data.type === 'streaming_ready') {
+          setIsStreamingReady(true);
+          console.log('[CallSim] Streaming ready');
+        } else if (data.type === 'thought') {
+          setThoughts(prev => [...prev, { step: data.step, message: data.message, timestamp: new Date() }]);
+        } else if (data.type === 'transcript') {
+          // User speech transcript from streaming STT
+          console.log('[CallSim] Transcript received:', data.text, 'is_partial:', data.is_partial);
+
+          if (data.is_partial) {
+            // Partial transcript — only update preview, don't touch messages
+            setSttPreview(data.text);
+          } else {
+            // Final transcript — add to messages, clear preview
+            setSttPreview('');
+            addMessageRef.current(data.text, 'customer');
           }
-          connectionStatusRef.current = 'connected';
-          setConnectionStatus('connected');
-        };
-
-        ws.onclose = () => {
-          console.log('[CallSim] WebSocket closed');
-          setConnectionStatus('disconnected');
-          setIsStreamingReady(false);
-        };
-
-        ws.onerror = () => {
-          console.error('[CallSim] WebSocket error');
-          setConnectionStatus('disconnected');
-        };
-
-        ws.onmessage = (event) => {
-          const data = JSON.parse(event.data);
-          console.log('[CallSim] WS message type:', data.type, data);
-
-          if (data.type === 'connected') {
-            // Server acknowledged connection
-            console.log('[CallSim] Server connected:', data.session_id);
-          } else if (data.type === 'streaming_ready') {
-            // Nova Sonic bidirectional streaming is active
-            setIsStreamingReady(true);
-            console.log('[CallSim] Streaming ready');
-          } else if (data.type === 'thought') {
-            setThoughts(prev => [...prev, { step: data.step, message: data.message, timestamp: new Date() }]);
-          } else if (data.type === 'transcript') {
-            // User speech transcript from streaming STT
-            console.log('[CallSim] Transcript received:', data.text, 'is_partial:', data.is_partial);
-            
-            if (data.is_partial) {
-              // Partial transcript - show in preview and update existing message if exists
-              setSttPreview(data.text);
-              
-              // Update the last customer message if it exists
-              setCurrentCall((prev: any) => {
-                if (!prev || !prev.messages || prev.messages.length === 0) return prev;
-                
-                const messages = [...prev.messages];
-                const lastMessage = messages[messages.length - 1];
-                
-                if (lastMessage && lastMessage.sender === 'customer') {
-                  // Update the last customer message in place
-                  messages[messages.length - 1] = {
-                    ...lastMessage,
-                    content: data.text
-                  };
-                  lastCustomerMessageIdRef.current = lastMessage.id;
-                  return { ...prev, messages };
-                }
-                return prev;
-              });
-            } else {
-              // Final transcript - add to conversation
-              lastCustomerMessageIdRef.current = null; // Reset for next turn
-              addMessageRef.current(data.text, 'customer');
-              setSttPreview(data.text);
-            }
-            setIsProcessing(true);
-          } else if (data.type === 'text_chunk') {
-            setStreamingText(prev => prev + data.chunk);
-            setIsSpeaking(true);
-            if (data.is_last) {
-              setIsProcessing(false);
-              setIsSpeaking(false);
-              if (data.full_text) {
-                addMessageRef.current(data.full_text, 'ai');
-              }
-              setStreamingText('');
-            }
-          } else if (data.type === 'thinking') {
-            // Thinking/reasoning content from Nova AI
-            setThoughts(prev => [...prev, { step: 'Reasoning', message: data.thinking || data, timestamp: new Date() }]);
-          } else if (data.type === 'agent_response') {
+          setIsProcessing(true);
+        } else if (data.type === 'text_chunk') {
+          setStreamingText(prev => prev + data.chunk);
+          setIsSpeaking(true);
+          if (data.is_last) {
             setIsProcessing(false);
             setIsSpeaking(false);
-            // Clear STT preview when AI responds (transcript already added to conversation)
-            if (sttPreview) {
-              setSttPreview('');
+            if (data.full_text) {
+              addMessageRef.current(data.full_text, 'ai');
             }
-            addMessageRef.current(data.text, 'ai');
-            if (data.reasoning) setReasoningData(data.reasoning);
             setStreamingText('');
-          } else if (data.type === 'audio') {
-            // Play audio response (streaming: 24kHz, batch: 16kHz)
-            const sampleRate = data.sample_rate || 16000;
-            playAudioChunkRef.current(data.audio, sampleRate);
-          } else if (data.type === 'reasoning_chain' || data.type === 'reasoning_complete') {
-            if (data.data) setReasoningData(data.data);
-          } else if (data.type === 'human_intervention_request') {
-            setAutonomyMode('GUARDED');
-            addMessageRef.current(`[Transfer requested: ${data.reason || 'Human agent needed'}]`, 'ai');
-          } else if (data.type === 'streaming_failed') {
-            // Stream died mid-session — fall back to text mode
-            setIsStreamingReady(false);
-            setInputMode('text');
-            console.warn('[CallSim] Streaming failed:', data.message);
-          } else if (data.type === 'latency_metrics') {
-            setLatencyMetrics(data.metrics);
-            console.log('[CallSim] Latency:', data.metrics);
-          } else if (data.type === 'call_ended') {
-            console.log('[CallSim] Call ended by server');
-          } else if (data.type === 'error') {
-            console.error('[CallSim] Backend error:', data.message);
-            // Add customer message if we have STT preview
-            if (sttPreview) {
-              addMessageRef.current(sttPreview, 'customer');
-              setSttPreview('');
-            }
-            addMessageRef.current(`Error: ${data.message}`, 'ai');
-            setIsProcessing(false);
           }
-        };
+        } else if (data.type === 'thinking') {
+          setThoughts(prev => [...prev, { step: 'Reasoning', message: data.thinking || data, timestamp: new Date() }]);
+        } else if (data.type === 'agent_response') {
+          setIsProcessing(false);
+          setIsSpeaking(false);
+          setSttPreview('');
+          addMessageRef.current(data.text, 'ai');
+          if (data.reasoning) setReasoningData(data.reasoning);
+          setStreamingText('');
+        } else if (data.type === 'audio') {
+          const sampleRate = data.sample_rate || 16000;
+          playAudioChunkRef.current(data.audio, sampleRate);
+        } else if (data.type === 'reasoning_chain' || data.type === 'reasoning_complete') {
+          if (data.data) setReasoningData(data.data);
+        } else if (data.type === 'human_intervention_request') {
+          setAutonomyMode('GUARDED');
+          addMessageRef.current(`[Transfer requested: ${data.reason || 'Human agent needed'}]`, 'ai');
+        } else if (data.type === 'streaming_failed') {
+          setIsStreamingReady(false);
+          setInputMode('text');
+          console.warn('[CallSim] Streaming failed:', data.message);
+          showSnackbarRef.current('Voice streaming failed. Switched to text mode.', 'warning');
+        } else if (data.type === 'latency_metrics') {
+          setLatencyMetrics(data.metrics);
+          console.log('[CallSim] Latency:', data.metrics);
+        } else if (data.type === 'call_ended') {
+          console.log('[CallSim] Call ended by server');
+        } else if (data.type === 'error') {
+          console.error('[CallSim] Backend error:', data.message);
+          showSnackbarRef.current(`Error: ${data.message}`, 'error');
+          setIsProcessing(false);
+        }
+      };
 
-        // Fallback to HTTP if WebSocket fails within 5 seconds
-        setTimeout(() => {
-          if (connectionStatusRef.current === 'connecting') {
-            console.log('[CallSim] WebSocket timed out, switching to HTTP fallback');
-            ws.close();
-            connectionStatusRef.current = 'http_fallback';
-            setConnectionStatus('http_fallback');
-            createHttpSession().then(sessionId => {
-              if (sessionId) {
-                pollIntervalRef.current = setInterval(pollHttpEvents, 2000);
-              }
-            });
-          }
-        }, 5000);
+      // Fallback to HTTP if WebSocket fails within 15 seconds
+      setTimeout(() => {
+        if (connectionStatusRef.current === 'connecting') {
+          console.log('[CallSim] WebSocket timed out, switching to HTTP fallback');
+          ws.close();
+          showSnackbarRef.current('WebSocket timed out. Using HTTP fallback.', 'warning');
+          switchToHttpFallback();
+        }
+      }, 15000);
 
-      } catch (error) {
-        console.error('WebSocket failed, using HTTP fallback:', error);
-        setConnectionStatus('http_fallback');
-        createHttpSession().then(sessionId => {
-          if (sessionId) {
-            pollIntervalRef.current = setInterval(pollHttpEvents, 2000);
-          }
-        });
-      }
-    };
+    } catch (error) {
+      console.error('WebSocket failed, using HTTP fallback:', error);
+      showSnackbarRef.current('WebSocket connection failed. Using HTTP fallback.', 'error');
+      switchToHttpFallback();
+    }
+  }, [switchToHttpFallback]);
 
+  // Initial connection
+  useEffect(() => {
     if (typeof window !== 'undefined') {
-      connect();
+      connectWs();
     }
 
     return () => {
+      unmountedRef.current = true;
+      userEndedCallRef.current = true;
       wsRef.current?.close();
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
       }
     };
-  }, []);
+  }, [connectWs]);
+
+  // Tab visibility: warn if disconnected when user returns
+  useEffect(() => {
+    const handleVisibility = () => {
+      if (document.visibilityState === 'visible') {
+        if (wsRef.current && wsRef.current.readyState !== WebSocket.OPEN && connectionStatusRef.current !== 'http_fallback') {
+          showSnackbar('Connection may have been interrupted while tab was inactive.', 'warning');
+        }
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, [showSnackbar]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentCall?.messages, streamingText]);
+  }, [currentCall?.messages, streamingText, sttPreview]);
 
   const startCall = () => {
     setCurrentCall({ messages: [] });
@@ -336,7 +385,7 @@ export default function CallSimulator() {
     } else if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({ type: 'user_input', text: messageInput }));
     } else {
-      console.warn("Connection not ready");
+      showSnackbar('Connection not ready. Please wait or try again.', 'warning');
       return;
     }
 
@@ -348,14 +397,19 @@ export default function CallSimulator() {
     if (isRecording) {
       stopRecording();
     } else {
-      // Stop any playback before recording
+      // Stop any playback before recording (barge-in)
       stopPlayback();
+      // Notify backend to drain pending output
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: 'barge_in' }));
+      }
       await startRecording();
     }
   };
 
   const endCall = () => {
-    // Stop recording/playback
+    userEndedCallRef.current = true;
+
     if (isRecording) stopRecording();
     stopPlayback();
 
@@ -374,14 +428,26 @@ export default function CallSimulator() {
     }
   };
 
+  const micButtonSize = isMobile ? 72 : 56;
+
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
           <Typography variant="h4">AI Call Simulator</Typography>
           <Chip
-            label={connectionStatus === 'connected' ? 'WebSocket' : connectionStatus === 'http_fallback' ? 'HTTP Polling' : 'Connecting...'}
-            color={connectionStatus === 'connected' ? 'success' : connectionStatus === 'http_fallback' ? 'warning' : 'default'}
+            label={
+              connectionStatus === 'connected' ? 'WebSocket' :
+              connectionStatus === 'http_fallback' ? 'HTTP Polling' :
+              connectionStatus === 'disconnected' ? 'Disconnected' :
+              'Connecting...'
+            }
+            color={
+              connectionStatus === 'connected' ? 'success' :
+              connectionStatus === 'http_fallback' ? 'warning' :
+              connectionStatus === 'disconnected' ? 'error' :
+              'default'
+            }
             size="small"
           />
           {isStreamingReady && (
@@ -474,13 +540,22 @@ export default function CallSimulator() {
                     </Paper>
                   </ListItem>
                 )}
+                {/* STT preview bubble — translucent "listening" indicator */}
+                {sttPreview && (
+                  <ListItem sx={{ justifyContent: 'flex-end' }}>
+                    <Paper sx={{ p: 1.5, maxWidth: '80%', bgcolor: 'primary.main', color: 'white', opacity: 0.6, fontStyle: 'italic' }}>
+                      {sttPreview}
+                      <Typography variant="caption" sx={{ display: 'block', mt: 0.5, opacity: 0.8 }}>listening...</Typography>
+                    </Paper>
+                  </ListItem>
+                )}
                 <div ref={messagesEndRef} />
               </List>
             </CardContent>
             {currentCall && (
               <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
                 {inputMode === 'text' ? (
-                  <Box component="form" onSubmit={(e) => { e.preventDefault(); sendMessage(); }} sx={{ display: 'flex', flex: 1 }}>
+                  <Box component="form" onSubmit={(e) => { e.preventDefault(); sendMessage(); }} sx={{ display: 'flex', flex: 1, flexDirection: isMobile ? 'column' : 'row', gap: isMobile ? 1 : 0 }}>
                     <TextField
                       fullWidth
                       value={messageInput}
@@ -492,12 +567,12 @@ export default function CallSimulator() {
                     <IconButton type="submit" disabled={Boolean(!messageInput.trim())}><SendIcon /></IconButton>
                   </Box>
                 ) : (
-                  <Box sx={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2 }}>
+                  <Box sx={{ display: 'flex', flex: 1, alignItems: 'center', justifyContent: 'center', gap: 2, flexDirection: isMobile ? 'column' : 'row' }}>
                     <IconButton
                       onClick={toggleRecording}
                       sx={{
-                        width: 56,
-                        height: 56,
+                        width: micButtonSize,
+                        height: micButtonSize,
                         bgcolor: isRecording ? 'error.main' : 'primary.main',
                         color: 'white',
                         '&:hover': { bgcolor: isRecording ? 'error.dark' : 'primary.dark' },
@@ -538,11 +613,6 @@ export default function CallSimulator() {
                           Tap to speak
                         </Typography>
                       )}
-                      {sttPreview && (
-                        <Typography variant="body2" sx={{ mt: 1, fontStyle: 'italic', color: 'primary.main', textAlign: 'center', maxWidth: 300 }}>
-                          {sttPreview}
-                        </Typography>
-                      )}
                     </Box>
                   </Box>
                 )}
@@ -559,6 +629,18 @@ export default function CallSimulator() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Snackbar */}
+      <Snackbar
+        open={snackbar.open}
+        autoHideDuration={4000}
+        onClose={handleCloseSnackbar}
+        anchorOrigin={{ vertical: 'bottom', horizontal: 'center' }}
+      >
+        <Alert onClose={handleCloseSnackbar} severity={snackbar.severity} variant="filled" sx={{ width: '100%' }}>
+          {snackbar.message}
+        </Alert>
+      </Snackbar>
 
       <style jsx global>{`
         @keyframes pulse {

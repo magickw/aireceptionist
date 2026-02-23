@@ -241,6 +241,7 @@ import asyncio
 import time
 import traceback
 from typing import Dict, Any, Optional, Callable, List
+from queue import Full as QueueFull
 from concurrent.futures import ThreadPoolExecutor
 
 from app.core.config import settings
@@ -250,7 +251,7 @@ logger = get_logger("nova_sonic_stream")
 
 
 # Thread pool shared across all streaming sessions
-_executor = ThreadPoolExecutor(max_workers=8)
+_executor = ThreadPoolExecutor(max_workers=32)
 
 
 class StreamLatencyTracker:
@@ -314,10 +315,10 @@ class NovaSonicStreamSession:
         self.model_id = model_id
 
         # Queues for dispatching output events
-        self.text_queue: asyncio.Queue = asyncio.Queue()
-        self.tool_queue: asyncio.Queue = asyncio.Queue()
-        self.transcript_queue: asyncio.Queue = asyncio.Queue()
-        self.audio_queue: asyncio.Queue = asyncio.Queue()
+        self.text_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
+        self.tool_queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+        self.transcript_queue: asyncio.Queue = asyncio.Queue(maxsize=50)
+        self.audio_queue: asyncio.Queue = asyncio.Queue(maxsize=100)
 
         # State
         self.is_active = False
@@ -382,7 +383,10 @@ class NovaSonicStreamSession:
         # Callback to send partial transcripts for live preview
         async def on_partial_transcript(text: str, is_partial: bool = False):
             # Send partial transcript for live preview (both partial and final updates)
-            await self.transcript_queue.put({"text": text, "is_partial": is_partial})
+            try:
+                self.transcript_queue.put_nowait({"text": text, "is_partial": is_partial})
+            except asyncio.QueueFull:
+                logger.warning("transcript_queue full, dropping partial transcript")
         
         transcript = await nova_sonic._transcribe_audio_with_nova(audio_data, on_partial=on_partial_transcript)
         logger.info(f"Transcription result: '{transcript[:100] if transcript else 'EMPTY'}...'")
@@ -398,7 +402,10 @@ class NovaSonicStreamSession:
 
         # Emit transcript to client
         logger.info(f"Sending transcript to client: {transcript}")
-        await self.transcript_queue.put({"text": transcript})
+        try:
+            self.transcript_queue.put_nowait({"text": transcript})
+        except asyncio.QueueFull:
+            logger.warning("transcript_queue full, dropping final transcript")
 
         # --- Safety check ---
         if self.safety_checker:
@@ -408,10 +415,13 @@ class NovaSonicStreamSession:
             # Only skip AI response if should_escalate is True
             if safety_result and safety_result.get('should_escalate'):
                 logger.info(f"[nova_sonic_stream] Safety trigger detected, skipping AI response")
-                await self.transcript_queue.put({
-                    "text": transcript,
-                    "safety_trigger": safety_result,
-                })
+                try:
+                    self.transcript_queue.put_nowait({
+                        "text": transcript,
+                        "safety_trigger": safety_result,
+                    })
+                except asyncio.QueueFull:
+                    logger.warning("transcript_queue full, dropping safety transcript")
                 await self.text_queue.put({"turn_complete": True})
                 return
 
@@ -656,10 +666,16 @@ class NovaSonicStreamSession:
                 audio_data = await nova_sonic._synthesize_speech(accumulated_text)
                 if audio_data:
                     audio_b64 = nova_sonic.encode_audio_base64(audio_data)
-                    await self.audio_queue.put({
-                        "audio": audio_b64,
-                        "sample_rate": 16000,
-                    })
+                    try:
+                        await asyncio.wait_for(
+                            self.audio_queue.put({
+                                "audio": audio_b64,
+                                "sample_rate": 16000,
+                            }),
+                            timeout=5.0,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.warning("audio_queue full, dropping TTS audio chunk")
             else:
                 logger.warning(f"[nova_sonic_stream] accumulated_text is None or empty, skipping TTS")
 

@@ -6,6 +6,7 @@ interface UseVoiceStreamingOptions {
   onPlaybackStart?: () => void;
   onPlaybackEnd?: () => void;
   onTranscript?: (text: string, isFinal: boolean) => void;
+  onError?: (message: string) => void;
 }
 
 interface UseVoiceStreamingReturn {
@@ -23,6 +24,7 @@ export function useVoiceStreaming({
   onPlaybackStart,
   onPlaybackEnd,
   onTranscript,
+  onError,
   isStreamingReady = false,
 }: UseVoiceStreamingOptions): UseVoiceStreamingReturn {
   const [isRecording, setIsRecording] = useState(false);
@@ -51,6 +53,7 @@ export function useVoiceStreaming({
   const isPlayingNextRef = useRef(false);
   const currentSourceRef = useRef<AudioBufferSourceNode | null>(null);
   const nextPlayTimeRef = useRef(0);
+  const MAX_PLAYBACK_QUEUE_SIZE = 50;
 
   // Mic level polling cleanup
   useEffect(() => {
@@ -164,8 +167,15 @@ export function useVoiceStreaming({
 
       setIsRecording(true);
       recordingStartRef.current = Date.now();
-    } catch (err) {
+    } catch (err: any) {
       console.error('[useVoiceStreaming] Microphone access denied:', err);
+      if (err?.name === 'NotAllowedError') {
+        onError?.('Microphone access denied. Please allow microphone permission in your browser settings.');
+      } else if (err?.name === 'NotFoundError') {
+        onError?.('No microphone found. Please connect a microphone and try again.');
+      } else {
+        onError?.(`Microphone error: ${err?.message || 'Unknown error'}`);
+      }
     }
   }, [wsRef]);
 
@@ -260,6 +270,11 @@ export function useVoiceStreaming({
         const ctx = getPlaybackCtx();
         const audioBuffer = ctx.createBuffer(1, float32.length, sampleRate);
         audioBuffer.getChannelData(0).set(float32);
+
+        // Trim queue from front if exceeding limit
+        if (playbackQueueRef.current.length >= MAX_PLAYBACK_QUEUE_SIZE) {
+          playbackQueueRef.current = playbackQueueRef.current.slice(-Math.floor(MAX_PLAYBACK_QUEUE_SIZE / 2));
+        }
         playbackQueueRef.current.push(audioBuffer);
 
         if (!isPlaying) {

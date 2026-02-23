@@ -7,6 +7,7 @@ from typing import Dict, Any, AsyncGenerator, Optional
 import json
 import asyncio
 import base64
+import time
 from datetime import datetime, timedelta
 from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
@@ -185,12 +186,18 @@ class VoiceConnectionManager:
     async def send_json(self, session_id: str, data: Dict[str, Any]):
         """Send JSON message to a specific connection"""
         if session_id in self.active_connections:
-            await self.active_connections[session_id].send_json(data)
-    
+            try:
+                await self.active_connections[session_id].send_json(data)
+            except (WebSocketDisconnect, RuntimeError):
+                self.disconnect(session_id)
+
     async def send_bytes(self, session_id: str, data: bytes):
         """Send binary data to a specific connection"""
         if session_id in self.active_connections:
-            await self.active_connections[session_id].send_bytes(data)
+            try:
+                await self.active_connections[session_id].send_bytes(data)
+            except (WebSocketDisconnect, RuntimeError):
+                self.disconnect(session_id)
 
 
 manager = VoiceConnectionManager()
@@ -506,14 +513,17 @@ async def _run_streaming_relay(
             if item is None:
                 break
             text = item.get("text", "")
+            is_partial = item.get("is_partial", False)
             safety_trigger = item.get("safety_trigger")
 
-            print(f"[Voice WS] Relay: Sending transcript to WebSocket: {text}")
+            print(f"[Voice WS] Relay: Sending transcript to WebSocket: {text} (is_partial={is_partial})")
 
-            conversation_history.append({"role": "customer", "content": text})
+            # Only add final transcripts to conversation history
+            if not is_partial:
+                conversation_history.append({"role": "customer", "content": text})
 
             try:
-                await websocket.send_json({"type": "transcript", "text": text})
+                await websocket.send_json({"type": "transcript", "text": text, "is_partial": is_partial})
                 print(f"[Voice WS] Relay: Transcript sent successfully")
             except Exception as e:
                 print(f"[Voice WS] Relay: Error sending transcript: {e}")
@@ -1921,6 +1931,23 @@ async def voice_websocket(
                             "message": f"Audio processing error: {str(e)}"
                         })
             
+            elif message_type == "barge_in":
+                # User started speaking while AI was outputting — drain pending output
+                if use_streaming and sonic_session and sonic_session.is_active:
+                    # Drain audio queue
+                    while not sonic_session.audio_queue.empty():
+                        try:
+                            sonic_session.audio_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                    # Drain text queue (pending chunks not yet sent)
+                    while not sonic_session.text_queue.empty():
+                        try:
+                            sonic_session.text_queue.get_nowait()
+                        except asyncio.QueueEmpty:
+                            break
+                    print(f"[Voice WS] Barge-in: drained audio and text queues")
+
             elif message_type == "audio_config":
                 # Send audio configuration
                 await manager.send_json(session_id, {
@@ -1970,18 +1997,23 @@ async def voice_websocket(
             await sonic_session.close()
         if relay_task and not relay_task.done():
             relay_task.cancel()
-        # Get a new DB session for cleanup
-        db = next(get_db())
+        print(f"[Voice WS] Unexpected error: {e}")
+        # Try to notify client (may silently fail if disconnected)
         await manager.send_json(session_id, {
             "type": "error",
             "message": f"Error: {str(e)}"
         })
-        # Try to save session and order even on error
-        summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
-        _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
-        await _save_confirmed_order(ws_session, session_id, db)
+        # Disconnect first so no further sends are attempted
         manager.disconnect(session_id)
-        db.close()
+        # Try to save session and order even on error
+        try:
+            db = next(get_db())
+            summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
+            _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
+            await _save_confirmed_order(ws_session, session_id, db)
+            db.close()
+        except Exception:
+            pass
 
 
 
@@ -2270,9 +2302,11 @@ class HTTPSessionStore:
     """Simple in-memory session store for HTTP fallback"""
     SESSION_TTL_SECONDS = 3600  # 1 hour
     MAX_SESSIONS = 1000
+    EVENT_TTL_SECONDS = 60  # Prune events older than 60s
 
     def __init__(self):
         self.sessions: Dict[str, dict] = {}
+        self._event_counters: Dict[str, int] = {}
 
     def cleanup_expired(self):
         """Remove sessions older than TTL"""
@@ -2283,10 +2317,12 @@ class HTTPSessionStore:
         ]
         for sid in expired:
             del self.sessions[sid]
+            self._event_counters.pop(sid, None)
 
     def create_session(self, session_id: str, business_id: int, customer_phone: str = "", call_type: str = "simulator"):
         if len(self.sessions) > self.MAX_SESSIONS:
             self.cleanup_expired()
+        self._event_counters[session_id] = 0
         self.sessions[session_id] = {
             "business_id": business_id,
             "customer_phone": customer_phone,
@@ -2308,13 +2344,30 @@ class HTTPSessionStore:
 
     def add_event(self, session_id: str, event: dict):
         if session_id in self.sessions:
+            counter = self._event_counters.get(session_id, 0) + 1
+            self._event_counters[session_id] = counter
+            event["_event_id"] = counter
+            event["_created_at"] = time.time()
             self.sessions[session_id]["events"].append(event)
 
     def end_session(self, session_id: str):
         if session_id in self.sessions:
             self.sessions[session_id]["active"] = False
 
+    def get_events_since(self, session_id: str, last_event_id: int = 0):
+        """Return events with _event_id > last_event_id. Prunes old events."""
+        if session_id not in self.sessions:
+            return []
+        events = self.sessions[session_id]["events"]
+        now = time.time()
+        # Prune events older than EVENT_TTL_SECONDS
+        self.sessions[session_id]["events"] = [
+            e for e in events if now - e.get("_created_at", now) < self.EVENT_TTL_SECONDS
+        ]
+        return [e for e in self.sessions[session_id]["events"] if e.get("_event_id", 0) > last_event_id]
+
     def get_and_clear_events(self, session_id: str):
+        """Backward-compatible: return all events and clear."""
         if session_id in self.sessions:
             events = self.sessions[session_id]["events"].copy()
             self.sessions[session_id]["events"] = []
@@ -2346,13 +2399,16 @@ async def create_session(
 
 
 @router.get("/session/{session_id}/events")
-async def get_session_events(session_id: str):
-    """Poll for events (HTTP fallback for WebSocket)"""
+async def get_session_events(session_id: str, last_event_id: int = 0):
+    """Poll for events (HTTP fallback for WebSocket). Supports cursor-based polling."""
     session = session_store.get_session(session_id)
     if not session:
         return {"events": [], "status": "not_found"}
-    
-    events = session_store.get_and_clear_events(session_id)
+
+    if last_event_id > 0:
+        events = session_store.get_events_since(session_id, last_event_id)
+    else:
+        events = session_store.get_and_clear_events(session_id)
     return {
         "events": events,
         "status": "active" if session["active"] else "ended"
