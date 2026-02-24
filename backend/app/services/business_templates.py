@@ -76,7 +76,7 @@ class FieldValidation:
     @staticmethod
     def validate_future_date(value: str) -> bool:
         """Validate that date is in the future"""
-        from datetime import datetime
+        from datetime import datetime, timezone
         from dateutil import parser as date_parser
         try:
             parsed = date_parser.parse(value, fuzzy=True)
@@ -1327,7 +1327,7 @@ class BusinessTypeTemplate:
         Returns:
             Audit record dictionary
         """
-        from datetime import datetime
+        from datetime import datetime, timezone
         
         template = cls.get_template(business_type)
         autonomy_level = template.get("autonomy_level", AutonomyLevel.MEDIUM)
@@ -1335,8 +1335,8 @@ class BusinessTypeTemplate:
         execution_policy = cls.get_execution_policy(governance_tier)
         
         return {
-            "audit_id": f"{session_id}_{datetime.utcnow().isoformat()}",
-            "timestamp": datetime.utcnow().isoformat(),
+            "audit_id": f"{session_id}_{datetime.now(timezone.utc).isoformat()}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
             "session_id": session_id,
             "business_context": {
                 "type": business_type,

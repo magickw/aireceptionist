@@ -1,6 +1,6 @@
 from typing import Any, Dict, List
 from fastapi import APIRouter, Depends
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
@@ -21,7 +21,7 @@ def get_analytics(
     """
     # Calculate date range based on timeframe
     days = 7 if timeframe == '7d' else 30 if timeframe == '30d' else 90
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
     
     # Query call sessions
     call_query = db.query(CallSession).filter(
@@ -92,7 +92,7 @@ def get_revenue_analytics(
 ) -> Any:
     # Calculate date range
     days = 7 if timeframe == '7d' else 30 if timeframe == '30d' else 90
-    start_date = datetime.utcnow() - timedelta(days=days)
+    start_date = datetime.now(timezone.utc) - timedelta(days=days)
     
     # Query orders for revenue
     orders = db.query(Order).filter(
@@ -146,7 +146,7 @@ def get_realtime_analytics(
     ).all()
     
     # Get today's stats
-    today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
+    today_start = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
     todays_calls = db.query(CallSession).filter(
         CallSession.business_id == business_id,
         CallSession.started_at >= today_start
@@ -227,7 +227,7 @@ def _get_daily_trends(db: Session, business_id: int, start_date: datetime, days:
     # Generate full date range with defaults
     trends = []
     for i in range(days):
-        date = (datetime.utcnow() - timedelta(days=i)).strftime("%Y-%m-%d")
+        date = (datetime.now(timezone.utc) - timedelta(days=i)).strftime("%Y-%m-%d")
         stat = stats_dict.get(date)
         trends.append({
             "date": date,

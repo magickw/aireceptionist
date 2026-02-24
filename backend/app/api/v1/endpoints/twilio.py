@@ -10,7 +10,7 @@ import json
 import base64
 import asyncio
 import math
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any, Optional
 import os
 import boto3
@@ -165,7 +165,7 @@ async def websocket_endpoint(
     # Session dict for tool execution (matches voice.py ws_session pattern)
     ws_session = {
         "order_items": [],
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "business_id": business_id,
         "customer_name": None,
         "customer_phone": from_number,

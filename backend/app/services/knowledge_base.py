@@ -13,7 +13,7 @@ import json
 import re
 import asyncio
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 import numpy as np
@@ -178,7 +178,7 @@ class KnowledgeBaseService:
             
             # Update document status
             document.status = "complete"
-            document.updated_at = datetime.utcnow()
+            document.updated_at = datetime.now(timezone.utc)
             db.commit()
             
             return {

@@ -4,7 +4,7 @@ Multi-level menu system, department routing, and after-hours handling
 """
 
 from typing import Dict, List, Optional, Callable
-from datetime import datetime, time, timedelta
+from datetime import datetime, time, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from enum import Enum
@@ -140,7 +140,7 @@ class AdvancedIVRService:
         if not business:
             return {"is_open": False, "reason": "Business not found"}
         
-        check_time = check_time or datetime.utcnow()
+        check_time = check_time or datetime.now(timezone.utc)
         operating_hours = business.operating_hours or {}
         
         # Get day of week
@@ -408,7 +408,7 @@ class AdvancedIVRService:
         
         # Default to next business day at callback time
         if not preferred_time:
-            now = datetime.utcnow()
+            now = datetime.now(timezone.utc)
             callback_time = datetime.strptime(callback_time_str, '%H:%M').time()
             preferred_time = datetime.combine(now.date(), callback_time)
             

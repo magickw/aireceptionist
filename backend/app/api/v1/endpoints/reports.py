@@ -4,7 +4,7 @@ Reporting API Endpoints
 
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 from app.api import deps
@@ -21,7 +21,7 @@ async def get_call_metrics(
     business_id: int = Depends(deps.get_current_business_id),
     db: Session = Depends(deps.get_db)
 ):
-    end_dt = datetime.utcnow() if not end_date else datetime.fromisoformat(end_date)
+    end_dt = datetime.now(timezone.utc) if not end_date else datetime.fromisoformat(end_date)
     start_dt = end_dt - timedelta(days=7) if not start_date else datetime.fromisoformat(start_date)
     
     metrics = reporting_service.get_call_metrics(db, business_id, start_dt, end_dt)
@@ -35,7 +35,7 @@ async def get_customer_metrics(
     business_id: int = Depends(deps.get_current_business_id),
     db: Session = Depends(deps.get_db)
 ):
-    end_dt = datetime.utcnow() if not end_date else datetime.fromisoformat(end_date)
+    end_dt = datetime.now(timezone.utc) if not end_date else datetime.fromisoformat(end_date)
     start_dt = end_dt - timedelta(days=7) if not start_date else datetime.fromisoformat(start_date)
     
     metrics = reporting_service.get_customer_metrics(db, business_id, start_dt, end_dt)
@@ -49,7 +49,7 @@ async def get_hourly_distribution(
     business_id: int = Depends(deps.get_current_business_id),
     db: Session = Depends(deps.get_db)
 ):
-    end_dt = datetime.utcnow() if not end_date else datetime.fromisoformat(end_date)
+    end_dt = datetime.now(timezone.utc) if not end_date else datetime.fromisoformat(end_date)
     start_dt = end_dt - timedelta(days=7) if not start_date else datetime.fromisoformat(start_date)
     
     distribution = reporting_service.get_hourly_distribution(db, business_id, start_dt, end_dt)
@@ -90,7 +90,7 @@ async def export_csv(
     business_id: int = Depends(deps.get_current_business_id),
     db: Session = Depends(deps.get_db)
 ):
-    end_dt = datetime.utcnow() if not end_date else datetime.fromisoformat(end_date)
+    end_dt = datetime.now(timezone.utc) if not end_date else datetime.fromisoformat(end_date)
     start_dt = end_dt - timedelta(days=7) if not start_date else datetime.fromisoformat(start_date)
     
     csv_data = reporting_service.export_to_csv(db, business_id, start_dt, end_dt)

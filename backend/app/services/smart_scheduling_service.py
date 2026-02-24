@@ -4,7 +4,7 @@ Provides optimal appointment suggestions and no-show prediction
 """
 
 from typing import Dict, List, Optional, Tuple
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 import json
@@ -338,7 +338,7 @@ class SmartSchedulingService:
         """Get scheduling analytics and insights"""
         from app.models.models import Appointment
         
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         appointments = db.query(Appointment).filter(
             Appointment.business_id == business_id,

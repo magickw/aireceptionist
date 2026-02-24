@@ -4,7 +4,7 @@ Handles order state, conversation memory, and error handling for the AI agent.
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 import asyncio
 from dataclasses import dataclass, field
@@ -112,7 +112,7 @@ class OrderState:
         self.customer_phone: Optional[str] = None
         self.delivery_method: Optional[str] = None  # "pickup" or "delivery"
         self.delivery_address: Optional[str] = None
-        self.created_at: datetime = datetime.utcnow()
+        self.created_at: datetime = datetime.now(timezone.utc)
         self.confirmed_at: Optional[datetime] = None
         self.total_amount: float = 0.0
         self._last_modified_item: Optional[str] = None
@@ -250,7 +250,7 @@ class OrderState:
             raise ValidationError("Order is already confirmed")
         
         self.status = OrderStatus.CONFIRMED
-        self.confirmed_at = datetime.utcnow()
+        self.confirmed_at = datetime.now(timezone.utc)
         
         return {
             "items": [item.to_dict() for item in self.items],
@@ -387,7 +387,7 @@ class ConversationMemory:
         self.last_intent: Optional[str] = None
         self.last_action: Optional[str] = None
         self.pending_confirmation: Optional[Dict[str, Any]] = None
-        self.session_start: datetime = datetime.utcnow()
+        self.session_start: datetime = datetime.now(timezone.utc)
     
     def update(self, reasoning_result: Dict[str, Any]) -> None:
         """Update memory from reasoning result."""

@@ -4,7 +4,7 @@ Predicts customer churn risk based on call patterns
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 
@@ -40,7 +40,7 @@ class ChurnService:
         ).order_by(CallSession.start_time.desc()).first()
         
         if last_call:
-            days_since_last_call = (datetime.utcnow() - last_call.start_time).days
+            days_since_last_call = (datetime.now(timezone.utc) - last_call.start_time).days
             
             if days_since_last_call > 60:
                 risk_score += self.risk_weights["no_calls_days"]
@@ -101,7 +101,7 @@ class ChurnService:
         has_appointment = db.query(Appointment).filter(
             Appointment.business_id == business_id,
             Appointment.customer_phone == customer_phone,
-            Appointment.start_time > datetime.utcnow()
+            Appointment.start_time > datetime.now(timezone.utc)
         ).first()
         
         if not has_appointment:

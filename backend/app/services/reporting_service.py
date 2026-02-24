@@ -3,7 +3,7 @@ Reporting Service - Advanced Analytics and Reporting
 Provides custom report generation and data export
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -140,7 +140,7 @@ class ReportingService:
         summaries = []
         
         for week in range(weeks):
-            end_date = datetime.utcnow() - timedelta(weeks=week)
+            end_date = datetime.now(timezone.utc) - timedelta(weeks=week)
             start_date = end_date - timedelta(weeks=1)
             
             metrics = self.get_call_metrics(db, business_id, start_date, end_date)
@@ -199,7 +199,7 @@ class ReportingService:
     ) -> Dict:
         """Generate a comprehensive report"""
         if not end_date:
-            end_date = datetime.utcnow()
+            end_date = datetime.now(timezone.utc)
         
         if not start_date:
             if report_type == "daily":

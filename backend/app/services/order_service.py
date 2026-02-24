@@ -4,7 +4,7 @@ Handles order management and real-time status updates
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import and_
 
@@ -215,9 +215,9 @@ class OrderService:
         
         # Update timestamps based on status
         if new_status == "confirmed" and not order.confirmed_at:
-            order.confirmed_at = datetime.utcnow()
+            order.confirmed_at = datetime.now(timezone.utc)
         elif new_status == "completed" and not order.completed_at:
-            order.completed_at = datetime.utcnow()
+            order.completed_at = datetime.now(timezone.utc)
         
         db.commit()
         db.refresh(order)

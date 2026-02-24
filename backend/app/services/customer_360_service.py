@@ -4,7 +4,7 @@ Unified customer profiles with lifetime value calculation and personalized insig
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from decimal import Decimal
@@ -222,7 +222,7 @@ class Customer360Service:
         # Engagement insight
         days_since_last = None
         if customer.last_interaction:
-            days_since_last = (datetime.utcnow() - customer.last_interaction).days
+            days_since_last = (datetime.now(timezone.utc) - customer.last_interaction).days
             
             if days_since_last > 30:
                 insights.append({
@@ -284,7 +284,7 @@ class Customer360Service:
                 customer.email = email
             if language:
                 customer.preferred_language = language
-            customer.updated_at = datetime.utcnow()
+            customer.updated_at = datetime.now(timezone.utc)
         else:
             # Create new
             customer = Customer(
@@ -293,7 +293,7 @@ class Customer360Service:
                 name=name,
                 email=email,
                 preferred_language=language or "en",
-                customer_since=datetime.utcnow()
+                customer_since=datetime.now(timezone.utc)
             )
             db.add(customer)
         
@@ -404,7 +404,7 @@ class Customer360Service:
         
         # Time since last interaction
         if customer.last_interaction:
-            days_inactive = (datetime.utcnow() - customer.last_interaction).days
+            days_inactive = (datetime.now(timezone.utc) - customer.last_interaction).days
             if days_inactive > 60:
                 risk_score += 0.3
             elif days_inactive > 30:
@@ -500,10 +500,10 @@ class Customer360Service:
                 segments["at_risk"].append({"id": c.id, "name": c.name, "phone": c.phone, "risk": float(c.churn_risk)})
             elif c.loyalty_tier in ["gold", "silver"]:
                 segments["loyal"].append({"id": c.id, "name": c.name, "phone": c.phone})
-            elif c.customer_since and (datetime.utcnow() - c.customer_since).days < 30:
+            elif c.customer_since and (datetime.now(timezone.utc) - c.customer_since).days < 30:
                 segments["new"].append({"id": c.id, "name": c.name, "phone": c.phone})
-            elif c.last_interaction and (datetime.utcnow() - c.last_interaction).days > 30:
-                segments["inactive"].append({"id": c.id, "name": c.name, "phone": c.phone, "days_inactive": (datetime.utcnow() - c.last_interaction).days})
+            elif c.last_interaction and (datetime.now(timezone.utc) - c.last_interaction).days > 30:
+                segments["inactive"].append({"id": c.id, "name": c.name, "phone": c.phone, "days_inactive": (datetime.now(timezone.utc) - c.last_interaction).days})
         
         return {
             "total_customers": len(customers),
@@ -620,7 +620,7 @@ class Customer360Service:
         
         # Time since last interaction
         if customer.last_interaction:
-            days_inactive = (datetime.utcnow() - customer.last_interaction).days
+            days_inactive = (datetime.now(timezone.utc) - customer.last_interaction).days
             if days_inactive > 60:
                 risk_score += 0.4
             elif days_inactive > 30:

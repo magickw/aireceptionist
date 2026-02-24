@@ -4,7 +4,7 @@ Analyzes call sentiment using Amazon Nova for AI-powered semantic analysis
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 import re
 import json
@@ -194,7 +194,7 @@ Return only valid JSON."""
         """Get aggregated sentiment statistics for a business"""
         from app.models.models import CallSession
         
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         calls = db.query(CallSession).filter(
             CallSession.business_id == business_id,
@@ -326,7 +326,7 @@ Return only valid JSON."""
             "grade": grade,
             "scores": scores,
             "improvement_suggestions": self._generate_improvement_suggestions(scores),
-            "analyzed_at": datetime.utcnow().isoformat()
+            "analyzed_at": datetime.now(timezone.utc).isoformat()
         }
     
     def _calculate_resolution_score(self, call) -> int:
@@ -427,7 +427,7 @@ Consider: issue resolution, tone, wait time mentions, repeated requests, gratitu
         """Get call quality trends over time"""
         from app.models.models import CallSession
         
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         calls = db.query(CallSession).filter(
             CallSession.business_id == business_id,

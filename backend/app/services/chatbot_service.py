@@ -4,7 +4,7 @@ Provides enhanced chatbot capabilities for web widget integration
 """
 
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 import json
 import os
@@ -34,7 +34,7 @@ class ChatbotService:
             customer_name=customer_name,
             customer_phone=customer_phone,
             status="active",
-            started_at=datetime.utcnow()
+            started_at=datetime.now(timezone.utc)
         )
         db.add(session)
         db.commit()
@@ -242,7 +242,7 @@ class ChatbotService:
         session = db.query(CallSession).filter(CallSession.id == session_id).first()
         if session:
             session.status = "ended"
-            session.ended_at = datetime.utcnow()
+            session.ended_at = datetime.now(timezone.utc)
             
             # Calculate duration
             if session.started_at:

@@ -3,7 +3,7 @@ Forecasting Service - Call Volume Prediction
 Uses historical data to predict future call volumes
 """
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
 from sqlalchemy import func
@@ -34,7 +34,7 @@ class ForecastingService:
         """Get historical call volume data"""
         from app.models.models import CallSession
         
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         # Get call counts grouped by date
         results = db.query(
@@ -88,7 +88,7 @@ class ForecastingService:
         trend = self.calculate_trend(history)
         
         predictions = []
-        base_date = datetime.utcnow().date()
+        base_date = datetime.now(timezone.utc).date()
         
         for i in range(1, days_ahead + 1):
             pred_date = base_date + timedelta(days=i)
@@ -130,7 +130,7 @@ class ForecastingService:
             func.count(CallSession.id).label('count')
         ).filter(
             CallSession.business_id == business_id,
-            CallSession.start_time >= datetime.utcnow() - timedelta(days=30)
+            CallSession.start_time >= datetime.now(timezone.utc) - timedelta(days=30)
         ).group_by(
             func.extract('hour', CallSession.start_time)
         ).order_by(

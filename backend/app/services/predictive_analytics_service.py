@@ -4,7 +4,7 @@ Peak call time forecasting and staffing recommendations
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 import statistics
@@ -60,7 +60,7 @@ class PredictiveAnalyticsService:
         """Analyze and predict peak call times"""
         from app.models.models import CallSession
         
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         # Get all calls in the period
         calls = db.query(CallSession).filter(
@@ -200,7 +200,7 @@ class PredictiveAnalyticsService:
         
         # Get historical data (use more history for better prediction)
         history_days = 60
-        start_date = datetime.utcnow() - timedelta(days=history_days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=history_days)
         
         calls = db.query(CallSession).filter(
             CallSession.business_id == business_id,
@@ -259,7 +259,7 @@ class PredictiveAnalyticsService:
         day_names = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
         forecast = []
         
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         for i in range(forecast_days):
             forecast_date = today + timedelta(days=i)
             weekday = forecast_date.weekday()
@@ -297,7 +297,7 @@ class PredictiveAnalyticsService:
         """Analyze resource utilization patterns"""
         from app.models.models import CallSession, TeamMember
         
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         # Get calls
         calls = db.query(CallSession).filter(
@@ -381,7 +381,7 @@ class PredictiveAnalyticsService:
         """Predict service level based on historical performance"""
         from app.models.models import CallSession
         
-        start_date = datetime.utcnow() - timedelta(days=30)
+        start_date = datetime.now(timezone.utc) - timedelta(days=30)
         
         calls = db.query(CallSession).filter(
             CallSession.business_id == business_id,

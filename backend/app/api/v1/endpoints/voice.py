@@ -8,7 +8,7 @@ import json
 import asyncio
 import base64
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
 from app.services.nova_reasoning import nova_reasoning
@@ -731,7 +731,7 @@ async def voice_websocket(
     # Track session state (like order items) for the duration of the WebSocket
     ws_session = {
         "order_items": [],
-        "created_at": datetime.utcnow(),
+        "created_at": datetime.now(timezone.utc),
         "business_id": business_id,
         "customer_name": None,
         "customer_phone": None
@@ -2051,7 +2051,7 @@ async def _create_order_from_session(ws_session: Dict[str, Any], session_id: str
             total_amount=total,
             delivery_method=ws_session.get("delivery_method"),
             delivery_address=ws_session.get("delivery_address"),
-            confirmed_at=datetime.utcnow()
+            confirmed_at=datetime.now(timezone.utc)
         )
         db.add(order)
         db.flush()  # Get order ID
@@ -2114,9 +2114,9 @@ def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str 
         call_session = db.query(CallSession).filter(CallSession.id == session_id).first()
         if call_session:
             call_session.status = "ended"
-            call_session.ended_at = datetime.utcnow()
+            call_session.ended_at = datetime.now(timezone.utc)
             if call_session.started_at:
-                call_session.duration_seconds = int((datetime.utcnow() - call_session.started_at).total_seconds())
+                call_session.duration_seconds = int((datetime.now(timezone.utc) - call_session.started_at).total_seconds())
             if summary:
                 call_session.summary = summary
             if sentiment:
@@ -2296,7 +2296,7 @@ async def get_audio_config(
 
 # HTTP Fallback endpoints for Vercel (no WebSocket support)
 from pydantic import BaseModel
-from datetime import datetime
+from datetime import datetime, timezone
 
 class HTTPSessionStore:
     """Simple in-memory session store for HTTP fallback"""
@@ -2310,7 +2310,7 @@ class HTTPSessionStore:
 
     def cleanup_expired(self):
         """Remove sessions older than TTL"""
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         expired = [
             sid for sid, s in self.sessions.items()
             if (now - s.get("created_at", now)).total_seconds() > self.SESSION_TTL_SECONDS
@@ -2334,7 +2334,7 @@ class HTTPSessionStore:
             "delivery_method": None,  # "pickup" or "delivery"
             "customer_name": None,  # Customer name for order
             "price_mentioned": False,  # Track if price was already mentioned
-            "created_at": datetime.utcnow(),
+            "created_at": datetime.now(timezone.utc),
             "active": True
         }
         return self.sessions[session_id]
@@ -2931,7 +2931,7 @@ async def send_http_message(
                         customer_phone=http_session.get("customer_phone"),
                         status="confirmed",
                         total_amount=total,
-                        confirmed_at=datetime.utcnow()
+                        confirmed_at=datetime.now(timezone.utc)
                     )
                     db.add(order)
                     db.flush()
@@ -2987,7 +2987,7 @@ async def send_http_message(
                     customer_phone=http_session.get("customer_phone"),
                     status="confirmed",
                     total_amount=total,
-                    confirmed_at=datetime.utcnow()
+                    confirmed_at=datetime.now(timezone.utc)
                 )
                 db.add(order)
                 db.flush()
@@ -3097,7 +3097,7 @@ async def send_http_message(
             pending = http_session.pop("pending_appointment")
             try:
                 from app.services.calendar_service import calendar_service
-                from datetime import timedelta
+                from datetime import timedelta, timezone
                 result = await calendar_service.check_and_book_appointment(
                     business_id=business_id,
                     start_time=pending["start_time"],
@@ -3162,7 +3162,7 @@ async def send_http_message(
             try:
                 # Use calendar service for conflict checking and booking
                 from app.services.calendar_service import calendar_service
-                from datetime import timedelta
+                from datetime import timedelta, timezone
                 
                 end_time = appointment_time + timedelta(hours=1)  # Default 1-hour appointment
                 
@@ -3211,7 +3211,7 @@ async def send_http_message(
         if appointment_time:
             try:
                 from app.services.calendar_service import calendar_service
-                from datetime import timedelta
+                from datetime import timedelta, timezone
                 
                 end_time = appointment_time + timedelta(hours=1)
                 

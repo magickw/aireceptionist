@@ -4,7 +4,7 @@ Staff scheduling, performance dashboards, and call distribution
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from decimal import Decimal
@@ -96,7 +96,7 @@ class TeamManagementService:
         if not member.weekly_hours:
             return True  # No schedule = always available
         
-        now = datetime.utcnow()
+        now = datetime.now(timezone.utc)
         day_name = now.strftime('%A').lower()
         current_time = now.time()
         
@@ -143,7 +143,7 @@ class TeamManagementService:
         """Get team performance metrics"""
         from app.models.models import TeamMember, CallSession
         
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         members = db.query(TeamMember).filter(
             TeamMember.business_id == business_id
@@ -187,7 +187,7 @@ class TeamManagementService:
         """Get staff schedule for a specific date"""
         from app.models.models import TeamMember
         
-        date = date or datetime.utcnow()
+        date = date or datetime.now(timezone.utc)
         day_name = date.strftime('%A').lower()
         
         members = db.query(TeamMember).filter(

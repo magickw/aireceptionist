@@ -4,7 +4,7 @@ Business owner dashboard with push notifications
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 import json
@@ -138,15 +138,15 @@ class MobileAppService:
         existing = next((d for d in devices if d['token'] == device_token), None)
         
         if existing:
-            existing['last_active'] = datetime.utcnow().isoformat()
+            existing['last_active'] = datetime.now(timezone.utc).isoformat()
             existing['platform'] = platform.value
         else:
             devices.append({
                 'token': device_token,
                 'platform': platform.value,
                 'name': device_name,
-                'registered_at': datetime.utcnow().isoformat(),
-                'last_active': datetime.utcnow().isoformat(),
+                'registered_at': datetime.now(timezone.utc).isoformat(),
+                'last_active': datetime.now(timezone.utc).isoformat(),
                 'enabled': True
             })
         
@@ -249,7 +249,7 @@ class MobileAppService:
         return {
             "success": True,
             "platform": "fcm",
-            "message_id": f"fcm_{datetime.utcnow().timestamp()}"
+            "message_id": f"fcm_{datetime.now(timezone.utc).timestamp()}"
         }
     
     async def _send_via_apns(
@@ -264,7 +264,7 @@ class MobileAppService:
         return {
             "success": True,
             "platform": "apns",
-            "message_id": f"apns_{datetime.utcnow().timestamp()}"
+            "message_id": f"apns_{datetime.now(timezone.utc).timestamp()}"
         }
     
     async def _log_notification(
@@ -340,7 +340,7 @@ class MobileAppService:
         if not business:
             return {"error": "Business not found"}
         
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         today_start = datetime.combine(today, datetime.min.time())
         
         # Today's metrics
@@ -369,7 +369,7 @@ class MobileAppService:
         
         upcoming_appointments = db.query(Appointment).filter(
             Appointment.business_id == business_id,
-            Appointment.appointment_time >= datetime.utcnow(),
+            Appointment.appointment_time >= datetime.now(timezone.utc),
             Appointment.status == "scheduled"
         ).count()
         
@@ -429,7 +429,7 @@ class MobileAppService:
         """Get quick stats for mobile app widget"""
         from app.models.models import CallSession, Order
         
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         today_start = datetime.combine(today, datetime.min.time())
         
         # This week
@@ -463,7 +463,7 @@ class MobileAppService:
             "week_calls": week_calls,
             "month_orders": len(month_orders),
             "month_revenue": round(month_revenue, 2),
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }
     
     async def schedule_daily_summary(
@@ -488,7 +488,7 @@ class MobileAppService:
         """Send daily summary notification"""
         from app.models.models import CallSession, Order, Appointment
         
-        today = datetime.utcnow().date()
+        today = datetime.now(timezone.utc).date()
         today_start = datetime.combine(today, datetime.min.time())
         
         calls = db.query(CallSession).filter(

@@ -14,7 +14,7 @@ import json
 import asyncio
 import aiohttp
 from typing import List, Dict, Any, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
@@ -223,7 +223,7 @@ class WebhookService:
                     ) as response:
                         if response.status < 400:
                             # Success - update webhook stats
-                            webhook.last_triggered_at = datetime.utcnow()
+                            webhook.last_triggered_at = datetime.now(timezone.utc)
                             webhook.failure_count = 0
                             db.commit()
                             return True

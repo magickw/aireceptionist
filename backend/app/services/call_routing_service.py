@@ -4,7 +4,7 @@ Manages intelligent call routing rules
 """
 
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 import json
 
@@ -49,14 +49,14 @@ class CallRoutingService:
             raise ValueError("Business not found")
         
         rule = {
-            "id": int(datetime.utcnow().timestamp()),
+            "id": int(datetime.now(timezone.utc).timestamp()),
             "name": name,
             "conditions": conditions,
             "action": action,
             "action_value": action_value,
             "priority": priority,
             "is_active": True,
-            "created_at": datetime.utcnow().isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat()
         }
         
         # Store in business settings
@@ -93,7 +93,7 @@ class CallRoutingService:
                     rule["is_active"] = is_active
                 if priority is not None:
                     rule["priority"] = priority
-                rule["updated_at"] = datetime.utcnow().isoformat()
+                rule["updated_at"] = datetime.now(timezone.utc).isoformat()
                 break
         
         business.settings["call_routing_rules"] = rules
@@ -170,7 +170,7 @@ class CallRoutingService:
         
         # Time of day condition
         if "time_of_day" in conditions:
-            current_hour = datetime.utcnow().hour
+            current_hour = datetime.now(timezone.utc).hour
             time_range = conditions["time_of_day"]
             if isinstance(time_range, dict):
                 start = time_range.get("start", 0)
@@ -180,7 +180,7 @@ class CallRoutingService:
         
         # Day of week condition
         if "day_of_week" in conditions:
-            current_dow = datetime.utcnow().weekday()
+            current_dow = datetime.now(timezone.utc).weekday()
             allowed_days = conditions["day_of_week"]
             if isinstance(allowed_days, list):
                 if current_dow not in allowed_days:

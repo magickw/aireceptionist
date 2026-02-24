@@ -4,7 +4,7 @@ Provides conversion rates, upsell metrics, and revenue tracking
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_, or_
 from decimal import Decimal
@@ -34,7 +34,7 @@ class RevenueAnalyticsService:
         days: int = 30
     ) -> Dict:
         """Get comprehensive revenue dashboard metrics"""
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         # Get all metrics in parallel
         revenue_metrics = await self._get_revenue_metrics(db, business_id, start_date)
@@ -422,7 +422,7 @@ class RevenueAnalyticsService:
         
         # Get historical data
         historical_days = 30
-        start_date = datetime.utcnow() - timedelta(days=historical_days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=historical_days)
         
         orders = db.query(Order).filter(
             Order.business_id == business_id,
@@ -449,7 +449,7 @@ class RevenueAnalyticsService:
         
         forecast = []
         for i in range(forecast_days):
-            forecast_date = (datetime.utcnow() + timedelta(days=i+1)).strftime('%Y-%m-%d')
+            forecast_date = (datetime.now(timezone.utc) + timedelta(days=i+1)).strftime('%Y-%m-%d')
             predicted = recent_avg * (1 + trend * i / 7)
             forecast.append({
                 "date": forecast_date,

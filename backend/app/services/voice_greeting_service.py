@@ -4,7 +4,7 @@ Manages custom voice greetings for businesses
 """
 
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from sqlalchemy.orm import Session
 import os
 
@@ -45,7 +45,7 @@ class VoiceGreetingService:
             "greeting_type": greeting_type,
             "text": text,
             "language": language,
-            "created_at": datetime.utcnow().isoformat(),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "is_active": False
         }
         
@@ -90,7 +90,7 @@ class VoiceGreetingService:
         
         if text is not None:
             greetings[greeting_type]["text"] = text
-            greetings[greeting_type]["updated_at"] = datetime.utcnow().isoformat()
+            greetings[greeting_type]["updated_at"] = datetime.now(timezone.utc).isoformat()
         
         business.settings["voice_greetings"] = greetings
         db.commit()

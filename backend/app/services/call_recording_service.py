@@ -4,7 +4,7 @@ Call recording, storage, playback, and compliance management
 """
 
 from typing import Dict, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 import json
@@ -93,7 +93,7 @@ class CallRecordingService:
         compliance = self.COMPLIANCE_RULES.get(region, self.COMPLIANCE_RULES['US'])
         
         # Generate recording key
-        timestamp = datetime.utcnow().strftime('%Y/%m/%d')
+        timestamp = datetime.now(timezone.utc).strftime('%Y/%m/%d')
         recording_key = f"{business_id}/{timestamp}/{call_session_id}.{self.RECORDING_FORMAT}"
         
         # Create recording record
@@ -102,7 +102,7 @@ class CallRecordingService:
             business_id=business_id,
             recording_key=recording_key,
             status="recording",
-            started_at=datetime.utcnow(),
+            started_at=datetime.now(timezone.utc),
             consent_type=RecordingConsentType.NONE,
             compliance_region=region,
             encryption_enabled=compliance.get('encryption_required', True)
@@ -150,7 +150,7 @@ class CallRecordingService:
             
             # Update recording record
             recording.status = "completed"
-            recording.ended_at = datetime.utcnow()
+            recording.ended_at = datetime.now(timezone.utc)
             recording.duration_seconds = int(
                 (recording.ended_at - recording.started_at).total_seconds()
             )
@@ -189,7 +189,7 @@ class CallRecordingService:
             return {"error": "No recording found"}
         
         recording.consent_type = consent_type
-        recording.consent_obtained_at = datetime.utcnow()
+        recording.consent_obtained_at = datetime.now(timezone.utc)
         recording.consent_method = consent_method
         
         db.commit()
@@ -232,7 +232,7 @@ class CallRecordingService:
             return {
                 "recording_id": recording_id,
                 "url": url,
-                "expires_at": (datetime.utcnow() + timedelta(hours=expiry_hours)).isoformat(),
+                "expires_at": (datetime.now(timezone.utc) + timedelta(hours=expiry_hours)).isoformat(),
                 "duration_seconds": recording.duration_seconds
             }
             
@@ -300,7 +300,7 @@ class CallRecordingService:
         
         try:
             # Start transcription job
-            job_name = f"transcribe-{recording_id}-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+            job_name = f"transcribe-{recording_id}-{datetime.now(timezone.utc).strftime('%Y%m%d%H%M%S')}"
             transcript_key = f"transcripts/{recording.recording_key.replace('.mp3', '.json')}"
             
             job = self.transcribe_client.start_transcription_job(
@@ -413,7 +413,7 @@ class CallRecordingService:
             
             # Soft delete in database
             recording.status = "deleted"
-            recording.deleted_at = datetime.utcnow()
+            recording.deleted_at = datetime.now(timezone.utc)
             recording.deletion_reason = reason
             recording.recording_key = None
             recording.transcript_key = None
@@ -464,7 +464,7 @@ class CallRecordingService:
         policy = self.get_retention_policy(db, business_id)
         retention_days = policy.get('retention_days', self.RETENTION_DAYS)
         
-        cutoff_date = datetime.utcnow() - timedelta(days=retention_days)
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=retention_days)
         
         # Find recordings past retention
         old_recordings = db.query(CallRecording).filter(

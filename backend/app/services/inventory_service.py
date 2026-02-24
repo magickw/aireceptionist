@@ -4,7 +4,7 @@ Tracks menu item stock levels, handles low stock alerts, and integrates with ord
 """
 
 from typing import Dict, Any, List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, func, desc
 from decimal import Decimal
@@ -60,7 +60,7 @@ class InventoryService:
                 Order.business_id == business_id,
                 OrderItem.menu_item_id == menu_item_id,
                 Order.status.in_(["confirmed", "preparing", "ready"]),
-                Order.created_at >= datetime.utcnow() - timedelta(days=7)
+                Order.created_at >= datetime.now(timezone.utc) - timedelta(days=7)
             )
         ).scalar() or 0
         
@@ -96,7 +96,7 @@ class InventoryService:
             "status": status,
             "threshold_low": threshold_low,
             "threshold_critical": threshold_critical,
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
     
     def get_all_inventory(
@@ -134,7 +134,7 @@ class InventoryService:
             "total_items": len(inventory_list),
             "items": inventory_list,
             "alerts": alert_count,
-            "last_updated": datetime.utcnow().isoformat()
+            "last_updated": datetime.now(timezone.utc).isoformat()
         }
     
     def check_availability(
@@ -329,7 +329,7 @@ class InventoryService:
             "business_id": business_id,
             "alerts_sent": alerts_sent,
             "total_alerts": len(alerts_sent),
-            "checked_at": datetime.utcnow().isoformat()
+            "checked_at": datetime.now(timezone.utc).isoformat()
         }
     
     def get_inventory_report(
@@ -346,7 +346,7 @@ class InventoryService:
             business_id: Business ID
             days: Number of days to look back
         """
-        start_date = datetime.utcnow() - timedelta(days=days)
+        start_date = datetime.now(timezone.utc) - timedelta(days=days)
         
         # Get all orders in the period
         orders = db.query(Order).filter(
@@ -400,7 +400,7 @@ class InventoryService:
             "total_orders": len(orders),
             "items_reported": len(sorted_usage),
             "items": sorted_usage,
-            "generated_at": datetime.utcnow().isoformat()
+            "generated_at": datetime.now(timezone.utc).isoformat()
         }
     
     def set_inventory_thresholds(
@@ -435,7 +435,7 @@ class InventoryService:
         menu_item.dietary_info.update({
             "inventory_threshold_low": threshold_low,
             "inventory_threshold_critical": threshold_critical,
-            "inventory_thresholds_updated": datetime.utcnow().isoformat()
+            "inventory_thresholds_updated": datetime.now(timezone.utc).isoformat()
         })
         
         db.commit()

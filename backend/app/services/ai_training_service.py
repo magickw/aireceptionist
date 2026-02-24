@@ -158,7 +158,7 @@ class AITrainingService:
             )
             
             # Update scenario stats
-            scenario.last_tested = datetime.utcnow()
+            scenario.last_tested = datetime.now(timezone.utc)
             scenario.success_rate = similarity
             
             db.commit()
@@ -171,7 +171,7 @@ class AITrainingService:
                 "similarity_score": similarity,
                 "passed": similarity >= 70,
                 "intent": result.get("intent"),
-                "timestamp": datetime.utcnow().isoformat()
+                "timestamp": datetime.now(timezone.utc).isoformat()
             }
             
         except Exception as e:

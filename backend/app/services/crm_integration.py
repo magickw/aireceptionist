@@ -6,7 +6,7 @@ Supports Salesforce and HubSpot integrations
 import asyncio
 import aiohttp
 from typing import Dict, Any, Optional, List
-from datetime import datetime
+from datetime import datetime, timezone
 import os
 
 from app.core.config import settings
@@ -684,7 +684,7 @@ class CRMIntegrationService:
                 "email": contact.get("Email"),
                 "phone": contact.get("Phone"),
                 "company": contact.get("Company"),
-                "last_synced": datetime.utcnow(),
+                "last_synced": datetime.now(timezone.utc),
                 "sync_direction": "crm_to_local"
             }
         
@@ -703,7 +703,7 @@ class CRMIntegrationService:
                 "phone": props.get("phone"),
                 "company": props.get("company"),
                 "lead_status": props.get("hs_lead_status"),
-                "last_synced": datetime.utcnow(),
+                "last_synced": datetime.now(timezone.utc),
                 "sync_direction": "crm_to_local"
             }
         

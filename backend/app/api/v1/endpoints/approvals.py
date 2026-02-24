@@ -6,7 +6,7 @@ Handles manager approval requests for AI actions requiring review
 from typing import Any, Dict, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
-from datetime import datetime
+from datetime import datetime, timezone
 from pydantic import BaseModel
 
 from app.api import deps
@@ -97,7 +97,7 @@ async def approve_override(
             final_response=original_response,
             context=context,
             reviewed_by=current_user.id,
-            reviewed_at=datetime.utcnow(),
+            reviewed_at=datetime.now(timezone.utc),
             request_metadata={"manager_notes": notes}
         )
         db.add(approval)
@@ -106,7 +106,7 @@ async def approve_override(
         approval.action_taken = "APPROVED_OVERRIDE"
         approval.final_response = original_response
         approval.reviewed_by = current_user.id
-        approval.reviewed_at = datetime.utcnow()
+        approval.reviewed_at = datetime.now(timezone.utc)
         approval.request_metadata = {"manager_notes": notes}
     
     db.commit()
@@ -149,7 +149,7 @@ async def reject_request(
             final_response=context.get("suggested_response", ""),
             context=context,
             reviewed_by=current_user.id,
-            reviewed_at=datetime.utcnow(),
+            reviewed_at=datetime.now(timezone.utc),
             request_metadata={"manager_notes": notes}
         )
         db.add(approval)
@@ -157,7 +157,7 @@ async def reject_request(
         approval.status = "rejected"
         approval.action_taken = "REJECTED"
         approval.reviewed_by = current_user.id
-        approval.reviewed_at = datetime.utcnow()
+        approval.reviewed_at = datetime.now(timezone.utc)
         approval.request_metadata = {"manager_notes": notes}
     
     db.commit()

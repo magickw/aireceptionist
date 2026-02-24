@@ -11,7 +11,7 @@ import json
 import asyncio
 import aiohttp
 from typing import List, Dict, Any, Optional
-from datetime import datetime, timedelta, time
+from datetime import datetime, timedelta, time, timezone
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
@@ -113,7 +113,7 @@ class CalendarService:
                 if integration:
                     integration.access_token = tokens["access_token"]
                     integration.refresh_token = tokens.get("refresh_token")
-                    integration.token_expires_at = datetime.utcnow() + timedelta(seconds=tokens["expires_in"])
+                    integration.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=tokens["expires_in"])
                     integration.calendar_id = calendar_id
                     integration.status = "active"
                 else:
@@ -122,7 +122,7 @@ class CalendarService:
                         provider="google",
                         access_token=tokens["access_token"],
                         refresh_token=tokens.get("refresh_token"),
-                        token_expires_at=datetime.utcnow() + timedelta(seconds=tokens["expires_in"]),
+                        token_expires_at=datetime.now(timezone.utc) + timedelta(seconds=tokens["expires_in"]),
                         calendar_id=calendar_id,
                         status="active"
                     )
@@ -157,7 +157,7 @@ class CalendarService:
                 tokens = await response.json()
                 
                 integration.access_token = tokens["access_token"]
-                integration.token_expires_at = datetime.utcnow() + timedelta(
+                integration.token_expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=tokens.get("expires_in", 3600)
                 )
                 integration.status = "active"
@@ -176,7 +176,7 @@ class CalendarService:
     ) -> Dict[str, Any]:
         """Create an event on the calendar"""
         # Check token validity
-        if integration.token_expires_at and integration.token_expires_at < datetime.utcnow():
+        if integration.token_expires_at and integration.token_expires_at < datetime.now(timezone.utc):
             if not await self.refresh_google_token(integration, db):
                 raise Exception("Failed to refresh calendar token")
         
@@ -219,7 +219,7 @@ class CalendarService:
     ) -> List[Dict[str, Any]]:
         """Get events from the calendar"""
         # Check token validity
-        if integration.token_expires_at and integration.token_expires_at < datetime.utcnow():
+        if integration.token_expires_at and integration.token_expires_at < datetime.now(timezone.utc):
             if not await self.refresh_google_token(integration, db):
                 raise Exception("Failed to refresh calendar token")
         
@@ -262,7 +262,7 @@ class CalendarService:
             }
         """
         # Check token validity
-        if integration.token_expires_at and integration.token_expires_at < datetime.utcnow():
+        if integration.token_expires_at and integration.token_expires_at < datetime.now(timezone.utc):
             if not await self.refresh_google_token(integration, db):
                 raise Exception("Failed to refresh calendar token")
         

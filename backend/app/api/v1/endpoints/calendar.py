@@ -11,7 +11,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import List, Optional, Any
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from app.api import deps
 from app.services.calendar_service import calendar_service
@@ -192,7 +192,7 @@ async def get_events(
     
     # Default to next 30 days
     if not start_date:
-        start_date = datetime.utcnow()
+        start_date = datetime.now(timezone.utc)
     if not end_date:
         end_date = start_date + timedelta(days=30)
     
@@ -238,7 +238,7 @@ async def import_external_events(
 
     # Default to next 30 days if no date range is provided
     if not start_date:
-        start_date = datetime.utcnow()
+        start_date = datetime.now(timezone.utc)
     if not end_date:
         end_date = start_date + timedelta(days=30)
 

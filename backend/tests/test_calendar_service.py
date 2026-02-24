@@ -2,7 +2,7 @@
 
 import pytest
 from unittest.mock import Mock, patch, AsyncMock
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.orm import Session
 
 from app.services.calendar_service import CalendarService
@@ -30,7 +30,7 @@ def sample_integration():
         provider="google",
         access_token="test_access_token",
         refresh_token="test_refresh_token",
-        token_expires_at=datetime.utcnow() + timedelta(hours=1),
+        token_expires_at=datetime.now(timezone.utc) + timedelta(hours=1),
         calendar_id="primary",
         status="active"
     )
@@ -124,7 +124,7 @@ class TestCheckAvailability:
     @patch('aiohttp.ClientSession')
     async def test_check_availability_free(self, mock_session_class, calendar_service, sample_integration):
         """Test checking availability when slot is free"""
-        start_time = datetime.utcnow() + timedelta(days=1)
+        start_time = datetime.now(timezone.utc) + timedelta(days=1)
         end_time = start_time + timedelta(hours=1)
         
         # Mock response
@@ -159,7 +159,7 @@ class TestCheckAvailability:
     @patch('aiohttp.ClientSession')
     async def test_check_availability_busy(self, mock_session_class, calendar_service, sample_integration):
         """Test checking availability when slot is busy"""
-        start_time = datetime.utcnow() + timedelta(days=1)
+        start_time = datetime.now(timezone.utc) + timedelta(days=1)
         end_time = start_time + timedelta(hours=1)
         
         # Mock response
@@ -207,7 +207,7 @@ class TestCalendarEventOperations:
         """Test creating a calendar event"""
         summary = "Test Appointment"
         description = "Test description"
-        start_time = datetime.utcnow() + timedelta(days=1)
+        start_time = datetime.now(timezone.utc) + timedelta(days=1)
         end_time = start_time + timedelta(hours=1)
         
         # Mock response
