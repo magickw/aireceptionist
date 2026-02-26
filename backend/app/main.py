@@ -6,11 +6,53 @@ from slowapi.errors import RateLimitExceeded
 from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments, customer_360, revenue_analytics, smart_scheduling, builtin_calendar
 from app.core.config import settings
 from app.core.rate_limiter import limiter
+from app.db.session import engine
+from sqlalchemy import text
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
 )
+
+
+@app.on_event("startup")
+async def startup_event():
+    """Ensure refresh_tokens table exists on startup"""
+    try:
+        with engine.connect() as conn:
+            # Check if refresh_tokens table exists
+            result = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'refresh_tokens'
+                )
+            """))
+            table_exists = result.scalar()
+            
+            if not table_exists:
+                print("[Startup] Creating refresh_tokens table...")
+                conn.execute(text("""
+                    CREATE TABLE refresh_tokens (
+                        id SERIAL PRIMARY KEY,
+                        user_id INTEGER NOT NULL REFERENCES users(id),
+                        token_hash VARCHAR(64) UNIQUE NOT NULL,
+                        expires_at TIMESTAMP NOT NULL,
+                        revoked BOOLEAN DEFAULT FALSE,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE INDEX ix_refresh_tokens_user_id ON refresh_tokens(user_id)
+                """))
+                conn.execute(text("""
+                    CREATE UNIQUE INDEX ix_refresh_tokens_token_hash ON refresh_tokens(token_hash)
+                """))
+                conn.commit()
+                print("[Startup] refresh_tokens table created successfully")
+            else:
+                print("[Startup] refresh_tokens table already exists")
+    except Exception as e:
+        print(f"[Startup] Error checking/creating refresh_tokens table: {e}")
 
 # Rate limiting
 app.state.limiter = limiter
