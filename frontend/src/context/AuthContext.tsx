@@ -16,7 +16,7 @@ interface AuthContextType {
   user: User | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  login: (token: string) => void;
+  login: (tokenOrResponse: string | { access_token: string; refresh_token?: string }) => void;
   logout: () => void;
   signInWithGoogle: () => Promise<void>;
 }
@@ -90,8 +90,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => clearInterval(interval);
   }, [user, pingBackend]);
 
-  const login = async (token: string) => {
-    localStorage.setItem('token', token);
+  const login = async (tokenOrResponse: string | { access_token: string; refresh_token?: string }) => {
+    if (typeof tokenOrResponse === 'string') {
+      // Firebase token (string) - backward compat
+      localStorage.setItem('token', tokenOrResponse);
+    } else {
+      // JWT response object with access + refresh tokens
+      localStorage.setItem('token', tokenOrResponse.access_token);
+      if (tokenOrResponse.refresh_token) {
+        localStorage.setItem('refreshToken', tokenOrResponse.refresh_token);
+      }
+    }
     // Wait for user fetch to complete before redirecting
     await fetchUser();
     router.push('/');
@@ -131,8 +140,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = async () => {
+    try {
+      await api.post('/auth/logout');
+    } catch {
+      // Ignore errors - we're logging out anyway
+    }
     localStorage.removeItem('token');
+    localStorage.removeItem('refreshToken');
     setUser(null);
     router.push('/login');
   };

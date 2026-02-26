@@ -1,19 +1,22 @@
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.core import security
 from app.core.config import settings
-from app.models.models import User
-from app.schemas.user import Token, UserCreate, User as UserSchema, UserLogin
+from app.core.rate_limiter import limiter
+from app.models.models import User, RefreshToken
+from app.schemas.user import Token, UserCreate, User as UserSchema, UserLogin, RefreshRequest
 
 router = APIRouter()
 
 @router.post("/signup", response_model=UserSchema)
+@limiter.limit("3/minute")
 def create_user(
+    request: Request,
     *,
     db: Session = Depends(deps.get_db),
     user_in: UserCreate,
@@ -42,7 +45,9 @@ def create_user(
     return db_user
 
 @router.post("/login", response_model=Token)
+@limiter.limit("5/minute")
 def login_access_token(
+    request: Request,
     user_login: UserLogin,
     db: Session = Depends(deps.get_db),
 ) -> Any:
@@ -63,7 +68,22 @@ def login_access_token(
         access_token = security.create_access_token(
             user.id, expires_delta=access_token_expires
         )
-        return {"access_token": access_token, "token_type": "bearer"}
+
+        # Create refresh token
+        raw_refresh, token_hash = security.create_refresh_token()
+        db_refresh = RefreshToken(
+            user_id=user.id,
+            token_hash=token_hash,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        )
+        db.add(db_refresh)
+        db.commit()
+
+        return {
+            "access_token": access_token,
+            "refresh_token": raw_refresh,
+            "token_type": "bearer",
+        }
     except HTTPException:
         raise  # Re-raise HTTP exceptions as-is
     except Exception as e:
@@ -84,6 +104,62 @@ async def read_users_me(
     Get current user.
     """
     return current_user
+
+@router.post("/refresh", response_model=Token)
+@limiter.limit("10/minute")
+def refresh_access_token(
+    request: Request,
+    body: RefreshRequest,
+    db: Session = Depends(deps.get_db),
+) -> Any:
+    """Exchange a valid refresh token for a new access + refresh token pair."""
+    token_hash = security.hash_token(body.refresh_token)
+    db_token = db.query(RefreshToken).filter(
+        RefreshToken.token_hash == token_hash,
+        RefreshToken.revoked == False,
+    ).first()
+
+    if not db_token or db_token.expires_at < datetime.now(timezone.utc):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Invalid or expired refresh token",
+        )
+
+    # Revoke old token (rotation)
+    db_token.revoked = True
+
+    # Issue new pair
+    access_token = security.create_access_token(
+        db_token.user_id,
+        expires_delta=timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES),
+    )
+    raw_refresh, new_hash = security.create_refresh_token()
+    new_db_token = RefreshToken(
+        user_id=db_token.user_id,
+        token_hash=new_hash,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+    )
+    db.add(new_db_token)
+    db.commit()
+
+    return {
+        "access_token": access_token,
+        "refresh_token": raw_refresh,
+        "token_type": "bearer",
+    }
+
+@router.post("/logout")
+def logout(
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+) -> Any:
+    """Revoke all refresh tokens for the current user."""
+    db.query(RefreshToken).filter(
+        RefreshToken.user_id == current_user.id,
+        RefreshToken.revoked == False,
+    ).update({"revoked": True})
+    db.commit()
+    return {"detail": "Logged out successfully"}
 
 @router.post("/approve-user/{user_id}", response_model=UserSchema)
 async def approve_user(

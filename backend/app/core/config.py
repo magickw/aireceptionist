@@ -23,6 +23,16 @@ class Settings(BaseSettings):
 
     REDIS_URL: Optional[str] = "redis://localhost:6379/0"
 
+    # Encryption
+    ENCRYPTION_KEY: Optional[str] = None
+
+    # Rate Limiting
+    RATE_LIMIT_ENABLED: bool = True
+    RATE_LIMIT_DEFAULT: str = "60/minute"
+
+    # Refresh Tokens
+    REFRESH_TOKEN_EXPIRE_DAYS: int = 7
+
     # Google Calendar Configuration
     GOOGLE_CLIENT_ID: Optional[str] = None
     GOOGLE_CLIENT_SECRET: Optional[str] = None

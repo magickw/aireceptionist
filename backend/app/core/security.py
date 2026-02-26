@@ -1,5 +1,7 @@
 from datetime import datetime, timedelta, timezone
-from typing import Any, Union, Optional
+from typing import Any, Union, Optional, Tuple
+import hashlib
+import secrets
 from jose import jwt
 from passlib.context import CryptContext
 from app.core.config import settings
@@ -24,3 +26,14 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
 
 def get_password_hash(password: str) -> str:
     return pwd_context.hash(password)
+
+
+def create_refresh_token() -> Tuple[str, str]:
+    """Generate a refresh token. Returns (raw_token, sha256_hash)."""
+    raw = secrets.token_urlsafe(48)
+    return raw, hash_token(raw)
+
+
+def hash_token(token: str) -> str:
+    """SHA-256 hash a token for safe DB storage."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()

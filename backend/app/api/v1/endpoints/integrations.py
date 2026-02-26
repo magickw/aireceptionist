@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from app.api import deps
 from app.models.models import Integration as IntegrationModel, User, Business
 from app.services.integration_service import IntegrationService, get_integration_instance, BaseIntegration
+from app.core.encryption import encryption_service
 
 router = APIRouter()
 
@@ -53,7 +54,7 @@ async def create_integration(
         **integration_data,
         business_id=business_id,
         status="pending", # Start as pending
-        credentials=credentials_to_use # Store credentials
+        credentials=encryption_service.encrypt_if_needed(credentials_to_use) if credentials_to_use else None
     )
 
     # Attempt to connect/authenticate using the integration service
@@ -73,8 +74,7 @@ async def create_integration(
         )
 
     try:
-        # For simplicity, pass credentials directly. In a real app, these would be
-        # managed more securely (e.g., encrypted in DB, retrieved from KMS).
+        # Decrypt credentials for authentication check
         if await integration_client.authenticate(credentials_to_use):
             db_integration.status = "active"
             db_integration.error_message = None
@@ -154,7 +154,7 @@ async def update_integration(
         setattr(db_integration, field, value)
     
     if credentials_to_use:
-        db_integration.credentials = credentials_to_use
+        db_integration.credentials = encryption_service.encrypt_if_needed(credentials_to_use)
 
     # Re-attempt connection/authentication if relevant fields changed
     integration_client: Optional[BaseIntegration] = get_integration_instance(
@@ -166,7 +166,9 @@ async def update_integration(
         db_integration.error_message = "Unsupported integration type or client not found"
     else:
         try:
-            if await integration_client.authenticate(db_integration.credentials):
+            # Decrypt credentials for authentication check
+            decrypted_creds = encryption_service.decrypt_if_needed(db_integration.credentials)
+            if await integration_client.authenticate(decrypted_creds):
                 db_integration.status = "active"
                 db_integration.error_message = None
             else:

@@ -708,7 +708,7 @@ class NovaReasoningEngine:
             response = await self._invoke_nova_lite(system_prompt, messages)
             
             # Parse and validate the response
-            reasoning_result = self._parse_reasoning_response(response)
+            reasoning_result = self._parse_reasoning_response(response, customer_context)
             
             # ===== STEP 3: COMBINED GOVERNANCE CHECK =====
             # Combine model output with deterministic factors
@@ -1418,7 +1418,11 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
             body=json.dumps(body)
         )
     
-    def _parse_reasoning_response(self, response: str) -> Dict[str, Any]:
+    def _parse_reasoning_response(
+        self, 
+        response: str, 
+        customer_context: Optional[Dict[str, Any]] = None
+    ) -> Dict[str, Any]:
         """
         Parse and validate the reasoning response.
         Uses multi-layer JSON extraction for robustness.
@@ -1506,7 +1510,7 @@ Your role: Analyze customer calls, determine intent, select appropriate actions,
         else:
             # Apply memory updates if customer context is available
             memory_update = result["memory_update"]
-            if memory_update and memory_update.get("key") != "none" and "customer_context" in locals():
+            if memory_update and memory_update.get("key") != "none" and customer_context:
                 customer_id = customer_context.get("id") or customer_context.get("phone") or "unknown"
                 if customer_id != "unknown":
                     asyncio.create_task(
@@ -1787,7 +1791,7 @@ Focus on providing a detailed, step-by-step analysis of the situation.
             response = await self._invoke_nova_lite(system_prompt, messages)
             
             # Parse the response
-            result = self._parse_reasoning_response(response)
+            result = self._parse_reasoning_response(response, customer_context)
             
             # Add multi-step analysis if available
             if "multi_step_analysis" not in result:
@@ -1820,7 +1824,7 @@ Provide only the multi_step_analysis part of the response in JSON format:
                     [{"role": "user", "content": [{"text": analysis_prompt}]}])
                 
                 # Try to extract the multi-step analysis
-                analysis_result = self._parse_reasoning_response(analysis_response)
+                analysis_result = self._parse_reasoning_response(analysis_response, customer_context)
                 if "multi_step_analysis" in analysis_result:
                     result["multi_step_analysis"] = analysis_result["multi_step_analysis"]
             

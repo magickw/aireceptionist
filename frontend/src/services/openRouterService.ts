@@ -6,14 +6,21 @@ class OpenRouterService {
   private baseURL: string;
 
   constructor() {
-    this.apiKey = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || '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';
+    this.apiKey = process.env.NEXT_PUBLIC_OPENROUTER_API_KEY || '';
     this.baseURL = 'https://openrouter.ai/api/v1';
+    if (!this.apiKey) {
+      console.warn('OpenRouter API key not configured. Set NEXT_PUBLIC_OPENROUTER_API_KEY environment variable.');
+    }
   }
 
   async generateResponse(messages: Array<{role: string; content: string}>, model: string = 'openai/gpt-3.5-turbo'): Promise<string> {
+    if (!this.apiKey) {
+      return this.generateFallbackResponse(messages);
+    }
+
     try {
       console.log('Making OpenRouter API call with messages:', messages);
-      
+
       // Add timeout to prevent hanging
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout

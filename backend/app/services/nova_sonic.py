@@ -61,6 +61,7 @@ class NovaSonicHandler:
         knowledge_context: str = "",
         training_context: str = "",
         db=None,
+        briefing: str = "", # New briefing parameter
     ):
         """
         Factory method: creates a NovaSonicStreamSession with proper context.
@@ -86,10 +87,11 @@ class NovaSonicHandler:
             customer_context=customer_context,
             knowledge_context=knowledge_context,
             training_context=training_context,
+            briefing=briefing, # Pass briefing to prompt builder
         )
 
-        # Build tool definitions
-        tool_defs = build_tool_definitions(business_type, business_context)
+        # Build tool definitions with dynamic provisioning support
+        tool_defs = build_tool_definitions(business_type, business_context, db=db)
 
         # Safety checker closure — reuses the deterministic triggers from nova_reasoning
         def safety_checker(transcript: str) -> Optional[Dict[str, Any]]:

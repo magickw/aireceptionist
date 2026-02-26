@@ -36,7 +36,11 @@ class UserLogin(BaseModel):
 
 class Token(BaseModel):
     access_token: str
+    refresh_token: Optional[str] = None
     token_type: str
+
+class RefreshRequest(BaseModel):
+    refresh_token: str
 
 class TokenPayload(BaseModel):
     sub: Optional[int] = None

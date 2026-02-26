@@ -15,6 +15,7 @@ from datetime import datetime, timedelta, time, timezone
 from sqlalchemy.orm import Session
 
 from app.core.config import settings
+from app.core.encryption import encryption_service
 from app.models.models import CalendarIntegration, Appointment, Business
 
 
@@ -111,8 +112,8 @@ class CalendarService:
                 ).first()
                 
                 if integration:
-                    integration.access_token = tokens["access_token"]
-                    integration.refresh_token = tokens.get("refresh_token")
+                    integration.access_token = encryption_service.encrypt_if_needed(tokens["access_token"])
+                    integration.refresh_token = encryption_service.encrypt_if_needed(tokens.get("refresh_token"))
                     integration.token_expires_at = datetime.now(timezone.utc) + timedelta(seconds=tokens["expires_in"])
                     integration.calendar_id = calendar_id
                     integration.status = "active"
@@ -120,8 +121,8 @@ class CalendarService:
                     integration = CalendarIntegration(
                         business_id=business_id,
                         provider="google",
-                        access_token=tokens["access_token"],
-                        refresh_token=tokens.get("refresh_token"),
+                        access_token=encryption_service.encrypt_if_needed(tokens["access_token"]),
+                        refresh_token=encryption_service.encrypt_if_needed(tokens.get("refresh_token")),
                         token_expires_at=datetime.now(timezone.utc) + timedelta(seconds=tokens["expires_in"]),
                         calendar_id=calendar_id,
                         status="active"
@@ -143,7 +144,7 @@ class CalendarService:
         data = {
             "client_id": self.GOOGLE_CLIENT_ID,
             "client_secret": self.GOOGLE_CLIENT_SECRET,
-            "refresh_token": integration.refresh_token,
+            "refresh_token": encryption_service.decrypt_if_needed(integration.refresh_token),
             "grant_type": "refresh_token"
         }
         
@@ -155,8 +156,8 @@ class CalendarService:
                     return False
                 
                 tokens = await response.json()
-                
-                integration.access_token = tokens["access_token"]
+
+                integration.access_token = encryption_service.encrypt_if_needed(tokens["access_token"])
                 integration.token_expires_at = datetime.now(timezone.utc) + timedelta(
                     seconds=tokens.get("expires_in", 3600)
                 )
@@ -197,10 +198,10 @@ class CalendarService:
             event["attendees"] = [{"email": email} for email in attendees]
         
         headers = {
-            "Authorization": f"Bearer {integration.access_token}",
+            "Authorization": f"Bearer {encryption_service.decrypt_if_needed(integration.access_token)}",
             "Content-Type": "application/json"
         }
-        
+
         url = f"https://www.googleapis.com/calendar/v3/calendars/{integration.calendar_id}/events"
         
         async with aiohttp.ClientSession() as session:
@@ -224,9 +225,9 @@ class CalendarService:
                 raise Exception("Failed to refresh calendar token")
         
         headers = {
-            "Authorization": f"Bearer {integration.access_token}"
+            "Authorization": f"Bearer {encryption_service.decrypt_if_needed(integration.access_token)}"
         }
-        
+
         params = {
             "timeMin": start_date.isoformat(),
             "timeMax": end_date.isoformat(),
@@ -267,10 +268,10 @@ class CalendarService:
                 raise Exception("Failed to refresh calendar token")
         
         headers = {
-            "Authorization": f"Bearer {integration.access_token}",
+            "Authorization": f"Bearer {encryption_service.decrypt_if_needed(integration.access_token)}",
             "Content-Type": "application/json"
         }
-        
+
         # Use freebusy API for efficient availability checking
         body = {
             "timeMin": start_time.isoformat(),

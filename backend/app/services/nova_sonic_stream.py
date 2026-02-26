@@ -332,6 +332,10 @@ class NovaSonicStreamSession:
         # Thinking-block filter state (reset per assistant turn)
         self._in_thinking_block = False
         self._partial_text = ""
+        
+        # Conversational fillers
+        self.fillers = ["Uh-huh", "I see", "Got it", "One moment", "Let me check that"]
+        self._filler_task = None
 
         # Bedrock client
         self._bedrock = boto3.client(
@@ -340,6 +344,22 @@ class NovaSonicStreamSession:
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
         )
+
+    async def _play_filler(self):
+        """Randomly play conversational fillers during long processing."""
+        await asyncio.sleep(2.0) # Wait a bit before first filler
+        while self.is_active:
+            filler = random.choice(self.fillers)
+            from app.services.nova_sonic import nova_sonic
+            audio_data = await nova_sonic._synthesize_speech(filler)
+            if audio_data:
+                audio_b64 = nova_sonic.encode_audio_base64(audio_data)
+                await self.audio_queue.put({
+                    "audio": audio_b64,
+                    "sample_rate": 16000,
+                    "is_filler": True
+                })
+            await asyncio.sleep(random.uniform(4.0, 7.0))
 
     async def initialize(self):
         """Initialize the streaming session."""
@@ -356,6 +376,11 @@ class NovaSonicStreamSession:
         self._in_thinking_block = False
         self.latency.reset()
         self.latency.mark_start()
+        
+        # Stop any active filler task
+        if self._filler_task:
+            self._filler_task.cancel()
+            self._filler_task = None
 
     async def send_audio_chunk(self, audio_data: bytes):
         """Buffer an audio chunk. STT happens later in end_user_turn()."""
@@ -376,6 +401,10 @@ class NovaSonicStreamSession:
         audio_data = self._audio_buffer
         self._audio_buffer = b""
 
+        # Start filler task while processing
+        import random
+        self._filler_task = asyncio.create_task(self._play_filler())
+
         # --- STT ---
         from app.services.nova_sonic import nova_sonic
         logger.info("Calling transcription service...")
@@ -392,6 +421,8 @@ class NovaSonicStreamSession:
         logger.info(f"Transcription result: '{transcript[:100] if transcript else 'EMPTY'}...'")
 
         if not transcript:
+            if self._filler_task:
+                self._filler_task.cancel()
             logger.warning("Empty transcript, sending fallback response")
             # Provide helpful fallback message suggesting text input
             await self.text_queue.put({
@@ -406,6 +437,16 @@ class NovaSonicStreamSession:
             self.transcript_queue.put_nowait({"text": transcript})
         except asyncio.QueueFull:
             logger.warning("transcript_queue full, dropping final transcript")
+
+        # --- Sentiment Analysis for Emotion-Responsive Persona ---
+        from app.services.sentiment_service import sentiment_service
+        sentiment_result = await sentiment_service.analyze_call_sentiment(transcript)
+        self.current_sentiment = sentiment_result.get("sentiment", "neutral")
+        
+        # Stop filler task before starting AI response
+        if self._filler_task:
+            self._filler_task.cancel()
+            self._filler_task = None
 
         # --- Safety check ---
         if self.safety_checker:
@@ -656,8 +697,23 @@ class NovaSonicStreamSession:
             # --- TTS: synthesize audio for the full text response ---
             if accumulated_text:
                 from app.services.nova_sonic import nova_sonic
-                logger.info(f"[nova_sonic_stream] Synthesizing speech for: {accumulated_text[:100]}...")
-                audio_data = await nova_sonic._synthesize_speech(accumulated_text)
+                
+                # Apply sentiment-aware SSML
+                ssml_text = accumulated_text
+                sentiment = getattr(self, "current_sentiment", "neutral")
+                
+                if sentiment == "negative":
+                    # Use a more soft, empathetic tone
+                    ssml_text = f"<speak><amazon:emotion name='soft' intensity='high'>{accumulated_text}</amazon:emotion></speak>"
+                elif sentiment == "positive":
+                    # Use a more cheerful tone
+                    ssml_text = f"<speak><amazon:emotion name='cheerful' intensity='medium'>{accumulated_text}</amazon:emotion></speak>"
+                else:
+                    ssml_text = f"<speak>{accumulated_text}</speak>"
+
+                logger.info(f"[nova_sonic_stream] Synthesizing speech with sentiment '{sentiment}': {accumulated_text[:100]}...")
+                audio_data = await self._synthesize_ssml(ssml_text)
+                
                 if audio_data:
                     audio_b64 = nova_sonic.encode_audio_base64(audio_data)
                     try:
@@ -677,6 +733,33 @@ class NovaSonicStreamSession:
             logger.error(f"Error: {e}\n{traceback.format_exc()}")
             await self.text_queue.put({"error": str(e)})
             await self.text_queue.put({"turn_complete": True})
+
+    async def _synthesize_ssml(self, ssml_text: str) -> Optional[bytes]:
+        """Synthesize SSML to speech using Polly."""
+        try:
+            polly = boto3.client(
+                service_name='polly',
+                region_name=settings.AWS_REGION,
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
+            )
+            
+            response = polly.synthesize_speech(
+                Text=ssml_text,
+                TextType='ssml',
+                OutputFormat='pcm',
+                VoiceId='Joanna',
+                SampleRate='16000',
+                Engine='neural'
+            )
+            return response['AudioStream'].read()
+        except Exception as e:
+            logger.error(f"SSML synthesis error: {e}")
+            # Fallback to plain text synthesis if SSML fails
+            from app.services.nova_sonic import nova_sonic
+            # Strip tags for fallback
+            plain_text = re.sub(r'<[^>]+>', '', ssml_text)
+            return await nova_sonic._synthesize_speech(plain_text)
 
     # ------------------------------------------------------------------
     # Thinking-block filter
@@ -769,6 +852,8 @@ class NovaSonicStreamSession:
         await self.audio_queue.put(None)
 
 
+from app.services.action_execution_service import ActionExecutionService
+
 # ======================================================================
 # Prompt & tool builders (used by nova_sonic.create_streaming_session)
 # ======================================================================
@@ -778,6 +863,7 @@ def build_nova_sonic_system_prompt(
     customer_context: Dict[str, Any],
     knowledge_context: str = "",
     training_context: str = "",
+    briefing: str = "",
 ) -> str:
     """Build the system prompt for Nova Sonic voice conversations."""
     business_name = business_context.get("name", "our business")
@@ -802,6 +888,18 @@ Your role is to:
 - Help customers book appointments
 - Take orders for products or services
 - Transfer to a human when needed
+
+"""
+
+    # Add briefing if available
+    if briefing:
+        prompt += f"""## CUSTOMER BRIEFING:
+{briefing}
+
+**IMPORTANT:** Use this briefing to personalize your greeting and interaction. 
+If the customer has an active order, ask if they are calling about it. 
+If they are a VIP, provide extra-attentive service.
+If their sentiment was recently negative, be more empathetic.
 
 """
 
@@ -890,9 +988,28 @@ When a customer wants to:
 
 
 def build_tool_definitions(
-    business_type: str, business_context: Dict[str, Any]
+    business_type: str, business_context: Dict[str, Any], db: Session = None
 ) -> List[Dict[str, Any]]:
     """Build tool definitions for Nova Sonic to use."""
+    
+    # Use ActionExecutionService for dynamic tool provisioning if db is available
+    if db and business_context.get("business_id"):
+        action_svc = ActionExecutionService(db)
+        dynamic_tools = action_svc.get_dynamic_tools(business_context["business_id"])
+        
+        # Convert dynamic tools to Nova Sonic inputSchema format
+        formatted_tools = []
+        for tool in dynamic_tools:
+            formatted_tools.append({
+                "name": tool["name"],
+                "description": tool["description"],
+                "inputSchema": {
+                    "json": tool["parameters"]
+                }
+            })
+        return formatted_tools
+
+    # Fallback to base tools if no db available
     base_tools = [
         {
             "name": "bookAppointment",
