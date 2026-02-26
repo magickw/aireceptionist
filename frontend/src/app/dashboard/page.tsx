@@ -17,6 +17,7 @@ import ListItemText from '@mui/material/ListItemText';
 import ListItemAvatar from '@mui/material/ListItemAvatar';
 import Button from '@mui/material/Button';
 import Alert from '@mui/material/Alert';
+import { useTheme, alpha } from '@mui/material/styles';
 import PhoneIcon from '@mui/icons-material/Phone';
 import TrendingUpIcon from '@mui/icons-material/TrendingUp';
 import PeopleIcon from '@mui/icons-material/People';
@@ -24,6 +25,12 @@ import EventIcon from '@mui/icons-material/Event';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import CallIcon from '@mui/icons-material/Call';
 import LoginIcon from '@mui/icons-material/Login';
+import SpeedIcon from '@mui/icons-material/Speed';
+import SupportAgentIcon from '@mui/icons-material/SupportAgent';
+import AccessTimeIcon from '@mui/icons-material/AccessTime';
+import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import { MetricCard } from '@/components/ui/MetricCard';
+import { EmptyState } from '@/components/ui/EmptyState';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 
@@ -261,85 +268,91 @@ export default function Dashboard() {
           <Typography variant="body2">{error}</Typography>
         </Alert>
       )}
-      
-      <Box sx={{ mb: { xs: 2, sm: 4 } }}>
-        <Typography 
-          variant="h4" 
-          component="h1" 
-          gutterBottom 
-          sx={{ 
-            fontWeight: 'bold', 
-            color: 'primary.main',
-            fontSize: { xs: '1.75rem', sm: '2.125rem' }
+
+      <Box sx={{ mb: { xs: 3, sm: 5 } }}>
+        <Typography
+          variant="h4"
+          component="h1"
+          gutterBottom
+          sx={{
+            fontWeight: 800,
+            color: 'text.primary',
+            fontSize: { xs: '1.75rem', sm: '2.125rem', md: '2.5rem' },
           }}
         >
           Nova Agent Command Center
         </Typography>
-        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' } }}>
+        <Typography variant="body1" color="text.secondary" sx={{ fontSize: { xs: '0.875rem', sm: '1rem' }, maxWidth: 600 }}>
           Real-time orchestration of speech-to-speech reasoning and UI automation
         </Typography>
       </Box>
 
       {/* Key Metrics */}
-      <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: { xs: 3, sm: 4 } }}>
-        <Grid item xs={12} sm={4} md={2}>
-          <Card sx={{ height: '100%', background: 'linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%)' }}>
-            <CardContent>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Total Traffic</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1 }}>{metrics.totalCalls}</Typography>
-              <Typography variant="body2" color="text.secondary">All time calls</Typography>
-            </CardContent>
-          </Card>
-        </Grid>
-        
-        <Grid item xs={12} sm={4} md={2}>
-          <Card sx={{ height: '100%', borderLeft: '4px solid #10b981' }}>
-            <CardContent>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Autonomous Resolutions</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1, color: 'success.main' }}>{metrics.autonomousResolutions}</Typography>
-              <Typography variant="body2" color="text.secondary">Appointments & Orders</Typography>
-            </CardContent>
-          </Card>
+      <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: { xs: 4, sm: 5 } }}>
+        <Grid item xs={12} sm={6} md={2}>
+          <MetricCard
+            title="Total Traffic"
+            value={metrics.totalCalls}
+            icon={<PhoneIcon />}
+            color="primary"
+          />
         </Grid>
 
-        <Grid item xs={12} sm={4} md={2}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Active Calls</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1, color: 'primary.main' }}>{metrics.activeWorkflows}</Typography>
-              <Typography variant="body2" color="text.secondary">Currently in progress</Typography>
-            </CardContent>
-          </Card>
+        <Grid item xs={12} sm={6} md={2}>
+          <MetricCard
+            title="Autonomous Resolutions"
+            value={metrics.autonomousResolutions}
+            icon={<CheckCircleIcon />}
+            color="success"
+          />
         </Grid>
 
-        <Grid item xs={12} sm={4} md={2}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>Avg Call Duration</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1 }}>{Math.floor(metrics.avgCallDuration / 60)}:{(metrics.avgCallDuration % 60).toString().padStart(2, '0')}</Typography>
-              <Typography variant="body2" color="info.main">Minutes:Seconds</Typography>
-            </CardContent>
-          </Card>
+        <Grid item xs={12} sm={6} md={2}>
+          <MetricCard
+            title="Active Calls"
+            value={metrics.activeWorkflows}
+            icon={<CallIcon />}
+            color="info"
+          />
         </Grid>
 
-        <Grid item xs={12} sm={4} md={2}>
-          <Card sx={{ height: '100%' }}>
-            <CardContent>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>AI Success Rate</Typography>
-              <Typography variant="h4" sx={{ fontWeight: 'bold', my: 1, color: 'secondary.main' }}>{metrics.aiSuccessRate}%</Typography>
-              <LinearProgress variant="determinate" value={metrics.aiSuccessRate} color="secondary" sx={{ mt: 1 }} />
-            </CardContent>
-          </Card>
+        <Grid item xs={12} sm={6} md={2}>
+          <MetricCard
+            title="Avg Duration"
+            value={`${Math.floor(metrics.avgCallDuration / 60)}:${(metrics.avgCallDuration % 60).toString().padStart(2, '0')}`}
+            icon={<AccessTimeIcon />}
+            color="secondary"
+          />
         </Grid>
 
-        <Grid item xs={12} sm={4} md={2}>
+        <Grid item xs={12} sm={6} md={2}>
+          <MetricCard
+            title="AI Success Rate"
+            value={`${metrics.aiSuccessRate}%`}
+            icon={<TrendingUpIcon />}
+            color="success"
+          />
+        </Grid>
+
+        <Grid item xs={12} sm={6} md={2}>
           <Card sx={{ height: '100%' }}>
             <CardContent>
-              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 'bold' }}>System Status</Typography>
-              <Box sx={{ mt: 1 }}>
-                <Chip label="SONIC: ONLINE" size="small" color="success" sx={{ mb: 0.5, fontSize: '0.6rem', width: '100%' }} />
-                <Chip label="LITE: ONLINE" size="small" color="success" sx={{ mb: 0.5, fontSize: '0.6rem', width: '100%' }} />
-                <Chip label="ACT: ACTIVE" size="small" color="info" sx={{ fontSize: '0.6rem', width: '100%' }} />
+              <Typography variant="overline" color="text.secondary" sx={{ fontWeight: 600, letterSpacing: '0.5px' }}>
+                System Status
+              </Typography>
+              <Box sx={{ mt: 2, display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main' }} />
+                  <Typography variant="caption" sx={{ fontWeight: 600 }}>SONIC: ONLINE</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'success.main' }} />
+                  <Typography variant="caption" sx={{ fontWeight: 600 }}>LITE: ONLINE</Typography>
+                </Box>
+                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <Box sx={{ width: 8, height: 8, borderRadius: '50%', bgcolor: 'info.main' }} />
+                  <Typography variant="caption" sx={{ fontWeight: 600 }}>ACT: ACTIVE</Typography>
+                </Box>
               </Box>
             </CardContent>
           </Card>
@@ -349,33 +362,74 @@ export default function Dashboard() {
       <Grid container spacing={3}>
         {/* Live Orchestration */}
         <Grid item xs={12} md={6}>
-          <Card sx={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
-            <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold', display: 'flex', alignItems: 'center', gap: 1 }}>
-                {liveCalls.length > 0 && <span className="w-2 h-2 bg-red-500 rounded-full animate-pulse" />}
-                Live Agent Orchestration
-              </Typography>
+          <Card sx={{ height: '450px', display: 'flex', flexDirection: 'column' }}>
+            <CardContent sx={{ flexGrow: 1, overflow: 'auto', pt: 3 }}>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+                <Typography variant="h6" sx={{ fontWeight: 700 }}>
+                  Live Agent Orchestration
+                </Typography>
+                {liveCalls.length > 0 && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                    <Box
+                      sx={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: '50%',
+                        bgcolor: 'error.main',
+                        animation: 'pulse 1.5s ease-in-out infinite',
+                      }}
+                    />
+                    <Typography variant="caption" color="error.main" fontWeight={600}>
+                      LIVE
+                    </Typography>
+                  </Box>
+                )}
+              </Box>
               {liveCalls.length > 0 ? (
                 <List>
                   {liveCalls.map((call) => (
-                    <ListItem key={call.id} divider sx={{ px: 0 }}>
+                    <ListItem
+                      key={call.id}
+                      divider
+                      sx={{
+                        px: 0,
+                        py: 2,
+                        borderRadius: 2,
+                        '&:hover': {
+                          bgcolor: alpha(theme.palette.primary.main, 0.04),
+                        },
+                      }}
+                    >
                       <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: 'primary.main' }}><CallIcon /></Avatar>
+                        <Avatar sx={{ bgcolor: 'primary.main', width: 40, height: 40 }}>
+                          <CallIcon fontSize="small" />
+                        </Avatar>
                       </ListItemAvatar>
-                      <ListItemText 
-                        primary={call.customerPhone} 
-                        secondary={<span className="font-mono text-xs">{call.reasoning}</span>} 
+                      <ListItemText
+                        primary={call.customerPhone}
+                        secondary={
+                          <Typography variant="caption" sx={{ fontFamily: 'monospace' }}>
+                            {call.reasoning}
+                          </Typography>
+                        }
+                        primaryTypographyProps={{ fontWeight: 600 }}
                       />
-                      <Chip label={call.status.toUpperCase()} size="small" color="success" />
+                      <Chip
+                        label={call.status.toUpperCase()}
+                        size="small"
+                        color="success"
+                        sx={{ fontWeight: 600, borderRadius: 8 }}
+                      />
                     </ListItem>
                   ))}
                 </List>
               ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '250px', color: 'text.secondary' }}>
-                  <PhoneIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-                  <Typography variant="body1">No active calls</Typography>
-                  <Typography variant="body2">Calls will appear here in real-time</Typography>
-                </Box>
+                <EmptyState
+                  icon={<PhoneIcon />}
+                  title="No active calls"
+                  description="Calls will appear here in real-time"
+                  variant="default"
+                />
               )}
             </CardContent>
           </Card>
@@ -383,32 +437,54 @@ export default function Dashboard() {
 
         {/* Recent Autonomous Workflows */}
         <Grid item xs={12} md={6}>
-          <Card sx={{ height: '400px', display: 'flex', flexDirection: 'column' }}>
-            <CardContent sx={{ flexGrow: 1, overflow: 'auto' }}>
-              <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
+          <Card sx={{ height: '450px', display: 'flex', flexDirection: 'column' }}>
+            <CardContent sx={{ flexGrow: 1, overflow: 'auto', pt: 3 }}>
+              <Typography variant="h6" sx={{ fontWeight: 700, mb: 3 }}>
                 Recent Activity
               </Typography>
               {workflows.length > 0 ? (
                 <List>
                   {workflows.map((wf) => (
-                    <ListItem key={wf.id} divider sx={{ px: 0 }}>
+                    <ListItem
+                      key={wf.id}
+                      divider
+                      sx={{
+                        px: 0,
+                        py: 2,
+                        borderRadius: 2,
+                        '&:hover': {
+                          bgcolor: alpha(theme.palette.success.main, 0.04),
+                        },
+                      }}
+                    >
                       <ListItemAvatar>
-                        <Avatar sx={{ bgcolor: 'success.light' }}><SmartToyIcon /></Avatar>
+                        <Avatar sx={{ bgcolor: 'success.light', width: 40, height: 40 }}>
+                          <SmartToyIcon fontSize="small" />
+                        </Avatar>
                       </ListItemAvatar>
-                      <ListItemText 
-                        primary={wf.task} 
-                        secondary={`${wf.desc} • ${wf.time}`} 
+                      <ListItemText
+                        primary={wf.task}
+                        secondary={`${wf.desc} • ${wf.time}`}
+                        primaryTypographyProps={{ fontWeight: 600 }}
+                        secondaryTypographyProps={{ variant: 'caption' }}
                       />
-                      <Chip label={wf.status} size="small" variant="outlined" color={getStatusColor(wf.status) as any} />
+                      <Chip
+                        label={wf.status}
+                        size="small"
+                        variant="outlined"
+                        color={getStatusColor(wf.status) as any}
+                        sx={{ fontWeight: 600, borderRadius: 8 }}
+                      />
                     </ListItem>
                   ))}
                 </List>
               ) : (
-                <Box sx={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '250px', color: 'text.secondary' }}>
-                  <SmartToyIcon sx={{ fontSize: 48, mb: 2, opacity: 0.5 }} />
-                  <Typography variant="body1">No recent activity</Typography>
-                  <Typography variant="body2">Orders and appointments will appear here</Typography>
-                </Box>
+                <EmptyState
+                  icon={<SmartToyIcon />}
+                  title="No recent activity"
+                  description="Orders and appointments will appear here"
+                  variant="no-data"
+                />
               )}
             </CardContent>
           </Card>

@@ -11,6 +11,7 @@ from app.services.calendar_service import calendar_service
 from app.services.order_service import order_service
 from app.services.integration_service import IntegrationService, POSIntegrationInterface
 from app.services.smart_scheduling_service import smart_scheduling_service
+from app.services.voice_helpers import parse_natural_datetime
 
 class ActionExecutionService:
     """
@@ -62,19 +63,31 @@ class ActionExecutionService:
         try:
             return await handler(tool_input, business_id, context)
         except Exception as e:
+            import traceback
             print(f"[ActionExecution] Error executing {tool_name}: {e}")
+            print(traceback.format_exc())
             return {"success": False, "message": f"Execution error: {str(e)}"}
 
     async def _handle_book_appointment(self, tool_input, business_id, context):
-        customer_name = tool_input.get("customer_name") or context.get("customer_name") or "Unknown"
+        customer_name = tool_input.get("customer_name") or context.get("customer_name")
         customer_phone = tool_input.get("customer_phone") or context.get("customer_phone")
         
-        # Enhanced scheduling logic: use SmartSchedulingService for no-show risk assessment
+        # VALIDATION: Ensure we have name and phone before booking
+        missing = []
+        if not customer_name: missing.append("customer_name")
+        if not customer_phone: missing.append("customer_phone")
+        
+        if missing:
+            return {
+                "success": False, 
+                "message": f"I need the following information to complete the booking: {', '.join(missing)}. Please ask the customer for these details.",
+                "missing_fields": missing
+            }
+
         date_str = tool_input.get("date")
         time_str = tool_input.get("time")
         service = tool_input.get("service", "General")
         
-        from app.api.v1.endpoints.voice import parse_natural_datetime
         appointment_time = parse_natural_datetime(date_str, time_str)
         
         if not appointment_time:
@@ -84,8 +97,6 @@ class ActionExecutionService:
         risk_assessment = await smart_scheduling_service.predict_no_show_probability(
             self.db, business_id, customer_phone, appointment_time, service
         )
-        
-        # If risk is very high, we might want to flag it or require a deposit (future enhancement)
         
         end_time = appointment_time + timedelta(hours=1)
         result = await calendar_service.check_and_book_appointment(
@@ -107,14 +118,11 @@ class ActionExecutionService:
     async def _handle_check_availability(self, tool_input, business_id, context):
         date_str = tool_input.get("date")
         time_str = tool_input.get("time")
-        from app.api.v1.endpoints.voice import parse_natural_datetime
         appointment_time = parse_natural_datetime(date_str, time_str)
         
         if not appointment_time:
             return {"available": False, "message": "Could not parse the date and time."}
 
-        # Implementation of check_availability logic...
-        # (Similar to what was in voice.py but using service methods)
         integration = self.db.query(CalendarIntegration).filter(
             CalendarIntegration.business_id == business_id,
             CalendarIntegration.status == "active",
@@ -129,7 +137,6 @@ class ActionExecutionService:
             conflicts = calendar_service.check_db_conflicts(business_id, appointment_time, end_time, self.db)
             result = {"available": not conflicts}
 
-        # ENHANCEMENT: Suggest optimal times if not available
         if not result.get("available"):
             suggestions = await smart_scheduling_service.suggest_optimal_times(
                 self.db, business_id, context.get("customer_phone", ""), appointment_time
@@ -140,10 +147,25 @@ class ActionExecutionService:
 
     async def _handle_place_order(self, tool_input, business_id, context):
         # Implementation of order accumulation logic...
+        # In a real implementation, we would update the session's order_items
         return {"success": True, "message": "Items added to pending order."}
 
     async def _handle_confirm_order(self, tool_input, business_id, context):
-        # Implementation of order confirmation logic...
+        customer_name = tool_input.get("customer_name") or context.get("customer_name")
+        customer_phone = tool_input.get("customer_phone") or context.get("customer_phone")
+        
+        # VALIDATION
+        missing = []
+        if not customer_name: missing.append("customer_name")
+        if not customer_phone: missing.append("customer_phone")
+        
+        if missing:
+            return {
+                "success": False, 
+                "message": f"I need the following information to confirm the order: {', '.join(missing)}.",
+                "missing_fields": missing
+            }
+            
         return {"success": True, "message": "Order confirmed."}
 
     async def _handle_transfer_to_human(self, tool_input, business_id, context):

@@ -14,145 +14,9 @@ from dateutil import parser as date_parser
 from dateutil.relativedelta import relativedelta
 from app.services.action_execution_service import ActionExecutionService
 from app.services.customer_360_service import customer_360_service
+from app.services.voice_helpers import parse_natural_datetime
 
 router = APIRouter()
-
-
-def parse_natural_datetime(
-    date_str: Optional[str], 
-    time_str: Optional[str],
-    timezone_hint: str = "local"
-) -> Optional[datetime]:
-    """
-    Parse natural language date and time strings into a datetime object.
-    
-    Examples:
-    - date_str="tomorrow", time_str="2pm" -> tomorrow at 14:00
-    - date_str="next tuesday", time_str="10:30 am" -> next tuesday at 10:30
-    - date_str="today", time_str="3pm" -> today at 15:00
-    - date_str="march 15th", time_str="2pm" -> march 15 at 14:00
-    - date_str=None, time_str="2pm" -> today at 14:00
-    
-    Returns None if parsing fails completely.
-    """
-    now = datetime.now()
-    
-    # Build combined string
-    if date_str and time_str:
-        combined = f"{date_str} {time_str}"
-    elif date_str:
-        combined = date_str
-    elif time_str:
-        combined = f"today {time_str}"
-    else:
-        return None
-    
-    combined = combined.strip().lower()
-    
-    # Pre-process common patterns
-    # Handle "tomorrow" variations
-    if "tomorrow" in combined:
-        combined = combined.replace("tomorrow", "")
-        try:
-            parsed_time = date_parser.parse(combined.strip()) if combined.strip() else None
-            tomorrow = now + timedelta(days=1)
-            if parsed_time:
-                return tomorrow.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
-            return tomorrow.replace(hour=12, minute=0, second=0, microsecond=0)
-        except:
-            return now + timedelta(days=1)
-    
-    # Handle relative days like "in 2 days", "in 3 days"
-    import re
-    in_days_match = re.search(r'in (\d+) days?', combined)
-    if in_days_match:
-        days = int(in_days_match.group(1))
-        future_date = now + timedelta(days=days)
-        combined = combined.replace(in_days_match.group(0), "").strip()
-        if combined:
-            try:
-                parsed_time = date_parser.parse(combined)
-                return future_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
-            except:
-                pass
-        return future_date.replace(hour=12, minute=0, second=0, microsecond=0)
-    
-    # Handle "next [day]" patterns
-    next_day_match = re.search(r'next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)', combined)
-    if next_day_match:
-        day_name = next_day_match.group(1)
-        weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-        target_weekday = weekdays.index(day_name)
-        current_weekday = now.weekday()
-        days_ahead = (target_weekday - current_weekday + 7) % 7
-        if days_ahead == 0:
-            days_ahead = 7  # Next week's same day
-        target_date = now + timedelta(days=days_ahead)
-        
-        # Try to extract time from remaining text
-        remaining = combined.replace(next_day_match.group(0), "").strip()
-        if remaining:
-            try:
-                parsed_time = date_parser.parse(remaining)
-                return target_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
-            except:
-                pass
-        return target_date.replace(hour=12, minute=0, second=0, microsecond=0)
-    
-    # Handle "this [day]" patterns
-    this_day_match = re.search(r'this (monday|tuesday|wednesday|thursday|friday|saturday|sunday)', combined)
-    if this_day_match:
-        day_name = this_day_match.group(1)
-        weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
-        target_weekday = weekdays.index(day_name)
-        current_weekday = now.weekday()
-        days_ahead = (target_weekday - current_weekday) % 7
-        if days_ahead < 0:
-            days_ahead += 7
-        target_date = now + timedelta(days=days_ahead)
-        
-        remaining = combined.replace(this_day_match.group(0), "").strip()
-        if remaining:
-            try:
-                parsed_time = date_parser.parse(remaining)
-                return target_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
-            except:
-                pass
-        return target_date.replace(hour=12, minute=0, second=0, microsecond=0)
-    
-    # Handle "today"
-    if "today" in combined:
-        remaining = combined.replace("today", "").strip()
-        if remaining:
-            try:
-                parsed_time = date_parser.parse(remaining)
-                return now.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
-            except:
-                pass
-        return now.replace(hour=12, minute=0, second=0, microsecond=0)
-    
-    # Try general dateutil parsing
-    try:
-        # Use fuzzy parsing to handle natural language
-        parsed = date_parser.parse(combined, fuzzy=True)
-        # If no year was specified and the date is in the past, assume next year
-        if parsed.year == now.year and parsed < now:
-            # Check if the parsed date seems like it should be in the future
-            if parsed.month < now.month or (parsed.month == now.month and parsed.day < now.day):
-                parsed = parsed.replace(year=now.year + 1)
-        return parsed
-    except Exception as e:
-        print(f"[Date Parser] Failed to parse '{combined}': {e}")
-    
-    # Final fallback - if only time was provided, use today
-    if time_str and not date_str:
-        try:
-            parsed_time = date_parser.parse(time_str)
-            return now.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
-        except:
-            pass
-    
-    return None
 
 
 class VoiceConnectionManager:
@@ -472,6 +336,9 @@ async def voice_websocket(
 
     db_gen = get_db()
     db = next(db_gen)
+    
+    customer_phone = None
+    customer_name = None
 
     try:
         if token:
@@ -497,6 +364,9 @@ async def voice_websocket(
                     get_current_user(db=db, token_header=None, token_query=auth_data["token"]),
                     timeout=5.0
                 )
+                # Allow client to specify customer info in auth message (simulator)
+                customer_phone = auth_data.get("customer_phone")
+                customer_name = auth_data.get("customer_name")
             except asyncio.TimeoutError:
                 await websocket.send_json({"type": "error", "message": "Authentication timeout"})
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -514,8 +384,8 @@ async def voice_websocket(
         "order_items": [],
         "created_at": datetime.now(timezone.utc),
         "business_id": business_id,
-        "customer_name": None,
-        "customer_phone": None
+        "customer_name": customer_name,
+        "customer_phone": customer_phone
     }
     
     # Store connection in manager (already accepted)
@@ -573,8 +443,8 @@ async def voice_websocket(
                     pass
 
             customer_context = {
-                "name": "Unknown",
-                "phone": "Unknown",
+                "name": ws_session.get("customer_name") or "Unknown",
+                "phone": ws_session.get("customer_phone") or "Unknown",
                 "call_count": 0,
                 "last_contact": "Never",
                 "satisfaction_score": 0,
@@ -584,31 +454,34 @@ async def voice_websocket(
 
             # PROACTIVE BRIEFING: Fetch customer profile from Customer 360
             briefing = ""
-            customer_id = current_user.id if current_user else None
-            if customer_id:
+            current_phone = ws_session.get("customer_phone")
+            if current_phone:
                 try:
-                    profile = await customer_360_service.get_customer_profile(db, customer_id, business_id)
+                    profile_data = await customer_360_service.get_customer_profile(db, business_id, current_phone)
+                    profile = profile_data.get("customer", {})
+                    metrics = profile_data.get("metrics", {})
+                    
                     customer_context.update({
                         "name": profile.get("name", "Unknown"),
-                        "call_count": profile.get("total_calls", 0),
-                        "satisfaction_score": profile.get("satisfaction_score", 0),
-                        "tier": profile.get("tier"),
+                        "call_count": metrics.get("total_calls", 0),
+                        "satisfaction_score": metrics.get("average_sentiment", 0.5),
+                        "tier": profile.get("loyalty_tier"),
                         "is_vip": profile.get("is_vip", False)
                     })
                     
                     # Generate personalized briefing/insights
-                    insights = await customer_360_service.get_personalized_insights(db, customer_id, business_id)
-                    briefing = f"Customer Tier: {profile.get('tier')}\n"
+                    insights = profile_data.get("insights", [])
+                    briefing = f"Customer Tier: {profile.get('loyalty_tier')}\n"
                     if profile.get('is_vip'):
                         briefing += "- CUSTOMER IS A VIP. Provide priority service.\n"
-                    if insights.get("recent_order"):
-                        briefing += f"- Recent Order: {insights['recent_order']['items']} (Status: {insights['recent_order']['status']})\n"
-                    if insights.get("next_appointment"):
-                        briefing += f"- Upcoming Appointment: {insights['next_appointment']['service']} on {insights['next_appointment']['time']}\n"
-                    if insights.get("churn_risk", 0) > 0.6:
+                    
+                    for insight in insights[:3]:
+                        briefing += f"- {insight.get('message')}\n"
+                        
+                    if metrics.get("churn_risk", 0) > 0.6:
                         briefing += "- HIGH CHURN RISK. Be extra helpful and empathetic.\n"
                         
-                    print(f"[Voice WS] Proactive Briefing generated for {customer_id}")
+                    print(f"[Voice WS] Proactive Briefing generated for {current_phone}")
                 except Exception as e:
                     print(f"[Voice WS] Briefing error: {e}")
 

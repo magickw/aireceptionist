@@ -2,8 +2,8 @@
 import * as React from 'react';
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Container, Box, Typography, TextField, Button, Card, CardContent, Alert, CircularProgress, Divider, Chip } from '@mui/material';
-import { Google as GoogleIcon } from '@mui/icons-material';
+import { Container, Box, Typography, TextField, Button, Card, CardContent, Alert, CircularProgress, Divider, Chip, useTheme, alpha } from '@mui/material';
+import { Google as GoogleIcon, LockOutlined, EmailOutlined } from '@mui/icons-material';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
 
@@ -15,6 +15,7 @@ export default function LoginPage() {
   const [googleLoading, setGoogleLoading] = useState(false);
   const router = useRouter();
   const { login, isAuthenticated, signInWithGoogle } = useAuth();
+  const theme = useTheme();
 
   useEffect(() => {
     if (isAuthenticated) {
@@ -57,12 +58,50 @@ export default function LoginPage() {
   };
 
   return (
-    <Container maxWidth="xs">
-      <Box sx={{ mt: 8, display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
-        <Card sx={{ width: '100%' }}>
-          <CardContent sx={{ p: 4 }}>
-            <Typography variant="h5" align="center" gutterBottom>Welcome Back</Typography>
-            
+    <Box
+      sx={{
+        minHeight: '100vh',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
+        py: 4,
+      }}
+    >
+      <Container maxWidth="sm">
+        <Card
+          sx={{
+            width: '100%',
+            boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.1)',
+            borderRadius: 3,
+            border: '1px solid rgba(226, 232, 240, 0.8)',
+          }}
+        >
+          <CardContent sx={{ p: { xs: 3, sm: 4, md: 5 } }}>
+            <Box sx={{ textAlign: 'center', mb: 4 }}>
+              <Typography
+                variant="h4"
+                gutterBottom
+                sx={{
+                  fontWeight: 800,
+                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                  WebkitBackgroundClip: 'text',
+                  WebkitTextFillColor: 'transparent',
+                }}
+              >
+                Welcome Back
+              </Typography>
+              <Typography variant="body2" color="text.secondary">
+                Sign in to continue to Receptium
+              </Typography>
+            </Box>
+
+            {error && (
+              <Alert severity="error" sx={{ mb: 3, borderRadius: 2 }} onClose={() => setError('')}>
+                {error}
+              </Alert>
+            )}
+
             {/* Google Sign In Button */}
             <Button
               fullWidth
@@ -70,54 +109,89 @@ export default function LoginPage() {
               startIcon={googleLoading ? <CircularProgress size={20} /> : <GoogleIcon />}
               onClick={handleGoogleSignIn}
               disabled={googleLoading}
-              sx={{ mb: 3, py: 1.5 }}
+              sx={{
+                mb: 3,
+                py: 1.75,
+                borderRadius: 2,
+                fontWeight: 600,
+                borderWidth: 1.5,
+                textTransform: 'none',
+                fontSize: '0.95rem',
+              }}
             >
-              Sign in with Google
+              Continue with Google
             </Button>
-            
+
             <Divider sx={{ mb: 3 }}>
-              <Chip label="OR" size="small" />
+              <Chip label="or sign in with email" size="small" sx={{ fontWeight: 500 }} />
             </Divider>
-            
-            {error && <Alert severity="error" sx={{ mb: 3 }}>{error}</Alert>}
-            
+
             <Box component="form" onSubmit={handleLogin}>
-              <TextField 
-                margin="normal" 
-                required 
-                fullWidth 
-                label="Email Address" 
-                autoComplete="email" 
-                autoFocus 
-                value={email} 
-                onChange={(e) => setEmail(e.target.value)} 
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                label="Email Address"
+                autoComplete="email"
+                autoFocus
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                InputProps={{
+                  startAdornment: <EmailOutlined sx={{ mr: 1.5, color: 'text.secondary' }} />,
+                }}
+                sx={{ mb: 2 }}
               />
-              <TextField 
-                margin="normal" 
-                required 
-                fullWidth 
-                label="Password" 
-                type="password" 
-                value={password} 
-                onChange={(e) => setPassword(e.target.value)} 
+              <TextField
+                margin="normal"
+                required
+                fullWidth
+                label="Password"
+                type="password"
+                autoComplete="current-password"
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                InputProps={{
+                  startAdornment: <LockOutlined sx={{ mr: 1.5, color: 'text.secondary' }} />,
+                }}
+                sx={{ mb: 3 }}
               />
-              <Button 
-                type="submit" 
-                fullWidth 
-                variant="contained" 
-                disabled={loading} 
-                sx={{ mt: 3, mb: 2 }}
+              <Button
+                type="submit"
+                fullWidth
+                variant="contained"
+                disabled={loading}
+                sx={{
+                  py: 1.75,
+                  borderRadius: 2,
+                  fontWeight: 600,
+                  textTransform: 'none',
+                  fontSize: '1rem',
+                  boxShadow: '0 4px 14px 0 rgba(37, 99, 235, 0.39)',
+                  '&:hover': {
+                    boxShadow: '0 6px 20px 0 rgba(37, 99, 235, 0.23)',
+                  },
+                }}
               >
-                {loading ? <CircularProgress size={24} /> : 'Sign In'}
+                {loading ? <CircularProgress size={24} color="inherit" /> : 'Sign In'}
               </Button>
             </Box>
-            
-            <Typography variant="body2" color="text.secondary" align="center" sx={{ mt: 2 }}>
-              Don't have an account? <Button component="a" href="/register" size="small">Sign up</Button>
-            </Typography>
+
+            <Box sx={{ mt: 3, textAlign: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                Don't have an account?{' '}
+                <Button
+                  component="a"
+                  href="/register"
+                  size="small"
+                  sx={{ fontWeight: 600, textTransform: 'none' }}
+                >
+                  Sign up
+                </Button>
+              </Typography>
+            </Box>
           </CardContent>
         </Card>
-      </Box>
-    </Container>
+      </Container>
+    </Box>
   );
 }

@@ -886,10 +886,12 @@ Your role is to:
 - Provide friendly, professional customer service via voice
 - Answer questions about the business, services, and hours
 - Help customers book appointments
-- Take orders for products or services
-- Transfer to a human when needed
-
 """
+
+    if business_type in ["restaurant", "retail", "pharmacy"]:
+        prompt += "- Take orders for products or services\n"
+    
+    prompt += "- Transfer to a human when needed\n\n"
 
     # Add briefing if available
     if briefing:
@@ -930,7 +932,7 @@ When you first greet the customer, use this message: "{custom_welcome}"
 
     # Only show menu items for businesses that actually have menus (restaurants, retail, etc.)
     # Hotels don't have menus - they have room types which are handled differently
-    if menu and business_type not in ["hotel", "dental", "medical", "law_firm", "accounting", "real_estate", "hvac"]:
+    if menu and business_type in ["restaurant", "retail", "pharmacy", "coffee_shop", "bakery"]:
         menu_items = ", ".join(
             [f"{item.get('name', '')} (${item.get('price', 0)})" for item in menu[:10]]
         )

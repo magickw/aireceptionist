@@ -2,13 +2,13 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Box, Container, Typography, Button, Grid, Card, CardContent, CardActions, Chip, Stack, Divider, useTheme, alpha } from '@mui/material';
-import { 
-  Phone, 
-  SmartToy, 
-  CalendarMonth, 
-  Restaurant, 
-  MedicalServices, 
+import { Box, Container, Typography, Button, Grid, Card, CardContent, CardActions, Chip, Stack, Divider, useTheme, alpha, Fade, Slide } from '@mui/material';
+import {
+  Phone,
+  SmartToy,
+  CalendarMonth,
+  Restaurant,
+  MedicalServices,
   LocalAtm,
   TrendingUp,
   Speed,
@@ -19,7 +19,10 @@ import {
   ArrowForward,
   CheckCircle,
   Star,
-  StarBorder
+  StarBorder,
+  Headphones,
+  SupportAgent,
+  AutoFixHigh
 } from '@mui/icons-material';
 import { useAuth } from '@/context/AuthContext';
 
@@ -124,129 +127,236 @@ export default function LandingPage() {
       {/* Hero Section */}
       <Box
         sx={{
-          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.1)} 0%, ${alpha(theme.palette.secondary.main, 0.1)} 100%)`,
-          py: { xs: 8, md: 12 },
+          background: `linear-gradient(135deg, ${alpha(theme.palette.primary.main, 0.05)} 0%, ${alpha(theme.palette.secondary.main, 0.05)} 100%)`,
+          py: { xs: 6, sm: 8, md: 12 },
           position: 'relative',
-          overflow: 'hidden'
+          overflow: 'hidden',
+          '&::before': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'radial-gradient(circle at 20% 50%, rgba(37, 99, 235, 0.08) 0%, transparent 50%)',
+            pointerEvents: 'none',
+          },
+          '&::after': {
+            content: '""',
+            position: 'absolute',
+            top: 0,
+            left: 0,
+            right: 0,
+            bottom: 0,
+            background: 'radial-gradient(circle at 80% 50%, rgba(100, 116, 139, 0.08) 0%, transparent 50%)',
+            pointerEvents: 'none',
+          },
         }}
       >
-        <Container maxWidth="xl">
-          <Grid container spacing={4} alignItems="center">
+        <Container maxWidth="xl" sx={{ position: 'relative', zIndex: 1 }}>
+          <Grid container spacing={{ xs: 4, md: 6 }} alignItems="center">
             <Grid item xs={12} md={6}>
-              <Typography
-                variant="h2"
-                component="h1"
-                gutterBottom
-                sx={{
-                  fontWeight: 800,
-                  fontSize: { xs: '2.5rem', md: '3.5rem' },
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                  WebkitBackgroundClip: 'text',
-                  WebkitTextFillColor: 'transparent',
-                  mb: 3
-                }}
-              >
-                Receptium
-                <br />
-                for Your Business
-              </Typography>
-              <Typography
-                variant="h6"
-                color="text.secondary"
-                gutterBottom
-                sx={{ fontSize: { xs: '1.1rem', md: '1.25rem' }, mb: 4 }}
-              >
-                Transform your customer interactions with intelligent voice and chat automation.
-                Handle calls, appointments, orders, and support 24/7 with natural AI conversations.
-              </Typography>
-              <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2}>
-                <Button
-                  variant="contained"
-                  size="large"
-                  onClick={() => handleNavigate('/login')}
-                  startIcon={<Phone />}
-                  sx={{ px: 4, py: 1.5, fontSize: '1.1rem' }}
-                >
-                  Get Started Free
-                </Button>
-                <Button
-                  variant="outlined"
-                  size="large"
-                  onClick={() => handleNavigate('/call-simulator')}
-                  startIcon={<SmartToy />}
-                  sx={{ px: 4, py: 1.5, fontSize: '1.1rem' }}
-                >
-                  Try Demo
-                </Button>
-              </Stack>
-              <Box sx={{ mt: 4, display: 'flex', gap: 2, flexWrap: 'wrap' }}>
-                <Chip icon={<CheckCircle />} label="No credit card required" size="small" />
-                <Chip icon={<CheckCircle />} label="14+ business types" size="small" />
-                <Chip icon={<CheckCircle />} label="Setup in minutes" size="small" />
-              </Box>
+              <Fade in timeout={800}>
+                <Box>
+                  <Chip
+                    label="🚀 AI-Powered Receptionist"
+                    size="small"
+                    sx={{
+                      mb: 3,
+                      bgcolor: alpha(theme.palette.primary.main, 0.1),
+                      color: theme.palette.primary.main,
+                      fontWeight: 600,
+                      borderRadius: 20,
+                    }}
+                  />
+                  <Typography
+                    variant="h2"
+                    component="h1"
+                    gutterBottom
+                    sx={{
+                      fontWeight: 800,
+                      fontSize: { xs: '2.25rem', sm: '2.75rem', md: '3.5rem' },
+                      lineHeight: 1.1,
+                      background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 50%, ${theme.palette.secondary.main} 100%)`,
+                      WebkitBackgroundClip: 'text',
+                      WebkitTextFillColor: 'transparent',
+                      mb: 2,
+                    }}
+                  >
+                    Receptium
+                    <br />
+                    for Your Business
+                  </Typography>
+                  <Typography
+                    variant="h6"
+                    color="text.secondary"
+                    gutterBottom
+                    sx={{ fontSize: { xs: '1rem', sm: '1.1rem', md: '1.25rem' }, mb: 4, maxWidth: 600 }}
+                  >
+                    Transform your customer interactions with intelligent voice and chat automation.
+                    Handle calls, appointments, orders, and support 24/7 with natural AI conversations.
+                  </Typography>
+                  <Stack direction={{ xs: 'column', sm: 'row' }} spacing={2} sx={{ mb: 4 }}>
+                    <Button
+                      variant="contained"
+                      size="large"
+                      onClick={() => handleNavigate('/login')}
+                      startIcon={<Phone />}
+                      sx={{
+                        px: 4,
+                        py: 1.75,
+                        fontSize: '1rem',
+                        fontWeight: 600,
+                        borderRadius: 14,
+                        boxShadow: '0 4px 14px 0 rgba(37, 99, 235, 0.39)',
+                        '&:hover': {
+                          boxShadow: '0 6px 20px 0 rgba(37, 99, 235, 0.23)',
+                          transform: 'translateY(-2px)',
+                        },
+                      }}
+                    >
+                      Get Started Free
+                    </Button>
+                    <Button
+                      variant="outlined"
+                      size="large"
+                      onClick={() => handleNavigate('/call-simulator')}
+                      startIcon={<SmartToy />}
+                      sx={{
+                        px: 4,
+                        py: 1.75,
+                        fontSize: '1rem',
+                        fontWeight: 600,
+                        borderRadius: 14,
+                        borderWidth: 2,
+                        '&:hover': {
+                          borderWidth: 2,
+                          transform: 'translateY(-2px)',
+                        },
+                      }}
+                    >
+                      Try Demo
+                    </Button>
+                  </Stack>
+                  <Box sx={{ display: 'flex', gap: 1.5, flexWrap: 'wrap' }}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      <CheckCircle sx={{ color: theme.palette.success.main, fontSize: 20 }} />
+                      <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                        No credit card required
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      <CheckCircle sx={{ color: theme.palette.success.main, fontSize: 20 }} />
+                      <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                        14+ business types
+                      </Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.75 }}>
+                      <CheckCircle sx={{ color: theme.palette.success.main, fontSize: 20 }} />
+                      <Typography variant="body2" color="text.secondary" fontWeight={500}>
+                        Setup in minutes
+                      </Typography>
+                    </Box>
+                  </Box>
+                </Box>
+              </Fade>
             </Grid>
             <Grid item xs={12} md={6}>
-              <Card
-                sx={{
-                  p: 4,
-                  background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.secondary.main} 100%)`,
-                  color: 'white',
-                  boxShadow: 8,
-                  borderRadius: 4
-                }}
-              >
-                <Typography variant="h5" gutterBottom sx={{ fontWeight: 'bold' }}>
-                  Powered by Amazon Nova AI
-                </Typography>
-                <Typography variant="body1" sx={{ mb: 3, opacity: 0.9 }}>
-                  Advanced reasoning engine with intent detection, entity extraction, and autonomous action execution.
-                </Typography>
-                <Stack spacing={2}>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Star sx={{ color: '#FFD700' }} />
-                    <Typography>Three-layer governance for safety</Typography>
+              <Slide direction="left" in timeout={1000}>
+                <Card
+                  sx={{
+                    p: { xs: 3, md: 4 },
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                    color: 'white',
+                    boxShadow: '0 20px 40px -10px rgba(37, 99, 235, 0.4)',
+                    borderRadius: { xs: 3, md: 4 },
+                    border: '1px solid rgba(255, 255, 255, 0.1)',
+                  }}
+                >
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+                    <Box
+                      sx={{
+                        p: 1.5,
+                        borderRadius: 2,
+                        bgcolor: 'rgba(255, 255, 255, 0.15)',
+                        backdropFilter: 'blur(10px)',
+                      }}
+                    >
+                      <AutoFixHigh />
+                    </Box>
+                    <Typography variant="h5" gutterBottom sx={{ fontWeight: 700, m: 0 }}>
+                      Powered by Nova AI
+                    </Typography>
                   </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Star sx={{ color: '#FFD700' }} />
-                    <Typography>Context-aware conversations</Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Star sx={{ color: '#FFD700' }} />
-                    <Typography>Multi-modal support (voice, text, images)</Typography>
-                  </Box>
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                    <Star sx={{ color: '#FFD700' }} />
-                    <Typography>Enterprise-grade security</Typography>
-                  </Box>
-                </Stack>
-              </Card>
+                  <Typography variant="body1" sx={{ mb: 4, opacity: 0.95, lineHeight: 1.7 }}>
+                    Advanced reasoning engine with intent detection, entity extraction, and autonomous action execution.
+                  </Typography>
+                  <Stack spacing={2.5}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Star sx={{ color: '#FFD700', fontSize: 24 }} />
+                      <Typography sx={{ fontWeight: 500 }}>Three-layer governance for safety</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Star sx={{ color: '#FFD700', fontSize: 24 }} />
+                      <Typography sx={{ fontWeight: 500 }}>Context-aware conversations</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Star sx={{ color: '#FFD700', fontSize: 24 }} />
+                      <Typography sx={{ fontWeight: 500 }}>Multi-modal support (voice, text, images)</Typography>
+                    </Box>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Star sx={{ color: '#FFD700', fontSize: 24 }} />
+                      <Typography sx={{ fontWeight: 500 }}>Enterprise-grade security</Typography>
+                    </Box>
+                  </Stack>
+                </Card>
+              </Slide>
             </Grid>
           </Grid>
         </Container>
       </Box>
 
       {/* Stats Section */}
-      <Container maxWidth="xl" sx={{ py: 8 }}>
-        <Grid container spacing={4} justifyContent="center">
+      <Container maxWidth="xl" sx={{ py: { xs: 6, md: 10 } }}>
+        <Grid container spacing={3} justifyContent="center">
           {stats.map((stat, index) => (
             <Grid item xs={6} md={3} key={index}>
               <Box sx={{ textAlign: 'center' }}>
                 <Box
                   sx={{
                     display: 'inline-flex',
-                    p: 2,
+                    p: { xs: 1.5, sm: 2 },
                     borderRadius: '50%',
-                    bgcolor: alpha(theme.palette.primary.main, 0.1),
+                    bgcolor: alpha(theme.palette.primary.main, 0.08),
                     color: theme.palette.primary.main,
-                    mb: 2
+                    mb: 2,
+                    transition: 'all 0.3s ease',
+                    '&:hover': {
+                      bgcolor: alpha(theme.palette.primary.main, 0.15),
+                      transform: 'scale(1.1)',
+                    },
                   }}
                 >
                   {stat.icon}
                 </Box>
-                <Typography variant="h3" gutterBottom sx={{ fontWeight: 'bold' }}>
+                <Typography
+                  variant="h3"
+                  gutterBottom
+                  sx={{
+                    fontWeight: 800,
+                    background: `linear-gradient(135deg, ${theme.palette.primary.main} 0%, ${theme.palette.primary.dark} 100%)`,
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    fontSize: { xs: '2rem', md: '2.5rem' },
+                  }}
+                >
                   {stat.value}
                 </Typography>
-                <Typography variant="body2" color="text.secondary">
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ fontWeight: 500, textTransform: 'uppercase', letterSpacing: '0.5px', fontSize: { xs: '0.75rem', sm: '0.875rem' } }}
+                >
                   {stat.label}
                 </Typography>
               </Box>
@@ -256,82 +366,102 @@ export default function LandingPage() {
       </Container>
 
       {/* Features Section */}
-      <Container maxWidth="xl" sx={{ py: 8 }}>
-        <Typography
-          variant="h3"
-          component="h2"
-          gutterBottom
-          sx={{ textAlign: 'center', fontWeight: 'bold', mb: 2 }}
-        >
-          Powerful Features for Every Business
-        </Typography>
-        <Typography
-          variant="h6"
-          color="text.secondary"
-          sx={{ textAlign: 'center', mb: 6, maxWidth: 700, mx: 'auto' }}
-        >
-          Our AI receptionist handles all your customer interactions with natural conversations and intelligent automation
-        </Typography>
-        <Grid container spacing={3}>
-          {features.map((feature, index) => (
-            <Grid item xs={12} sm={6} md={4} key={index}>
-              <Card
-                sx={{
-                  height: '100%',
-                  display: 'flex',
-                  flexDirection: 'column',
-                  transition: 'transform 0.2s, box-shadow 0.2s',
-                  '&:hover': {
-                    transform: 'translateY(-4px)',
-                    boxShadow: 6
-                  }
-                }}
-              >
-                <CardContent sx={{ flexGrow: 1 }}>
-                  <Box
-                    sx={{
-                      display: 'inline-flex',
-                      p: 2,
-                      borderRadius: 2,
-                      bgcolor: alpha(theme.palette[feature.color as keyof typeof theme.palette].main, 0.1),
-                      color: theme.palette[feature.color as keyof typeof theme.palette].main,
-                      mb: 3
-                    }}
-                  >
-                    {feature.icon}
-                  </Box>
-                  <Typography variant="h6" gutterBottom sx={{ fontWeight: 'bold' }}>
-                    {feature.title}
-                  </Typography>
-                  <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                    {feature.description}
-                  </Typography>
-                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    {feature.tags.map((tag, tagIndex) => (
-                      <Chip
-                        key={tagIndex}
-                        label={tag}
-                        size="small"
-                        variant="outlined"
-                        sx={{ fontSize: '0.75rem' }}
-                      />
-                    ))}
-                  </Box>
-                </CardContent>
-                <CardActions>
-                  <Button
-                    onClick={() => handleNavigate(feature.path)}
-                    endIcon={<ArrowForward />}
-                    sx={{ ml: 1 }}
-                  >
-                    Learn More
-                  </Button>
-                </CardActions>
-              </Card>
-            </Grid>
-          ))}
-        </Grid>
-      </Container>
+      <Box sx={{ bgcolor: alpha(theme.palette.primary.main, 0.02), py: { xs: 8, md: 12 } }}>
+        <Container maxWidth="xl">
+          <Box sx={{ textAlign: 'center', mb: { xs: 6, md: 8 } }}>
+            <Typography
+              variant="h3"
+              component="h2"
+              gutterBottom
+              sx={{ fontWeight: 800, mb: 2, fontSize: { xs: '1.75rem', md: '2.25rem' } }}
+            >
+              Powerful Features for Every Business
+            </Typography>
+            <Typography
+              variant="h6"
+              color="text.secondary"
+              sx={{ maxWidth: 700, mx: 'auto', lineHeight: 1.6 }}
+            >
+              Our AI receptionist handles all your customer interactions with natural conversations and intelligent automation
+            </Typography>
+          </Box>
+          <Grid container spacing={3}>
+            {features.map((feature, index) => (
+              <Grid item xs={12} sm={6} md={4} key={index}>
+                <Card
+                  sx={{
+                    height: '100%',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
+                    border: '1px solid rgba(226, 232, 240, 0.8)',
+                    '&:hover': {
+                      transform: 'translateY(-8px)',
+                      boxShadow: '0 20px 40px -10px rgba(0, 0, 0, 0.15)',
+                      borderColor: theme.palette[feature.color as keyof typeof theme.palette].main,
+                    }
+                  }}
+                >
+                  <CardContent sx={{ flexGrow: 1, pt: 3 }}>
+                    <Box
+                      sx={{
+                        display: 'inline-flex',
+                        p: 2.5,
+                        borderRadius: 3,
+                        bgcolor: alpha(theme.palette[feature.color as keyof typeof theme.palette].main, 0.1),
+                        color: theme.palette[feature.color as keyof typeof theme.palette].main,
+                        mb: 3,
+                        transition: 'all 0.3s ease',
+                      }}
+                    >
+                      {feature.icon}
+                    </Box>
+                    <Typography variant="h6" gutterBottom sx={{ fontWeight: 700, fontSize: '1.125rem' }}>
+                      {feature.title}
+                    </Typography>
+                    <Typography variant="body2" color="text.secondary" sx={{ mb: 3, lineHeight: 1.6 }}>
+                      {feature.description}
+                    </Typography>
+                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                      {feature.tags.map((tag, tagIndex) => (
+                        <Chip
+                          key={tagIndex}
+                          label={tag}
+                          size="small"
+                          variant="outlined"
+                          sx={{
+                            fontSize: '0.75rem',
+                            fontWeight: 500,
+                            borderRadius: 8,
+                            borderColor: alpha(theme.palette[feature.color as keyof typeof theme.palette].main, 0.3),
+                            color: theme.palette[feature.color as keyof typeof theme.palette].main,
+                          }}
+                        />
+                      ))}
+                    </Box>
+                  </CardContent>
+                  <CardActions sx={{ p: 3, pt: 0 }}>
+                    <Button
+                      onClick={() => handleNavigate(feature.path)}
+                      endIcon={<ArrowForward />}
+                      sx={{
+                        ml: 0,
+                        fontWeight: 600,
+                        color: theme.palette[feature.color as keyof typeof theme.palette].main,
+                        '&:hover': {
+                          bgcolor: alpha(theme.palette[feature.color as keyof typeof theme.palette].main, 0.05),
+                        }
+                      }}
+                    >
+                      Learn More
+                    </Button>
+                  </CardActions>
+                </Card>
+              </Grid>
+            ))}
+          </Grid>
+        </Container>
+      </Box>
 
       <Divider sx={{ my: 4 }} />
 
