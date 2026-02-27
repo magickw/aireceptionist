@@ -26,10 +26,10 @@ register_exception_handlers(app)
 
 @app.on_event("startup")
 async def startup_event():
-    """Ensure refresh_tokens table exists on startup and clean up stale tokens."""
+    """Ensure required tables and columns exist on startup."""
     try:
         with engine.connect() as conn:
-            # Check if refresh_tokens table exists
+            # 1. Ensure refresh_tokens table exists
             result = conn.execute(text("""
                 SELECT EXISTS (
                     SELECT FROM information_schema.tables
@@ -58,8 +58,31 @@ async def startup_event():
                 """))
                 conn.commit()
                 print("[Startup] refresh_tokens table created successfully")
-            else:
-                print("[Startup] refresh_tokens table already exists")
+
+            # 2. Ensure account lockout columns exist in users table
+            # Check for failed_login_attempts
+            result = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'failed_login_attempts'
+                )
+            """))
+            if not result.scalar():
+                print("[Startup] Adding failed_login_attempts column to users table...")
+                conn.execute(text("ALTER TABLE users ADD COLUMN failed_login_attempts INTEGER DEFAULT 0"))
+                conn.commit()
+
+            # Check for locked_until
+            result = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.columns 
+                    WHERE table_name = 'users' AND column_name = 'locked_until'
+                )
+            """))
+            if not result.scalar():
+                print("[Startup] Adding locked_until column to users table...")
+                conn.execute(text("ALTER TABLE users ADD COLUMN locked_until TIMESTAMP"))
+                conn.commit()
 
             # Clean up stale refresh tokens
             try:
