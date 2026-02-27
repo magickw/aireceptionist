@@ -17,7 +17,7 @@ class TestSignup:
         new_user.name = "New User"
         new_user.role = "business_owner"
         new_user.status = "active"
-        new_user.created_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
+        new_user.created_at = datetime(2026, 2, 25)
 
         def fake_refresh(obj):
             obj.id = new_user.id
@@ -116,7 +116,7 @@ class TestRefresh:
         token_record = MagicMock(spec=RefreshToken)
         token_record.user_id = 1
         token_record.revoked = False
-        token_record.expires_at = datetime.now(timezone.utc) + timedelta(days=1)
+        token_record.expires_at = datetime.now() + timedelta(days=1)
 
         mock_security.hash_token.return_value = "hashed-token"
         mock_db.query.return_value.filter.return_value.first.return_value = token_record
@@ -147,7 +147,7 @@ class TestRefresh:
         token_record = MagicMock(spec=RefreshToken)
         token_record.user_id = 1
         token_record.revoked = False
-        token_record.expires_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        token_record.expires_at = datetime.now() - timedelta(hours=1)
 
         mock_security.hash_token.return_value = "hashed"
         mock_db.query.return_value.filter.return_value.first.return_value = token_record

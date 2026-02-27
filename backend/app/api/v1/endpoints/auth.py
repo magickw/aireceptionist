@@ -71,7 +71,8 @@ def login_access_token(
         user = db.query(User).filter(User.email == user_login.email).first()
 
         # Check account lockout
-        if user and user.locked_until and user.locked_until > datetime.now(timezone.utc):
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if user and user.locked_until and user.locked_until > now:
             raise HTTPException(
                 status_code=423,
                 detail="Account temporarily locked due to too many failed login attempts. Try again later.",
@@ -82,7 +83,7 @@ def login_access_token(
             if user:
                 user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
                 if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
-                    user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+                    user.locked_until = now + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
                     create_audit_log(
                         db,
                         user_id=user.id,
@@ -112,10 +113,11 @@ def login_access_token(
 
         # Create refresh token
         raw_refresh, token_hash = security.create_refresh_token()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
         db_refresh = RefreshToken(
             user_id=user.id,
             token_hash=token_hash,
-            expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+            expires_at=now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
         )
         db.add(db_refresh)
         create_audit_log(
@@ -169,7 +171,8 @@ def refresh_access_token(
         RefreshToken.revoked == False,
     ).first()
 
-    if not db_token or db_token.expires_at < datetime.now(timezone.utc):
+    now = datetime.now(timezone.utc).replace(tzinfo=None)
+    if not db_token or db_token.expires_at < now:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Invalid or expired refresh token",
@@ -187,7 +190,7 @@ def refresh_access_token(
     new_db_token = RefreshToken(
         user_id=db_token.user_id,
         token_hash=new_hash,
-        expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
+        expires_at=now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
     )
     db.add(new_db_token)
     db.commit()

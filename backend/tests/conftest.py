@@ -36,8 +36,8 @@ def mock_user():
     user.name = "Test User"
     user.role = "business_owner"
     user.status = "active"
-    user.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    user.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    user.created_at = datetime(2026, 1, 1)
+    user.updated_at = datetime(2026, 1, 1)
 
     business = MagicMock(spec=Business)
     business.id = 1
@@ -57,8 +57,8 @@ def mock_admin_user():
     user.name = "Admin User"
     user.role = "admin"
     user.status = "active"
-    user.created_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
-    user.updated_at = datetime(2026, 1, 1, tzinfo=timezone.utc)
+    user.created_at = datetime(2026, 1, 1)
+    user.updated_at = datetime(2026, 1, 1)
     user.businesses = []
     return user
 
