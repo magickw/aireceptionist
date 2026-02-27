@@ -579,6 +579,14 @@ class NovaSonicHandler:
                 "zh-CN": "Zhiyu"
             }
             
+            # Robust language detection fallback for CJK characters
+            if any("\u4e00" <= char <= "\u9fff" for char in text):
+                language_code = "zh-CN"
+            elif any("\u3040" <= char <= "\u30ff" for char in text):
+                language_code = "ja-JP"
+            elif any("\uac00" <= char <= "\ud7af" for char in text):
+                language_code = "ko-KR"
+
             # Extract base language if it's a full locale (e.g., 'en' from 'en-US')
             base_lang = language_code.split('-')[0]
             
@@ -596,12 +604,17 @@ class NovaSonicHandler:
                 except:
                     voice_id = "Joanna"
             
+            # Use neural engine if supported by region and voice
+            use_neural = True
+            if voice_id in ["Zhiyu", "Mizuki", "Seoyeon"] and settings.AWS_REGION != 'us-east-1':
+                use_neural = False
+
             response = polly.synthesize_speech(
                 Text=text,
                 OutputFormat='pcm',
                 VoiceId=voice_id,
                 SampleRate='16000',
-                Engine='neural' if voice_id != "Zhiyu" else "standard" # Chinese might not support neural in all regions
+                Engine='neural' if use_neural else 'standard'
             )
             
             # Read the audio stream

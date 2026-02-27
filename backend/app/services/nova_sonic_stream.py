@@ -440,13 +440,29 @@ class NovaSonicStreamSession:
             await self.text_queue.put({"turn_complete": True})
             return
 
-        # Update language if auto-detected
-        if (self.language == "auto" or not self.language) and detected_lang:
+        # Update language if detected_lang is different from current language
+        if detected_lang and detected_lang != self.language:
             logger.info(f"Switching session language from {self.language} to {detected_lang}")
             self.language = detected_lang
-            # Note: Ideally we would also update the system prompt here, 
-            # but for now we'll let the model respond naturally to the transcript.
-            # Most LLMs will respond in the same language as the input.
+            
+            # Update system prompt with new language context
+            # This ensures the model follows cultural guidelines for the new language
+            try:
+                # We need to rebuild the prompt. Since we don't have all the original context here, 
+                # we'll use a simplified update or just let the model adapt.
+                # For now, we'll append a directive to the current prompt if it's not already there.
+                lang_names = {
+                    "en-US": "English (US)", "es-US": "Spanish (US)", "fr-FR": "French",
+                    "zh-CN": "Chinese (Mandarin)", "ja-JP": "Japanese", "ko-KR": "Korean"
+                }
+                new_lang_name = lang_names.get(detected_lang, detected_lang)
+                language_directive = f"\n\n**NEW LANGUAGE DIRECTIVE:** The customer is now speaking {new_lang_name}. Please respond entirely in {new_lang_name} from now on, following all appropriate cultural nuances."
+                
+                if language_directive not in self.system_prompt:
+                    self.system_prompt += language_directive
+                    logger.info(f"Updated system prompt with {new_lang_name} directive")
+            except Exception as e:
+                logger.warning(f"Failed to update system prompt for new language: {e}")
 
         # Emit transcript to client
         logger.info(f"Sending transcript to client: {transcript}")
@@ -761,6 +777,9 @@ class NovaSonicStreamSession:
                 aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
             )
             
+            # Extract plain text for language detection fallback
+            plain_text = re.sub(r'<[^>]+>', '', ssml_text)
+            
             # Map language codes to natural Polly voices
             voice_map = {
                 "en-US": "Joanna",
@@ -776,6 +795,15 @@ class NovaSonicStreamSession:
                 "zh-CN": "Zhiyu"
             }
             
+            # Robust language detection fallback for CJK characters
+            # If the text has Chinese characters but the language is English, we must switch
+            if any("\u4e00" <= char <= "\u9fff" for char in plain_text):
+                language = "zh-CN"
+            elif any("\u3040" <= char <= "\u30ff" for char in plain_text):
+                language = "ja-JP"
+            elif any("\uac00" <= char <= "\ud7af" for char in plain_text):
+                language = "ko-KR"
+            
             base_lang = language.split('-')[0]
             voice_id = voice_map.get(language) or voice_map.get(base_lang)
             
@@ -790,13 +818,21 @@ class NovaSonicStreamSession:
                 except:
                     voice_id = "Joanna"
 
+            # Check if this voice supports neural engine
+            # Many voices now support neural, but let's be careful with older/specific ones
+            use_neural = True
+            if voice_id in ["Zhiyu", "Mizuki", "Seoyeon"] and settings.AWS_REGION != 'us-east-1':
+                # Chinese/Japanese/Korean neural support varies by region
+                # but let's try standard for stability if not in us-east-1
+                use_neural = False
+
             response = polly.synthesize_speech(
                 Text=ssml_text,
                 TextType='ssml',
                 OutputFormat='pcm',
                 VoiceId=voice_id,
                 SampleRate='16000',
-                Engine='neural' if voice_id != "Zhiyu" else "standard"
+                Engine='neural' if use_neural else 'standard'
             )
             return response['AudioStream'].read()
         except Exception as e:
