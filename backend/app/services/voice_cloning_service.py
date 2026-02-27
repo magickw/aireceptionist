@@ -155,6 +155,9 @@ class VoiceCloningService:
     ) -> Dict:
         """Synthesize speech using a voice persona"""
         
+        if not text or not text.strip():
+            return {"error": "Text to synthesize cannot be empty"}
+
         persona = self.get_persona(persona_name)
         if not persona:
             return {"error": f"Unknown persona: {persona_name}"}

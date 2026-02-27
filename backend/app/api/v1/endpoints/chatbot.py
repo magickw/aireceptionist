@@ -68,8 +68,13 @@ async def end_chat(
 @router.get("/history")
 async def get_chat_history(
     limit: int = 50,
-    business_id: int = Depends(deps.get_current_business_id),
+    current_user: User = Depends(deps.get_current_active_user),
     db: Session = Depends(deps.get_db)
 ):
+    # Determine business_id from current_user
+    if not current_user.businesses:
+        return {"sessions": []}
+    business_id = current_user.businesses[0].id
+    
     history = chatbot_service.get_chat_history(db=db, business_id=business_id, limit=limit)
     return {"sessions": history}

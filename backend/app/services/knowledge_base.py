@@ -27,8 +27,7 @@ class KnowledgeBaseService:
     Knowledge Base RAG service using Nova Embeddings and pgvector
     """
     
-    # Nova embedding dimension (nova-multimodal-embedding expects 4096 for images, but text is 1024)
-    # Using 1536 to match the model in DocumentChunk
+    # Titan Text Embedding dimension is 1536
     EMBEDDING_DIMENSION = 1536
     
     def __init__(self):
@@ -38,8 +37,8 @@ class KnowledgeBaseService:
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
-        # Use Nova Embeddings model
-        self.embedding_model_id = "amazon.nova-embedding-v1:0"
+        # Use stable Titan Embeddings model as fallback for Nova
+        self.embedding_model_id = "amazon.titan-embed-text-v1"
     
     def _chunk_text(self, text: str, chunk_size: int = 500, overlap: int = 50) -> List[str]:
         """

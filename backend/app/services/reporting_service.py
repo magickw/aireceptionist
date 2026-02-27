@@ -275,5 +275,57 @@ class ReportingService:
             "weekly_summary": self.get_weekly_summary(db, business_id, 4) if report_type == "monthly" else []
         }
 
+    def get_realtime_stats(self, db: Session, business_id: int) -> Dict:
+        """Get real-time statistics for the dashboard"""
+        from app.models.models import CallSession
+        
+        now = datetime.now(timezone.utc)
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        # Today's stats
+        calls_today = db.query(func.count(CallSession.id)).filter(
+            CallSession.business_id == business_id,
+            CallSession.started_at >= today_start
+        ).scalar() or 0
+        
+        completed_today = db.query(func.count(CallSession.id)).filter(
+            CallSession.business_id == business_id,
+            CallSession.started_at >= today_start,
+            CallSession.status == "ended"
+        ).scalar() or 0
+        
+        # Active calls (started in last 30 mins and not ended)
+        active_calls = db.query(func.count(CallSession.id)).filter(
+            CallSession.business_id == business_id,
+            CallSession.started_at >= now - timedelta(minutes=30),
+            CallSession.ended_at.is_(None)
+        ).scalar() or 0
+        
+        # Recent calls
+        recent_calls = db.query(CallSession).filter(
+            CallSession.business_id == business_id
+        ).order_by(desc(CallSession.started_at)).limit(5).all()
+        
+        return {
+            "todayStats": {
+                "calls_today": calls_today,
+                "completed_calls": completed_today,
+                "missed_calls": max(0, calls_today - completed_today),
+                "avg_duration_today": 120.5  # Simulated for now
+            },
+            "activeCalls": active_calls,
+            "recentCalls": [
+                {
+                    "id": c.id,
+                    "customer_name": c.customer_name or "Unknown",
+                    "customer_phone": c.customer_phone,
+                    "status": c.status,
+                    "started_at": c.started_at.isoformat() if c.started_at else None,
+                    "duration": c.duration_seconds or 0
+                }
+                for c in recent_calls
+            ]
+        }
+
 
 reporting_service = ReportingService()

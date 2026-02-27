@@ -31,8 +31,8 @@ class CustomerIntelligenceService:
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
-        # Using Titan Multimodal Embeddings for text analysis
-        self.embedding_model = "amazon.nova-embed-text-v1:0"
+        # Using Titan Embeddings for stable text analysis
+        self.embedding_model = "amazon.titan-embed-text-v1"
         
         # Initialize prediction models
         self.prediction_models = {}

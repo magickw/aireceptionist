@@ -1861,19 +1861,23 @@ def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str 
             from app.services.sentiment_service import sentiment_service
             async def analyze_and_update():
                 try:
-                    analysis = await sentiment_service.analyze_call_sentiment(summary or "")
-                    score = analysis.get("score", 70)
-                    
-                    # Flag for review if quality is low or sentiment is negative
-                    should_review = score < 60 or sentiment == "negative"
-                    
-                    # Update session with quality metrics (if columns exist)
-                    # For now, just log the high-signal operational result
-                    print(f"[Operational] Call {session_id} quality score: {score}. Needs review: {should_review}")
-                    
-                    if score > 90:
-                        print(f"[Operational] High-quality call {session_id} - distilling for training data.")
-                        # Future: Trigger synthetic training data generation from this call
+                    # Pass the required db and call_id arguments
+                    # We need a new db session for the background task
+                    from app.db.session import SessionLocal
+                    with SessionLocal() as bg_db:
+                        analysis = await sentiment_service.analyze_call_sentiment(bg_db, call_session.id)
+                        score = analysis.get("score", 70)
+                        
+                        # Flag for review if quality is low or sentiment is negative
+                        should_review = score < 60 or sentiment == "negative"
+                        
+                        # Update session with quality metrics (if columns exist)
+                        # For now, just log the high-signal operational result
+                        print(f"[Operational] Call {session_id} quality score: {score}. Needs review: {should_review}")
+                        
+                        if score > 90:
+                            print(f"[Operational] High-quality call {session_id} - distilling for training data.")
+                            # Future: Trigger synthetic training data generation from this call
                 except Exception as ae:
                     print(f"Quality analysis failed: {ae}")
 
