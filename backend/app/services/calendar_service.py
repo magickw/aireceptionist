@@ -660,6 +660,33 @@ Booked via AI Receptionist
                 "message": str
             }
         """
+        # Validate appointment time is within business operating hours
+        from app.models.models import Business
+        business = db.query(Business).filter(Business.id == business_id).first()
+        if business and business.operating_hours:
+            day_of_week = start_time.strftime('%A').lower()
+            day_hours = business.operating_hours.get(day_of_week)
+            
+            if day_hours:
+                try:
+                    start_hour, start_minute = map(int, day_hours["start"].split(':'))
+                    end_hour, end_minute = map(int, day_hours["end"].split(':'))
+                    
+                    day_start = start_time.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+                    day_end = start_time.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+                    
+                    if not (day_start <= start_time < day_end):
+                        return {
+                            "success": False,
+                            "appointment": None,
+                            "calendar_event": None,
+                            "conflicts": [],
+                            "message": f"The requested time is outside our operating hours ({day_hours['start']} - {day_hours['end']}). Please choose a time during business hours."
+                        }
+                except (KeyError, ValueError) as e:
+                    # If operating hours format is invalid, log but don't block
+                    print(f"[Calendar Service] Invalid operating hours format: {e}")
+        
         # Check local database conflicts first (all appointments)
         db_conflicts = self.check_db_conflicts(business_id, start_time, end_time, db)
         

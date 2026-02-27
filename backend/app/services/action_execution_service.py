@@ -93,6 +93,30 @@ class ActionExecutionService:
         if not appointment_time:
             return {"success": False, "message": "Could not parse the date and time."}
 
+        # Validate appointment time is within business operating hours
+        from app.models.models import Business
+        business = self.db.query(Business).filter(Business.id == business_id).first()
+        if business and business.operating_hours:
+            day_of_week = appointment_time.strftime('%A').lower()
+            day_hours = business.operating_hours.get(day_of_week)
+            
+            if day_hours:
+                try:
+                    start_hour, start_minute = map(int, day_hours["start"].split(':'))
+                    end_hour, end_minute = map(int, day_hours["end"].split(':'))
+                    
+                    day_start = appointment_time.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
+                    day_end = appointment_time.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
+                    
+                    if not (day_start <= appointment_time < day_end):
+                        return {
+                            "success": False,
+                            "message": f"The requested time is outside our operating hours ({day_hours['start']} - {day_hours['end']}). Please choose a time during business hours."
+                        }
+                except (KeyError, ValueError) as e:
+                    # If operating hours format is invalid, log but don't block
+                    print(f"[ActionExecution] Invalid operating hours format: {e}")
+
         # Check no-show risk before booking
         risk_assessment = await smart_scheduling_service.predict_no_show_probability(
             self.db, business_id, customer_phone, appointment_time, service

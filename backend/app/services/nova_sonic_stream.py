@@ -442,7 +442,7 @@ class NovaSonicStreamSession:
 
         # --- Sentiment Analysis for Emotion-Responsive Persona ---
         from app.services.sentiment_service import sentiment_service
-        sentiment_result = await sentiment_service.analyze_call_sentiment(transcript)
+        sentiment_result = await sentiment_service.analyze_text_ai(transcript, context="phone call")
         self.current_sentiment = sentiment_result.get("sentiment", "neutral")
         
         # Stop filler task before starting AI response
