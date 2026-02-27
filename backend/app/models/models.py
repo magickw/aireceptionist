@@ -19,6 +19,8 @@ class User(Base):
     password_reset_token = Column(Text)
     password_reset_expires = Column(DateTime)
     last_login = Column(DateTime)
+    failed_login_attempts = Column(Integer, default=0)
+    locked_until = Column(DateTime)
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 

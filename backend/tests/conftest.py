@@ -96,3 +96,16 @@ def unauthenticated_client(mock_db):
         yield c
 
     app.dependency_overrides.clear()
+
+
+@pytest.fixture
+def admin_client(mock_db, mock_admin_user):
+    """Authenticated TestClient with admin user."""
+    app.dependency_overrides[get_db] = lambda: mock_db
+    app.dependency_overrides[get_current_user] = lambda: mock_admin_user
+    app.dependency_overrides[get_current_active_user] = lambda: mock_admin_user
+
+    with TestClient(app) as c:
+        yield c
+
+    app.dependency_overrides.clear()

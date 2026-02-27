@@ -1,5 +1,5 @@
 from typing import List, Any
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.api import deps
@@ -11,8 +11,8 @@ router = APIRouter()
 @router.get("/", response_model=List[CallSessionSchema])
 def read_call_logs(
     db: Session = Depends(deps.get_db),
-    skip: int = 0,
-    limit: int = 100,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     business_id: int = None,
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:

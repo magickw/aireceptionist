@@ -1,16 +1,19 @@
 from typing import Any, List, Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 
 from app.api import deps
 from app.models.models import Order, OrderItem, User
 from app.schemas.order import OrderCreate, OrderUpdate, OrderResponse, OrderItemResponse
+from app.services.audit_service import create_audit_log
 
 router = APIRouter()
 
 @router.get("/", response_model=List[OrderResponse])
 def read_orders(
     business_id: Optional[int] = Query(None),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
@@ -26,7 +29,14 @@ def read_orders(
             )
         business_id = current_user.businesses[0].id
 
-    orders = db.query(Order).filter(Order.business_id == business_id).all()
+    orders = (
+        db.query(Order)
+        .filter(Order.business_id == business_id)
+        .order_by(Order.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     return orders
 
 @router.get("/{order_id}", response_model=OrderResponse)
@@ -53,6 +63,7 @@ def read_order_by_id(
 @router.post("/", response_model=OrderResponse, status_code=status.HTTP_201_CREATED)
 def create_order(
     *,
+    request: Request,
     db: Session = Depends(deps.get_db),
     order_in: OrderCreate,
     current_user: User = Depends(deps.get_current_active_user),
@@ -99,7 +110,18 @@ def create_order(
     for order_item in order_items_list:
         order_item.order_id = db_order.id
         db.add(order_item)
-    
+
+    create_audit_log(
+        db,
+        user_id=current_user.id,
+        business_id=business_id,
+        operation="order.create",
+        resource_type="order",
+        resource_id=db_order.id,
+        new_values=order_in.model_dump(mode="json"),
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     db.commit()
     db.refresh(db_order)
     return db_order
@@ -107,6 +129,7 @@ def create_order(
 @router.put("/{order_id}", response_model=OrderResponse)
 def update_order(
     *,
+    request: Request,
     db: Session = Depends(deps.get_db),
     order_id: int,
     order_in: OrderUpdate,
@@ -126,10 +149,23 @@ def update_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    old_values = {"status": order.status, "notes": order.notes}
     update_data = order_in.model_dump(exclude_unset=True)
     for field in update_data:
         setattr(order, field, update_data[field])
 
+    create_audit_log(
+        db,
+        user_id=current_user.id,
+        business_id=business_id,
+        operation="order.update",
+        resource_type="order",
+        resource_id=order_id,
+        old_values=old_values,
+        new_values=update_data,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     db.add(order)
     db.commit()
     db.refresh(order)
@@ -138,6 +174,7 @@ def update_order(
 @router.delete("/{order_id}")
 def delete_order(
     *,
+    request: Request,
     db: Session = Depends(deps.get_db),
     order_id: int,
     current_user: User = Depends(deps.get_current_active_user),
@@ -156,6 +193,16 @@ def delete_order(
     if not order:
         raise HTTPException(status_code=404, detail="Order not found")
 
+    create_audit_log(
+        db,
+        user_id=current_user.id,
+        business_id=business_id,
+        operation="order.delete",
+        resource_type="order",
+        resource_id=order_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     db.delete(order)
     db.commit()
     return None

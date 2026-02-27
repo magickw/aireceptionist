@@ -1,6 +1,6 @@
 from datetime import timedelta, datetime, timezone
 from typing import Any
-from fastapi import APIRouter, Depends, HTTPException, status, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, status, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 
@@ -10,8 +10,12 @@ from app.core.config import settings
 from app.core.rate_limiter import limiter
 from app.models.models import User, RefreshToken
 from app.schemas.user import Token, UserCreate, User as UserSchema, UserLogin, RefreshRequest
+from app.services.audit_service import create_audit_log
 
 router = APIRouter()
+
+MAX_FAILED_ATTEMPTS = 5
+LOCKOUT_DURATION_MINUTES = 15
 
 @router.post("/signup", response_model=UserSchema)
 @limiter.limit("3/minute")
@@ -40,6 +44,15 @@ def create_user(
         status="active"
     )
     db.add(db_user)
+    create_audit_log(
+        db,
+        user_id=None,
+        operation="user.signup",
+        resource_type="user",
+        new_values={"email": user_in.email, "name": user_in.name, "role": user_in.role},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     db.commit()
     db.refresh(db_user)
     return db_user
@@ -56,13 +69,41 @@ def login_access_token(
     """
     try:
         user = db.query(User).filter(User.email == user_login.email).first()
+
+        # Check account lockout
+        if user and user.locked_until and user.locked_until > datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=423,
+                detail="Account temporarily locked due to too many failed login attempts. Try again later.",
+            )
+
         if not user or not security.verify_password(user_login.password, user.password):
+            # Increment failed attempts if user exists
+            if user:
+                user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
+                if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
+                    user.locked_until = datetime.now(timezone.utc) + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
+                    create_audit_log(
+                        db,
+                        user_id=user.id,
+                        operation="user.account_locked",
+                        resource_type="user",
+                        resource_id=user.id,
+                        new_values={"failed_attempts": user.failed_login_attempts},
+                        ip_address=request.client.host if request.client else None,
+                        user_agent=request.headers.get("user-agent"),
+                    )
+                db.commit()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
             )
         elif user.status != "active":
             raise HTTPException(status_code=400, detail="Inactive user")
+
+        # Successful login — reset lockout counters
+        user.failed_login_attempts = 0
+        user.locked_until = None
 
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = security.create_access_token(
@@ -77,6 +118,15 @@ def login_access_token(
             expires_at=datetime.now(timezone.utc) + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
         )
         db.add(db_refresh)
+        create_audit_log(
+            db,
+            user_id=user.id,
+            operation="user.login",
+            resource_type="user",
+            resource_id=user.id,
+            ip_address=request.client.host if request.client else None,
+            user_agent=request.headers.get("user-agent"),
+        )
         db.commit()
 
         return {
@@ -164,6 +214,7 @@ def logout(
 @router.post("/approve-user/{user_id}", response_model=UserSchema)
 async def approve_user(
     user_id: int,
+    request: Request,
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
@@ -174,17 +225,30 @@ async def approve_user(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     user.status = "active"
+    create_audit_log(
+        db,
+        user_id=current_user.id,
+        operation="user.approve",
+        resource_type="user",
+        resource_id=user_id,
+        old_values={"status": "pending"},
+        new_values={"status": "active"},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     db.commit()
     db.refresh(user)
     return user
 
 @router.get("/pending-users")
 async def list_pending_users(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ):
     """Admin-only: list users awaiting approval"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    pending = db.query(User).filter(User.status == "pending").all()
+    pending = db.query(User).filter(User.status == "pending").offset(skip).limit(limit).all()
     return [{"id": u.id, "email": u.email, "name": u.name, "created_at": u.created_at} for u in pending]

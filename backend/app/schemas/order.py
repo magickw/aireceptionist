@@ -1,13 +1,13 @@
 from typing import List, Optional
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 class OrderItemBase(BaseModel):
     menu_item_id: Optional[int] = None
-    item_name: str
-    quantity: int = 1
-    unit_price: float
-    notes: Optional[str] = None
+    item_name: str = Field(..., min_length=1, max_length=255)
+    quantity: int = Field(1, ge=1, le=9999)
+    unit_price: float = Field(..., ge=0)
+    notes: Optional[str] = Field(None, max_length=1000)
 
 class OrderItemCreate(OrderItemBase):
     pass
@@ -24,12 +24,12 @@ class OrderItemResponse(OrderItemBase):
         from_attributes = True
 
 class OrderBase(BaseModel):
-    customer_name: Optional[str] = None
-    customer_phone: Optional[str] = None
-    status: str = "pending"
+    customer_name: Optional[str] = Field(None, max_length=255)
+    customer_phone: Optional[str] = Field(None, max_length=20)
+    status: str = Field("pending", pattern=r"^(pending|confirmed|preparing|ready|completed|cancelled)$")
     delivery_method: Optional[str] = None
     delivery_address: Optional[str] = None
-    notes: Optional[str] = None
+    notes: Optional[str] = Field(None, max_length=1000)
     call_session_id: Optional[str] = None
 
 class OrderCreate(OrderBase):

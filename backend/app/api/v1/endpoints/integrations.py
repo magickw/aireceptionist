@@ -1,5 +1,5 @@
 from typing import Any, List, Optional, Dict
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, status
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -7,6 +7,7 @@ from app.api import deps
 from app.models.models import Integration as IntegrationModel, User, Business
 from app.services.integration_service import IntegrationService, get_integration_instance, BaseIntegration
 from app.core.encryption import encryption_service
+from app.services.audit_service import create_audit_log
 
 router = APIRouter()
 
@@ -38,6 +39,7 @@ class IntegrationResponse(IntegrationBase):
 @router.post("/", response_model=IntegrationResponse, status_code=status.HTTP_201_CREATED)
 async def create_integration(
     integration_in: IntegrationCreate,
+    request: Request,
     business_id: int = Depends(deps.get_current_business_id),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -89,19 +91,40 @@ async def create_integration(
     db.add(db_integration)
     db.commit()
     db.refresh(db_integration)
-    
+
+    create_audit_log(
+        db,
+        user_id=current_user.id,
+        business_id=business_id,
+        operation="integration.create",
+        resource_type="integration",
+        resource_id=db_integration.id,
+        new_values={"integration_type": integration_in.integration_type, "name": integration_in.name},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
+    db.commit()
+
     # Do not return credentials in the response
     db_integration.credentials = {}
     return db_integration
 
 @router.get("/", response_model=List[IntegrationResponse])
 def read_integrations(
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     business_id: int = Depends(deps.get_current_business_id),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> Any:
     """Retrieve all integrations for a business."""
-    integrations = db.query(IntegrationModel).filter(IntegrationModel.business_id == business_id).all()
+    integrations = (
+        db.query(IntegrationModel)
+        .filter(IntegrationModel.business_id == business_id)
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
     # Ensure credentials are not returned
     for integration in integrations:
         integration.credentials = {}
@@ -130,6 +153,7 @@ def read_integration_by_id(
 async def update_integration(
     integration_id: int,
     integration_in: IntegrationUpdate,
+    request: Request,
     business_id: int = Depends(deps.get_current_business_id),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -180,6 +204,17 @@ async def update_integration(
             print(f"Integration reconnection error: {e}")
 
     db.add(db_integration) # Re-add to ensure status update is picked up
+    create_audit_log(
+        db,
+        user_id=current_user.id,
+        business_id=business_id,
+        operation="integration.update",
+        resource_type="integration",
+        resource_id=integration_id,
+        new_values={"integration_type": db_integration.integration_type, "name": db_integration.name, "status": db_integration.status},
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     db.commit()
     db.refresh(db_integration)
     
@@ -190,6 +225,7 @@ async def update_integration(
 @router.delete("/{integration_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_integration(
     integration_id: int,
+    request: Request,
     business_id: int = Depends(deps.get_current_business_id),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
@@ -203,5 +239,15 @@ def delete_integration(
     if not db_integration:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Integration not found")
 
+    create_audit_log(
+        db,
+        user_id=current_user.id,
+        business_id=business_id,
+        operation="integration.delete",
+        resource_type="integration",
+        resource_id=integration_id,
+        ip_address=request.client.host if request.client else None,
+        user_agent=request.headers.get("user-agent"),
+    )
     db.delete(db_integration)
     db.commit()

@@ -1,3 +1,4 @@
+import logging
 import os
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -5,19 +6,27 @@ from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
 from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments, customer_360, revenue_analytics, smart_scheduling, builtin_calendar
 from app.core.config import settings
+from app.core.exceptions import register_exception_handlers
+from app.core.middleware import RequestLoggingMiddleware
+from app.core.security_headers import SecurityHeadersMiddleware
 from app.core.rate_limiter import limiter
 from app.db.session import engine
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
 
 app = FastAPI(
     title=settings.PROJECT_NAME,
     openapi_url=f"{settings.API_V1_STR}/openapi.json",
 )
 
+# Register global exception handlers
+register_exception_handlers(app)
+
 
 @app.on_event("startup")
 async def startup_event():
-    """Ensure refresh_tokens table exists on startup"""
+    """Ensure refresh_tokens table exists on startup and clean up stale tokens."""
     try:
         with engine.connect() as conn:
             # Check if refresh_tokens table exists
@@ -28,7 +37,7 @@ async def startup_event():
                 )
             """))
             table_exists = result.scalar()
-            
+
             if not table_exists:
                 print("[Startup] Creating refresh_tokens table...")
                 conn.execute(text("""
@@ -51,8 +60,30 @@ async def startup_event():
                 print("[Startup] refresh_tokens table created successfully")
             else:
                 print("[Startup] refresh_tokens table already exists")
+
+            # Clean up stale refresh tokens
+            try:
+                result = conn.execute(text("""
+                    DELETE FROM refresh_tokens
+                    WHERE revoked = TRUE OR expires_at < NOW() - INTERVAL '7 days'
+                """))
+                conn.commit()
+                deleted = result.rowcount
+                if deleted:
+                    logger.info("[Startup] Cleaned up %d stale refresh tokens", deleted)
+            except Exception as e:
+                logger.warning("[Startup] Token cleanup skipped: %s", e)
     except Exception as e:
         print(f"[Startup] Error checking/creating refresh_tokens table: {e}")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Dispose database connection pool on shutdown."""
+    try:
+        engine.dispose()
+        logger.info("[Shutdown] Database connection pool disposed")
+    except Exception as e:
+        logger.error("[Shutdown] Error disposing connection pool: %s", e)
 
 # Rate limiting
 app.state.limiter = limiter
@@ -81,10 +112,16 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-    expose_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "Origin", "X-Requested-With"],
+    expose_headers=["Content-Length", "X-Request-Id"],
 )
+
+# Request logging middleware (after CORS so preflight is handled first)
+app.add_middleware(RequestLoggingMiddleware)
+
+# Security headers on all responses
+app.add_middleware(SecurityHeadersMiddleware)
 
 app.include_router(auth.router, prefix=f"{settings.API_V1_STR}/auth", tags=["auth"])
 app.include_router(businesses.router, prefix=f"{settings.API_V1_STR}/businesses", tags=["businesses"])
@@ -130,14 +167,20 @@ def health_check():
     try:
         from app.db.session import engine
         with engine.connect() as conn:
-            return {
-                "status": "healthy",
-                "database": "connected",
-                "api_version": "1.0.0"
-            }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "database": "disconnected",
-            "error": str(e)
-        }
+            conn.execute(text("SELECT 1"))
+            return JSONResponse(
+                status_code=200,
+                content={
+                    "status": "healthy",
+                    "database": "connected",
+                    "api_version": "1.0.0"
+                },
+            )
+    except Exception:
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "database": "disconnected",
+            },
+        )

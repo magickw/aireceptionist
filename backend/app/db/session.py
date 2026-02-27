@@ -17,7 +17,7 @@ safe_url = re.sub(r'://([^:]+):([^@]+)@', r'://\1:****@', database_url)
 logger.info(f"Connecting to database: {safe_url}")
 
 try:
-    engine = create_engine(database_url, pool_pre_ping=True, pool_size=5, max_overflow=10)
+    engine = create_engine(database_url, pool_pre_ping=True, pool_size=5, max_overflow=10, pool_recycle=1800, pool_timeout=30)
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     
     # Test connection

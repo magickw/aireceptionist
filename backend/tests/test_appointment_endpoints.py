@@ -32,7 +32,7 @@ class TestListAppointments:
         # First query().filter() call is for business ownership check
         # Second query().filter() call is for appointments list
         mock_db.query.return_value.filter.return_value.first.return_value = business
-        mock_db.query.return_value.filter.return_value.all.return_value = [appt]
+        mock_db.query.return_value.filter.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [appt]
 
         response = client.get("/api/appointments/business/1")
         assert response.status_code == 200
@@ -83,7 +83,7 @@ class TestCreateAppointment:
         data = response.json()
         assert data["customer_name"] == "Bob"
         assert data["service_type"] == "Haircut"
-        mock_db.add.assert_called_once()
+        mock_db.add.assert_called()
         mock_db.commit.assert_called_once()
 
     def test_create_permission_denied(self, client, mock_db):

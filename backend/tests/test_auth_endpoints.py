@@ -32,7 +32,7 @@ class TestSignup:
         response = unauthenticated_client.post("/api/auth/signup", json={
             "email": "new@example.com",
             "name": "New User",
-            "password": "secret123",
+            "password": "Secret123",
         })
         assert response.status_code == 200
         data = response.json()
@@ -47,7 +47,7 @@ class TestSignup:
         response = unauthenticated_client.post("/api/auth/signup", json={
             "email": "existing@example.com",
             "name": "Dup User",
-            "password": "secret123",
+            "password": "Secret123",
         })
         assert response.status_code == 400
         assert "already exists" in response.json()["detail"]
@@ -61,6 +61,8 @@ class TestLogin:
         user.email = "test@example.com"
         user.password = "hashed"
         user.status = "active"
+        user.locked_until = None
+        user.failed_login_attempts = 0
         mock_db.query.return_value.filter.return_value.first.return_value = user
 
         mock_security.verify_password.return_value = True
@@ -84,6 +86,8 @@ class TestLogin:
         user.email = "test@example.com"
         user.password = "hashed"
         user.status = "active"
+        user.locked_until = None
+        user.failed_login_attempts = 0
         mock_db.query.return_value.filter.return_value.first.return_value = user
 
         mock_security.verify_password.return_value = False

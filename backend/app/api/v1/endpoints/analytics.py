@@ -1,11 +1,11 @@
 from typing import Any, Dict, List
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
 from app.api import deps
-from app.models.models import User, CallSession, Appointment, Order
+from app.models.models import User, Business, CallSession, Appointment, Order
 
 router = APIRouter()
 
@@ -19,6 +19,11 @@ def get_analytics(
     """
     Get comprehensive analytics for a business.
     """
+    if current_user.role != "admin":
+        business = db.query(Business).filter(Business.id == business_id).first()
+        if not business or business.user_id != current_user.id:
+            raise HTTPException(status_code=400, detail="Not enough permissions")
+
     # Calculate date range based on timeframe
     days = 7 if timeframe == '7d' else 30 if timeframe == '30d' else 90
     start_date = datetime.now(timezone.utc) - timedelta(days=days)
@@ -90,10 +95,15 @@ def get_revenue_analytics(
     current_user: User = Depends(deps.get_current_active_user),
     db: Session = Depends(deps.get_db),
 ) -> Any:
+    if current_user.role != "admin":
+        business = db.query(Business).filter(Business.id == business_id).first()
+        if not business or business.user_id != current_user.id:
+            raise HTTPException(status_code=400, detail="Not enough permissions")
+
     # Calculate date range
     days = 7 if timeframe == '7d' else 30 if timeframe == '30d' else 90
     start_date = datetime.now(timezone.utc) - timedelta(days=days)
-    
+
     # Query orders for revenue
     orders = db.query(Order).filter(
         Order.business_id == business_id,
@@ -139,6 +149,11 @@ def get_realtime_analytics(
     db: Session = Depends(deps.get_db),
 ) -> Any:
     """Get realtime analytics including active calls."""
+    if current_user.role != "admin":
+        business = db.query(Business).filter(Business.id == business_id).first()
+        if not business or business.user_id != current_user.id:
+            raise HTTPException(status_code=400, detail="Not enough permissions")
+
     # Get active calls
     active_calls = db.query(CallSession).filter(
         CallSession.business_id == business_id,
@@ -188,6 +203,11 @@ def get_active_calls(
     db: Session = Depends(deps.get_db),
 ) -> Any:
     """Get list of currently active calls."""
+    if current_user.role != "admin":
+        business = db.query(Business).filter(Business.id == business_id).first()
+        if not business or business.user_id != current_user.id:
+            raise HTTPException(status_code=400, detail="Not enough permissions")
+
     active_calls = db.query(CallSession).filter(
         CallSession.business_id == business_id,
         CallSession.status == 'active'

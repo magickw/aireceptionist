@@ -2,7 +2,7 @@
 Menu API endpoints for managing business menus (restaurants, retail, etc.)
 """
 from typing import List, Optional
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
@@ -54,19 +54,21 @@ def read_menu_items(
     business_id: int,
     category: Optional[str] = None,
     available_only: bool = False,
+    skip: int = Query(0, ge=0),
+    limit: int = Query(50, ge=1, le=100),
     db: Session = Depends(deps.get_db),
     current_user: User = Depends(deps.get_current_active_user),
 ) -> List[MenuItem]:
     """Get all menu items for a business"""
     query = db.query(MenuItem).filter(MenuItem.business_id == business_id)
-    
+
     if category:
         query = query.filter(MenuItem.category == category)
-    
+
     if available_only:
         query = query.filter(MenuItem.available == True)
-    
-    return query.filter(MenuItem.is_active == True).order_by(MenuItem.category, MenuItem.name).all()
+
+    return query.filter(MenuItem.is_active == True).order_by(MenuItem.category, MenuItem.name).offset(skip).limit(limit).all()
 
 
 @router.post("/", response_model=MenuItemResponse)

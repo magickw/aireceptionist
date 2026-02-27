@@ -1,7 +1,7 @@
 """Tests for order endpoints: list, get, create, update, delete, 404 handling."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from datetime import datetime, timezone
 from decimal import Decimal
 
@@ -25,7 +25,7 @@ class TestListOrders:
         order.updated_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
         order.items = []
 
-        mock_db.query.return_value.filter.return_value.all.return_value = [order]
+        mock_db.query.return_value.filter.return_value.order_by.return_value.offset.return_value.limit.return_value.all.return_value = [order]
 
         response = client.get("/api/orders/", params={"business_id": 1})
         assert response.status_code == 200
@@ -68,44 +68,48 @@ class TestGetOrder:
 
 
 class TestCreateOrder:
-    def test_create_with_items(self, client, mock_db, mock_user):
-        def fake_refresh(obj):
-            obj.id = 10
-            obj.business_id = 1
-            obj.customer_name = "Charlie"
-            obj.customer_phone = "555-0003"
-            obj.status = "pending"
-            obj.total_amount = 34.97
-            obj.delivery_method = None
-            obj.delivery_address = None
-            obj.notes = "Ring the bell"
-            obj.call_session_id = None
-            obj.created_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
-            obj.updated_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
+    @patch("app.api.v1.endpoints.orders.OrderItem")
+    @patch("app.api.v1.endpoints.orders.Order")
+    def test_create_with_items(self, MockOrder, MockOrderItem, client, mock_db, mock_user):
+        # Create the mock order that the Order() constructor returns
+        mock_order = MagicMock()
+        mock_order.id = 10
+        mock_order.business_id = 1
+        mock_order.customer_name = "Charlie"
+        mock_order.customer_phone = "555-0003"
+        mock_order.status = "pending"
+        mock_order.total_amount = 34.97
+        mock_order.delivery_method = None
+        mock_order.delivery_address = None
+        mock_order.notes = "Ring the bell"
+        mock_order.call_session_id = None
+        mock_order.created_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
+        mock_order.updated_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
 
-            item1 = MagicMock(spec=OrderItem)
-            item1.id = 1
-            item1.order_id = 10
-            item1.menu_item_id = 1
-            item1.item_name = "Burger"
-            item1.quantity = 2
-            item1.unit_price = 12.99
-            item1.notes = None
-            item1.created_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
+        item1 = MagicMock()
+        item1.id = 1
+        item1.order_id = 10
+        item1.menu_item_id = 1
+        item1.item_name = "Burger"
+        item1.quantity = 2
+        item1.unit_price = 12.99
+        item1.notes = None
+        item1.created_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
 
-            item2 = MagicMock(spec=OrderItem)
-            item2.id = 2
-            item2.order_id = 10
-            item2.menu_item_id = 2
-            item2.item_name = "Salad"
-            item2.quantity = 1
-            item2.unit_price = 8.99
-            item2.notes = "No croutons"
-            item2.created_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
+        item2 = MagicMock()
+        item2.id = 2
+        item2.order_id = 10
+        item2.menu_item_id = 2
+        item2.item_name = "Salad"
+        item2.quantity = 1
+        item2.unit_price = 8.99
+        item2.notes = "No croutons"
+        item2.created_at = datetime(2026, 2, 25, tzinfo=timezone.utc)
 
-            obj.items = [item1, item2]
+        mock_order.items = [item1, item2]
 
-        mock_db.refresh = fake_refresh
+        MockOrder.return_value = mock_order
+        MockOrderItem.side_effect = lambda **kwargs: MagicMock(**kwargs)
 
         response = client.post("/api/orders/", json={
             "customer_name": "Charlie",
