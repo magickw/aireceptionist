@@ -839,7 +839,349 @@ BUSINESS_TEMPLATES = {
 """,
         "example_responses": {
             "enrollment_inquiry": "I can help with enrollment. What grade level or subject area are you interested in?",
-            "tutoring_request": "I'd love to help with tutoring. What subject does the student need help with?",
+            "schedule_session": "I'd love to help with tutoring. What subject does the student need help with?",
+        }
+    },
+    "pet_services": {
+        "name": "Pet Services",
+        "icon": "pets",
+        "description": "Veterinary, grooming, and boarding services for pets",
+        "autonomy_level": "HIGH",
+        "risk_profile": {
+            "high_risk_intents": ["medical_emergency", "lost_pet", "aggressive_behavior"],
+            "auto_escalate_threshold": 0.6,
+            "confidence_threshold": 0.5,
+        },
+        "common_intents": [
+            "book_grooming", "book_boarding", "vet_appointment",
+            "vaccination_inquiry", "pricing_inquiry", "hours_inquiry",
+            "pet_walking", "training_session", "emergency_vet"
+        ],
+        "fields": {
+            "pet_name": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What's your pet's name?"
+            },
+            "pet_type": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What kind of pet is it? (dog, cat, etc.)"
+            },
+            "service_type": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What service do you need?"
+            },
+            "appointment_time": {
+                "required": True,
+                "validation": "future_date",
+                "prompt": "When would you like to schedule?"
+            },
+            "phone": {
+                "required": True,
+                "validation": "phone",
+                "prompt": "What's the best number to reach you?"
+            },
+        },
+        "booking_flow": {
+            "type": "appointment",
+            "steps": [
+                {"field": "pet_name", "ask_if_missing": True},
+                {"field": "pet_type", "ask_if_missing": True},
+                {"field": "service_type", "ask_if_missing": True},
+                {"field": "appointment_time", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+            ],
+            "final_action": "CREATE_APPOINTMENT",
+            "confirmation_message": "Confirmed! {pet_name} is scheduled for {service_type} on {appointment_time}.",
+        },
+        "system_prompt_addition": """
+## Pet Services Guidelines:
+- Collect pet name and type.
+- For medical emergencies or aggressive behavior, escalate to human immediately.
+- Mention current promotions if applicable.
+""",
+        "example_responses": {
+            "book_grooming": "I'd be happy to book grooming for your pet. What's your pet's name and type?",
+            "emergency_vet": "For medical emergencies, please bring your pet in immediately. I'll alert our veterinary team.",
+        }
+    },
+    "banking": {
+        "name": "Banking / Financial Institution",
+        "icon": "account_balance",
+        "description": "Banking services including accounts, loans, and financial products",
+        "autonomy_level": "RESTRICTED",
+        "risk_profile": {
+            "high_risk_intents": ["fraud_report", "suspicious_activity", "lost_card", "stolen_card", "unauthorized_transaction", "security_breach"],
+            "auto_escalate_threshold": 0.4,
+            "confidence_threshold": 0.8,
+        },
+        "common_intents": [
+            "account_inquiry", "balance_inquiry", "transaction_inquiry", "loan_application",
+            "mortgage_inquiry", "credit_card_application", "debit_card_issue", "atm_issue",
+            "wire_transfer", "bill_payment", "branch_appointment", "investment_inquiry",
+            "savings_account", "checking_account", "online_banking_help", "mobile_banking_issue"
+        ],
+        "fields": {
+            "customer_name": {
+                "required": True,
+                "validation": "string",
+                "prompt": "May I have your name?"
+            },
+            "phone": {
+                "required": True,
+                "validation": "phone",
+                "prompt": "What's the best number to reach you?"
+            },
+            "account_number": {
+                "required": False,
+                "validation": "account_number",
+                "prompt": "What's your account number? (Last 4 digits for verification)",
+                "for_intents": ["account_inquiry", "balance_inquiry", "transaction_inquiry"]
+            },
+            "service_type": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What banking service do you need?"
+            },
+            "preferred_date": {
+                "required": False,
+                "validation": "future_date",
+                "prompt": "When would you like to visit the branch?",
+                "for_intents": ["branch_appointment", "loan_application"]
+            },
+            "preferred_time": {
+                "required": False,
+                "validation": "string",
+                "prompt": "What time works best?",
+                "for_intents": ["branch_appointment", "loan_application"]
+            },
+        },
+        "booking_flow": {
+            "type": "appointment",
+            "steps": [
+                {"field": "customer_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "service_type", "ask_if_missing": True},
+                {"field": "account_number", "ask_if_missing": False},
+                {"field": "preferred_date", "ask_if_missing": False},
+                {"field": "preferred_time", "ask_if_missing": False},
+            ],
+            "final_action": "CREATE_APPOINTMENT",
+            "confirmation_message": "Your {service_type} is confirmed for {preferred_date} at {preferred_time}. Please bring valid ID.",
+        },
+        "system_prompt_addition": """
+## Banking-Specific Guidelines:
+- CRITICAL SECURITY: Never ask for full account numbers, SSNs, PINs, or passwords over the phone.
+- For fraud reports, lost/stolen cards, or suspicious activity - ESCALATE IMMEDIATELY to fraud department.
+- For unauthorized transactions, guide customer to file a dispute form.
+- Provide general account information only (no full account numbers or balances without verification).
+- For loan/mortgage applications, collect basic info and schedule branch appointment.
+- **DO NOT provide financial advice** - Only provide product information.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- For online/mobile banking issues, provide basic troubleshooting or schedule tech support.
+""",
+        "example_responses": {
+            "account_inquiry": "I can help with your account. What would you like to know? (Note: I cannot provide full account numbers or detailed balances without proper verification)",
+            "fraud_report": "For fraud reports or suspicious activity, I'm connecting you with our fraud department immediately. They'll help secure your account.",
+            "branch_appointment": "I'd be happy to schedule an appointment at a branch. What service do you need and when would you like to visit?",
+        }
+    },
+    "insurance": {
+        "name": "Insurance Agency",
+        "icon": "security",
+        "description": "Insurance services including claims, policies, and coverage",
+        "autonomy_level": "RESTRICTED",
+        "risk_profile": {
+            "high_risk_intents": ["claim_dispute", "denied_claim", "coverage_denial", "legal_question", "fraud_report", "liability_issue"],
+            "auto_escalate_threshold": 0.4,
+            "confidence_threshold": 0.8,
+        },
+        "common_intents": [
+            "file_claim", "policy_inquiry", "coverage_inquiry", "quote_request",
+            "premium_inquiry", "payment_inquiry", "renewal_inquiry", "cancellation_inquiry",
+            "policy_change", "add_coverage", "remove_coverage", "deductible_inquiry",
+            "agent_appointment", "claim_status", "document_request", "proof_of_insurance"
+        ],
+        "fields": {
+            "customer_name": {
+                "required": True,
+                "validation": "string",
+                "prompt": "May I have your name?"
+            },
+            "phone": {
+                "required": True,
+                "validation": "phone",
+                "prompt": "What's the best number to reach you?"
+            },
+            "policy_number": {
+                "required": False,
+                "validation": "policy_number",
+                "prompt": "What's your policy number?"
+            },
+            "service_type": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What insurance service do you need?"
+            },
+            "claim_details": {
+                "required": False,
+                "validation": "string",
+                "prompt": "Can you provide details about the incident?",
+                "for_intents": ["file_claim"]
+            },
+            "preferred_date": {
+                "required": False,
+                "validation": "future_date",
+                "prompt": "When would you like to meet with an agent?",
+                "for_intents": ["agent_appointment"]
+            },
+            "preferred_time": {
+                "required": False,
+                "validation": "string",
+                "prompt": "What time works best?",
+                "for_intents": ["agent_appointment"]
+            },
+        },
+        "booking_flow": {
+            "type": "appointment",
+            "steps": [
+                {"field": "customer_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "service_type", "ask_if_missing": True},
+                {"field": "policy_number", "ask_if_missing": False},
+                {"field": "claim_details", "ask_if_missing": False},
+                {"field": "preferred_date", "ask_if_missing": False},
+                {"field": "preferred_time", "ask_if_missing": False},
+            ],
+            "final_action": "CREATE_APPOINTMENT",
+            "confirmation_message": "Your {service_type} is confirmed for {preferred_date} at {preferred_time}. Please bring your policy documents.",
+        },
+        "system_prompt_addition": """
+## Insurance-Specific Guidelines:
+- CRITICAL COMPLIANCE: Never provide legal advice or interpret policy language that could be considered legal advice.
+- For claim disputes, denied claims, or liability issues - ESCALATE to claims adjuster or agent.
+- For filing claims, collect basic incident details and guide through the claims process.
+- Provide general policy information and coverage details.
+- For quotes, collect basic information and connect with an agent for personalized quotes.
+- **DO NOT guarantee coverage** - Always advise customers to review their policy documents.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- For payment inquiries, provide account info or connect to billing department.
+- For proof of insurance requests, provide general guidance on how to obtain documents.
+""",
+        "example_responses": {
+            "file_claim": "I'm sorry to hear about your incident. Let me help you file a claim. What happened and when? (I'll collect basic details and connect you with our claims team)",
+            "policy_inquiry": "I can help with your policy inquiry. What would you like to know about your coverage?",
+            "claim_dispute": "For claim disputes or denied claims, I need to connect you with a claims adjuster who can review your case. Let me transfer you.",
+        }
+    },
+    "veterinary": {
+        "name": "Veterinary Clinic",
+        "icon": "local_veterinarian",
+        "description": "Veterinary medical services for pets and animals",
+        "autonomy_level": "RESTRICTED",
+        "risk_profile": {
+            "high_risk_intents": ["medical_emergency", "severe_symptoms", "poisoning", "trauma", "difficulty_breathing", "seizure", "unconscious"],
+            "auto_escalate_threshold": 0.3,
+            "confidence_threshold": 0.85,
+        },
+        "common_intents": [
+            "book_appointment", "wellness_exam", "vaccination", "surgery_consultation",
+            "symptoms_inquiry", "prescription_refill", "lab_results", "dental_care",
+            "grooming_inquiry", "boarding_inquiry", "nutrition_consultation", "behavioral_consultation",
+            "end_of_life_consultation", "microchip", "spay_neuter", "emergency_care"
+        ],
+        "fields": {
+            "owner_name": {
+                "required": True,
+                "validation": "string",
+                "prompt": "May I have your name?"
+            },
+            "phone": {
+                "required": True,
+                "validation": "phone",
+                "prompt": "What's the best number to reach you?"
+            },
+            "pet_name": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What's your pet's name?"
+            },
+            "pet_type": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What type of pet is it? (dog, cat, etc.)"
+            },
+            "pet_breed": {
+                "required": False,
+                "validation": "string",
+                "prompt": "What breed is your pet?"
+            },
+            "pet_age": {
+                "required": False,
+                "validation": "string",
+                "prompt": "How old is your pet?"
+            },
+            "service_type": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What veterinary service do you need?"
+            },
+            "symptoms": {
+                "required": False,
+                "validation": "string",
+                "prompt": "Can you describe your pet's symptoms?",
+                "for_intents": ["symptoms_inquiry", "emergency_care"]
+            },
+            "preferred_date": {
+                "required": True,
+                "validation": "future_date",
+                "prompt": "What date works for the appointment?"
+            },
+            "preferred_time": {
+                "required": True,
+                "validation": "string",
+                "prompt": "What time works best?"
+            },
+        },
+        "booking_flow": {
+            "type": "appointment",
+            "steps": [
+                {"field": "owner_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "pet_name", "ask_if_missing": True},
+                {"field": "pet_type", "ask_if_missing": True},
+                {"field": "pet_breed", "ask_if_missing": False},
+                {"field": "pet_age", "ask_if_missing": False},
+                {"field": "service_type", "ask_if_missing": True},
+                {"field": "symptoms", "ask_if_missing": False},
+                {"field": "preferred_date", "ask_if_missing": True},
+                {"field": "preferred_time", "ask_if_missing": True},
+            ],
+            "final_action": "CREATE_APPOINTMENT",
+            "confirmation_message": "Your appointment for {pet_name} ({pet_type}) for {service_type} is confirmed for {preferred_date} at {preferred_time}. Please bring vaccination records.",
+        },
+        "system_prompt_addition": """
+## Veterinary Clinic-Specific Guidelines:
+- CRITICAL SAFETY: For medical emergencies (difficulty breathing, seizures, trauma, poisoning, unconscious) - ADVISE IMMEDIATE TRANSPORT TO CLINIC and ESCALATE to veterinary team.
+- **DO NOT provide medical diagnosis or treatment advice** - Only schedule appointments and provide general information.
+- For wellness exams and vaccinations, schedule routine appointments.
+- For prescription refills, advise that veterinarian approval is required.
+- Maintain confidentiality of all pet health information.
+- For severe symptoms, prioritize and offer same-day appointments if available.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" phone numbers** - If owner provides phone, accept it and move on.
+- **DO NOT ask to "verify" information** - Trust what the owner tells you.
+- For end-of-life consultations, handle with empathy and connect with veterinarian.
+""",
+        "example_responses": {
+            "book_appointment": "I'd be happy to schedule an appointment for your pet. What's your pet's name and what service do you need?",
+            "emergency_care": "This sounds like an emergency. Please bring your pet to the clinic immediately - we have veterinarians on call. I'm alerting our team now.",
+            "wellness_exam": "I can schedule a wellness exam for {pet_name}. What date and time works best for you?",
+            "symptoms_inquiry": "I'm concerned to hear about {pet_name}'s symptoms. Can you describe what's happening so I can determine the urgency?",
         }
     },
     "general": {
@@ -950,6 +1292,22 @@ BUSINESS_TYPE_SUGGESTIONS = {
     "education": {
         "keywords": ["education", "school", "tutoring", "teaching", "learning", "academic", "student", "teacher", "instructor", "curriculum", "course", "class", "lesson", "training", "educational", "study", "learn", "knowledge", "skills", "tutor", "education center", "learning center"],
         "phrases": ["education center", "tutoring services", "learning center", "academic services", "educational programs", "teaching", "student support", "curriculum development", "course instruction", "skills training", "educational consulting", "tutor", "study help"],
+    },
+    "pet_services": {
+        "keywords": ["pet", "dog", "cat", "animal", "veterinary", "vet", "grooming", "boarding", "kennel", "walking", "training", "puppy", "kitten", "pets", "pet care", "animal hospital"],
+        "phrases": ["pet services", "veterinary clinic", "dog grooming", "cat boarding", "pet training", "pet walking", "animal care", "vet office", "kennel services", "pet grooming"],
+    },
+    "banking": {
+        "keywords": ["bank", "banking", "financial", "credit union", "savings", "checking", "loan", "mortgage", "investment", "atm", "debit", "credit card", "wire transfer", "account", "deposit", "withdrawal", "branch", "teller", "finance"],
+        "phrases": ["banking services", "financial institution", "credit union", "savings account", "checking account", "bank loan", "mortgage loan", "investment services", "atm services", "bank branch", "financial services"],
+    },
+    "insurance": {
+        "keywords": ["insurance", "coverage", "policy", "premium", "claim", "deductible", "underwriting", "risk", "liability", "auto insurance", "home insurance", "life insurance", "health insurance", "insurance agency", "insurance broker", "insurance agent"],
+        "phrases": ["insurance services", "insurance policy", "insurance coverage", "insurance claim", "insurance premium", "insurance agency", "insurance broker", "file a claim", "insurance quote", "deductible", "liability coverage"],
+    },
+    "veterinary": {
+        "keywords": ["veterinary", "veterinarian", "vet", "animal hospital", "vet clinic", "animal doctor", "pet health", "animal healthcare", "vet practice", "veterinary medicine", "vet services", "pet clinic", "animal clinic"],
+        "phrases": ["veterinary clinic", "veterinary hospital", "veterinary services", "animal hospital", "veterinary practice", "vet clinic", "pet health", "animal healthcare", "veterinary care"],
     },
 }
 

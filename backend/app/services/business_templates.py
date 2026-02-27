@@ -88,6 +88,174 @@ class FieldValidation:
     def validate_string(value: str) -> bool:
         """Validate non-empty string"""
         return bool(value and value.strip())
+    
+    @staticmethod
+    def validate_credit_card(value: str) -> bool:
+        """Validate credit card number using Luhn algorithm"""
+        if not value:
+            return False
+        # Remove spaces and dashes
+        cleaned = re.sub(r'[\s-]', '', value)
+        
+        # Check if it's all digits and has valid length
+        if not cleaned.isdigit() or len(cleaned) < 13 or len(cleaned) > 19:
+            return False
+        
+        # Luhn algorithm
+        total = 0
+        reverse_digits = cleaned[::-1]
+        
+        for i, digit in enumerate(reverse_digits):
+            d = int(digit)
+            if i % 2 == 1:
+                d *= 2
+                if d > 9:
+                    d -= 9
+            total += d
+        
+        return total % 10 == 0
+    
+    @staticmethod
+    def validate_address(value: str) -> bool:
+        """Validate address format (basic check for street, city, state/zip)"""
+        if not value or len(value.strip()) < 10:
+            return False
+        
+        # Check for common address components
+        has_number = bool(re.search(r'\d+', value))
+        has_street = bool(re.search(r'\b(street|st|avenue|ave|road|rd|boulevard|blvd|lane|ln|drive|dr|way|court|ct|place|pl)\b', value.lower()))
+        has_zip = bool(re.search(r'\b\d{5}(-\d{4})?\b', value))
+        
+        # At minimum, should have a number and one address component
+        return has_number and (has_street or has_zip)
+    
+    @staticmethod
+    def validate_date_range(start_date: str, end_date: str) -> bool:
+        """Validate that end_date is after start_date"""
+        from datetime import datetime
+        from dateutil import parser as date_parser
+        try:
+            start = date_parser.parse(start_date, fuzzy=True)
+            end = date_parser.parse(end_date, fuzzy=True)
+            return end > start
+        except:
+            return False
+    
+    @staticmethod
+    def validate_currency(value: str) -> bool:
+        """Validate currency amount (positive number with optional decimals)"""
+        if not value:
+            return False
+        # Remove currency symbols and commas
+        cleaned = re.sub(r'[$,€£¥]', '', value)
+        try:
+            amount = float(cleaned)
+            return amount >= 0
+        except ValueError:
+            return False
+    
+    @staticmethod
+    def validate_zip_code(value: str, country: str = "US") -> bool:
+        """Validate ZIP/postal code format"""
+        if not value:
+            return False
+        
+        if country.upper() == "US":
+            # US ZIP: 5 digits or 5-4 format
+            return bool(re.match(r'^\d{5}(-\d{4})?$', value))
+        elif country.upper() == "CA":
+            # Canadian postal code: A1A 1A1
+            return bool(re.match(r'^[A-Za-z]\d[A-Za-z][ -]?\d[A-Za-z]\d$', value))
+        elif country.upper() == "UK":
+            # UK postcode: various formats
+            return bool(re.match(r'^[A-Z]{1,2}\d[A-Z\d]? ?\d[A-Z]{2}$', value, re.IGNORECASE))
+        else:
+            # Generic: alphanumeric, 3-10 characters
+            return bool(re.match(r'^[A-Za-z0-9\s-]{3,10}$', value))
+    
+    @staticmethod
+    def validate_ssn(value: str) -> bool:
+        """Validate US Social Security Number format"""
+        if not value:
+            return False
+        # Remove common formatting
+        cleaned = re.sub(r'[\s-]', '', value)
+        return bool(re.match(r'^\d{9}$', cleaned))
+    
+    @staticmethod
+    def validate_vin(value: str) -> bool:
+        """Validate Vehicle Identification Number (VIN)"""
+        if not value:
+            return False
+        # Remove common formatting
+        cleaned = re.sub(r'[\s-]', '', value).upper()
+        # VIN should be 17 characters, excluding I, O, Q
+        if len(cleaned) != 17:
+            return False
+        if any(c in cleaned for c in 'IOQ'):
+            return False
+        return bool(re.match(r'^[A-HJ-NPR-Z0-9]{17}$', cleaned))
+    
+    @staticmethod
+    def validate_age(value: str, min_age: int = 0, max_age: int = 150) -> bool:
+        """Validate age is within reasonable range"""
+        try:
+            age = int(value)
+            return min_age <= age <= max_age
+        except ValueError:
+            return False
+    
+    @staticmethod
+    def validate_url(value: str) -> bool:
+        """Validate URL format"""
+        if not value:
+            return False
+        pattern = r'^https?://[^\s/$.?#].[^\s]*$'
+        return bool(re.match(pattern, value))
+    
+    @staticmethod
+    def validate_percentage(value: str) -> bool:
+        """Validate percentage value (0-100 or 0-1)"""
+        if not value:
+            return False
+        try:
+            # Remove % sign if present
+            cleaned = value.replace('%', '')
+            num = float(cleaned)
+            return 0 <= num <= 100
+        except ValueError:
+            return False
+    
+    @staticmethod
+    def validate_policy_number(value: str) -> bool:
+        """Validate insurance policy number (alphanumeric, 5-20 chars)"""
+        if not value:
+            return False
+        cleaned = re.sub(r'[\s-]', '', value)
+        return bool(re.match(r'^[A-Za-z0-9]{5,20}$', cleaned))
+    
+    @staticmethod
+    def validate_account_number(value: str) -> bool:
+        """Validate bank account number (8-17 digits)"""
+        if not value:
+            return False
+        cleaned = re.sub(r'[\s-]', '', value)
+        return bool(re.match(r'^\d{8,17}$', cleaned))
+    
+    @staticmethod
+    def validate_routing_number(value: str) -> bool:
+        """Validate US routing number (9 digits)"""
+        if not value:
+            return False
+        cleaned = re.sub(r'[\s-]', '', value)
+        if len(cleaned) != 9 or not cleaned.isdigit():
+            return False
+        
+        # Validate routing number checksum
+        digits = [int(d) for d in cleaned]
+        weights = [3, 7, 1, 3, 7, 1, 3, 7, 1]
+        total = sum(d * w for d, w in zip(digits, weights))
+        return total % 10 == 0
 
 
 class BusinessTypeTemplate:
@@ -99,6 +267,18 @@ class BusinessTypeTemplate:
         "phone": FieldValidation.validate_phone,
         "email": FieldValidation.validate_email,
         "future_date": FieldValidation.validate_future_date,
+        "credit_card": FieldValidation.validate_credit_card,
+        "address": FieldValidation.validate_address,
+        "currency": FieldValidation.validate_currency,
+        "zip_code": FieldValidation.validate_zip_code,
+        "ssn": FieldValidation.validate_ssn,
+        "vin": FieldValidation.validate_vin,
+        "age": FieldValidation.validate_age,
+        "url": FieldValidation.validate_url,
+        "percentage": FieldValidation.validate_percentage,
+        "policy_number": FieldValidation.validate_policy_number,
+        "account_number": FieldValidation.validate_account_number,
+        "routing_number": FieldValidation.validate_routing_number,
     }
     
     # Pre-defined business types with their characteristics
@@ -853,6 +1033,247 @@ class BusinessTypeTemplate:
             }
         },
         
+        # ============================================================
+        # PET SERVICES - High Autonomy
+        # ============================================================
+        "pet_services": {
+            "name": "Pet Services",
+            "icon": "pets",
+            "autonomy_level": AutonomyLevel.HIGH,
+            "risk_profile": {
+                "high_risk_intents": ["medical_emergency", "lost_pet", "aggressive_behavior"],
+                "auto_escalate_threshold": 0.6,
+                "confidence_threshold": 0.5,
+            },
+            "common_intents": [
+                "book_grooming", "book_boarding", "vet_appointment",
+                "vaccination_inquiry", "pricing_inquiry", "hours_inquiry",
+                "pet_walking", "training_session", "emergency_vet"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "pet_name": {"required": True, "validation": "string", "prompt": "What's your pet's name?"},
+                "pet_type": {"required": True, "validation": "string", "prompt": "What kind of pet is it? (dog, cat, etc.)"},
+                "service_type": {"required": True, "validation": "string", "prompt": "What service do you need?"},
+                "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for you?"},
+                "preferred_time": {"required": True, "validation": "string", "prompt": "What time works best?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "pet_name", "ask_if_missing": True},
+                    {"field": "pet_type", "ask_if_missing": True},
+                    {"field": "service_type", "ask_if_missing": True},
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Confirmed! {pet_name} is scheduled for {service_type} on {preferred_date} at {preferred_time}.",
+            },
+            "system_prompt_addition": """
+## Pet Services-Specific Guidelines:
+- Collect pet name and type (breed is also helpful).
+- For medical emergencies or aggressive behavior, escalate to a human immediately.
+- Mention current promotions (e.g., first-time grooming discount).
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" phone numbers** - If customer provides phone, accept it and move on.
+""",
+            "example_responses": {
+                "booking": "I'd be happy to book that for your pet. What's your pet's name and what kind of service do you need?",
+                "emergency": "If this is a medical emergency, please bring your pet in immediately or call our emergency line. I'll alert our staff.",
+                "grooming": "We have openings for grooming this week. Does your pet have any special needs or sensitivities?",
+            }
+        },
+        
+        # ============================================================
+        # BANKING - Restricted Autonomy (Financial)
+        # ============================================================
+        "banking": {
+            "name": "Banking / Financial Institution",
+            "icon": "account_balance",
+            "autonomy_level": AutonomyLevel.RESTRICTED,
+            "risk_profile": {
+                "high_risk_intents": ["fraud_report", "suspicious_activity", "lost_card", "stolen_card", "unauthorized_transaction", "security_breach"],
+                "auto_escalate_threshold": 0.4,
+                "confidence_threshold": 0.8,
+            },
+            "common_intents": [
+                "account_inquiry", "balance_inquiry", "transaction_inquiry", "loan_application",
+                "mortgage_inquiry", "credit_card_application", "debit_card_issue", "atm_issue",
+                "wire_transfer", "bill_payment", "branch_appointment", "investment_inquiry",
+                "savings_account", "checking_account", "online_banking_help", "mobile_banking_issue"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "account_number": {"required": False, "validation": "account_number", "prompt": "What's your account number? (Last 4 digits for verification)"},
+                "service_type": {"required": True, "validation": "string", "prompt": "What banking service do you need?"},
+                "preferred_date": {"required": False, "validation": "future_date", "prompt": "When would you like to visit the branch?"},
+                "preferred_time": {"required": False, "validation": "string", "prompt": "What time works best?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "service_type", "ask_if_missing": True},
+                    {"field": "preferred_date", "ask_if_missing": False, "for_intents": ["branch_appointment", "loan_application"]},
+                    {"field": "preferred_time", "ask_if_missing": False, "for_intents": ["branch_appointment", "loan_application"]},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your {service_type} is confirmed for {preferred_date} at {preferred_time}. Please bring valid ID.",
+            },
+            "system_prompt_addition": """
+## Banking-Specific Guidelines:
+- CRITICAL SECURITY: Never ask for full account numbers, SSNs, PINs, or passwords over the phone.
+- For fraud reports, lost/stolen cards, or suspicious activity - ESCALATE IMMEDIATELY to fraud department.
+- For unauthorized transactions, guide customer to file a dispute form.
+- Provide general account information only (no full account numbers or balances without verification).
+- For loan/mortgage applications, collect basic info and schedule branch appointment.
+- **DO NOT provide financial advice** - Only provide product information.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- For online/mobile banking issues, provide basic troubleshooting or schedule tech support.
+""",
+            "example_responses": {
+                "account_inquiry": "I can help with your account. What would you like to know? (Note: I cannot provide full account numbers or detailed balances without proper verification)",
+                "fraud_report": "For fraud reports or suspicious activity, I'm connecting you with our fraud department immediately. They'll help secure your account.",
+                "branch_appointment": "I'd be happy to schedule an appointment at a branch. What service do you need and when would you like to visit?",
+            }
+        },
+
+        # ============================================================
+        # INSURANCE - Restricted Autonomy (Legal/Financial)
+        # ============================================================
+        "insurance": {
+            "name": "Insurance Agency",
+            "icon": "security",
+            "autonomy_level": AutonomyLevel.RESTRICTED,
+            "risk_profile": {
+                "high_risk_intents": ["claim_dispute", "denied_claim", "coverage_denial", "legal_question", "fraud_report", "liability_issue"],
+                "auto_escalate_threshold": 0.4,
+                "confidence_threshold": 0.8,
+            },
+            "common_intents": [
+                "file_claim", "policy_inquiry", "coverage_inquiry", "quote_request",
+                "premium_inquiry", "payment_inquiry", "renewal_inquiry", "cancellation_inquiry",
+                "policy_change", "add_coverage", "remove_coverage", "deductible_inquiry",
+                "agent_appointment", "claim_status", "document_request", "proof_of_insurance"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "policy_number": {"required": False, "validation": "policy_number", "prompt": "What's your policy number?"},
+                "service_type": {"required": True, "validation": "string", "prompt": "What insurance service do you need?"},
+                "claim_details": {"required": False, "validation": "string", "prompt": "Can you provide details about the incident?", "for_intents": ["file_claim"]},
+                "preferred_date": {"required": False, "validation": "future_date", "prompt": "When would you like to meet with an agent?"},
+                "preferred_time": {"required": False, "validation": "string", "prompt": "What time works best?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "service_type", "ask_if_missing": True},
+                    {"field": "policy_number", "ask_if_missing": False},
+                    {"field": "claim_details", "ask_if_missing": False, "for_intents": ["file_claim"]},
+                    {"field": "preferred_date", "ask_if_missing": False, "for_intents": ["agent_appointment"]},
+                    {"field": "preferred_time", "ask_if_missing": False, "for_intents": ["agent_appointment"]},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your {service_type} is confirmed for {preferred_date} at {preferred_time}. Please bring your policy documents.",
+            },
+            "system_prompt_addition": """
+## Insurance-Specific Guidelines:
+- CRITICAL COMPLIANCE: Never provide legal advice or interpret policy language that could be considered legal advice.
+- For claim disputes, denied claims, or liability issues - ESCALATE to claims adjuster or agent.
+- For filing claims, collect basic incident details and guide through the claims process.
+- Provide general policy information and coverage details.
+- For quotes, collect basic information and connect with an agent for personalized quotes.
+- **DO NOT guarantee coverage** - Always advise customers to review their policy documents.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- For payment inquiries, provide account info or connect to billing department.
+- For proof of insurance requests, provide general guidance on how to obtain documents.
+""",
+            "example_responses": {
+                "file_claim": "I'm sorry to hear about your incident. Let me help you file a claim. What happened and when? (I'll collect basic details and connect you with our claims team)",
+                "policy_inquiry": "I can help with your policy inquiry. What would you like to know about your coverage?",
+                "claim_dispute": "For claim disputes or denied claims, I need to connect you with a claims adjuster who can review your case. Let me transfer you.",
+            }
+        },
+
+        # ============================================================
+        # VETERINARY - Restricted Autonomy (Healthcare)
+        # ============================================================
+        "veterinary": {
+            "name": "Veterinary Clinic",
+            "icon": "local_veterinarian",
+            "autonomy_level": AutonomyLevel.RESTRICTED,
+            "risk_profile": {
+                "high_risk_intents": ["medical_emergency", "severe_symptoms", "poisoning", "trauma", "difficulty_breathing", "seizure", "unconscious"],
+                "auto_escalate_threshold": 0.3,
+                "confidence_threshold": 0.85,
+            },
+            "common_intents": [
+                "book_appointment", "wellness_exam", "vaccination", "surgery_consultation",
+                "symptoms_inquiry", "prescription_refill", "lab_results", "dental_care",
+                "grooming_inquiry", "boarding_inquiry", "nutrition_consultation", "behavioral_consultation",
+                "end_of_life_consultation", "microchip", "spay_neuter", "emergency_care"
+            ],
+            "fields": {
+                "owner_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "pet_name": {"required": True, "validation": "string", "prompt": "What's your pet's name?"},
+                "pet_type": {"required": True, "validation": "string", "prompt": "What type of pet is it? (dog, cat, etc.)"},
+                "pet_breed": {"required": False, "validation": "string", "prompt": "What breed is your pet?"},
+                "pet_age": {"required": False, "validation": "string", "prompt": "How old is your pet?"},
+                "service_type": {"required": True, "validation": "string", "prompt": "What veterinary service do you need?"},
+                "symptoms": {"required": False, "validation": "string", "prompt": "Can you describe your pet's symptoms?", "for_intents": ["symptoms_inquiry", "emergency_care"]},
+                "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for the appointment?"},
+                "preferred_time": {"required": True, "validation": "string", "prompt": "What time works best?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "owner_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "pet_name", "ask_if_missing": True},
+                    {"field": "pet_type", "ask_if_missing": True},
+                    {"field": "pet_breed", "ask_if_missing": False},
+                    {"field": "pet_age", "ask_if_missing": False},
+                    {"field": "service_type", "ask_if_missing": True},
+                    {"field": "symptoms", "ask_if_missing": False, "for_intents": ["symptoms_inquiry", "emergency_care"]},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your appointment for {pet_name} ({pet_type}) for {service_type} is confirmed for {preferred_date} at {preferred_time}. Please bring vaccination records.",
+            },
+            "system_prompt_addition": """
+## Veterinary Clinic-Specific Guidelines:
+- CRITICAL SAFETY: For medical emergencies (difficulty breathing, seizures, trauma, poisoning, unconscious) - ADVISE IMMEDIATE TRANSPORT TO CLINIC and ESCALATE to veterinary team.
+- **DO NOT provide medical diagnosis or treatment advice** - Only schedule appointments and provide general information.
+- For wellness exams and vaccinations, schedule routine appointments.
+- For prescription refills, advise that veterinarian approval is required.
+- Maintain confidentiality of all pet health information.
+- For severe symptoms, prioritize and offer same-day appointments if available.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" phone numbers** - If owner provides phone, accept it and move on.
+- **DO NOT ask to "verify" information** - Trust what the owner tells you.
+- For end-of-life consultations, handle with empathy and connect with veterinarian.
+""",
+            "example_responses": {
+                "book_appointment": "I'd be happy to schedule an appointment for your pet. What's your pet's name and what service do you need?",
+                "emergency_care": "This sounds like an emergency. Please bring your pet to the clinic immediately - we have veterinarians on call. I'm alerting our team now.",
+                "wellness_exam": "I can schedule a wellness exam for {pet_name}. What date and time works best for you?",
+                "symptoms_inquiry": "I'm concerned to hear about {pet_name}'s symptoms. Can you describe what's happening so I can determine the urgency?",
+            }
+        },
+
         # ============================================================
         # GENERAL BUSINESS - Default
         # ============================================================
