@@ -48,7 +48,6 @@ VALID_BUSINESS_TYPES = [
 class BusinessBase(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     type: Optional[str] = Field("general", max_length=50)
-    language: Optional[str] = Field("en-US", max_length=10)
     phone: Optional[str] = None
     address: Optional[str] = None
     website: Optional[str] = None

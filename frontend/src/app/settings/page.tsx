@@ -194,7 +194,6 @@ export default function SettingsPage() {
       const response = await api.get('/businesses/');
       if (response.data && response.data.length > 0) {
         setBusiness(response.data[0]);
-        // Also sync businessConfig from business.settings if exists
         const b = response.data[0];
         if (b.settings) {
           setBusinessConfig(prev => ({
@@ -212,12 +211,15 @@ export default function SettingsPage() {
     if (!business) return;
     setSavingBusiness(true);
     try {
+      // Sync local businessConfig into settings JSON
+      const updatedSettings = {
+        ...(business.settings || {}),
+        ...businessConfig
+      };
+
       await api.put(`/businesses/${business.id}`, {
         ...business,
-        settings: {
-          ...business.settings,
-          ...businessConfig
-        }
+        settings: updatedSettings
       });
       showSnackbar('Business settings saved successfully.');
     } catch (error) {
@@ -761,10 +763,16 @@ export default function SettingsPage() {
                       select
                       fullWidth
                       size="small"
-                      value={business?.language || 'en-US'}
+                      value={business?.settings?.language || 'en-US'}
                       onChange={(e) => {
                         if (business) {
-                          setBusiness({ ...business, language: e.target.value });
+                          setBusiness({ 
+                            ...business, 
+                            settings: { 
+                              ...(business.settings || {}), 
+                              language: e.target.value 
+                            } 
+                          });
                         }
                       }}
                       helperText="The language the AI will use to respond to customers"

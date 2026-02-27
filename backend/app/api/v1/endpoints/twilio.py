@@ -317,18 +317,19 @@ async def _run_twilio_relay(
         """Save a conversation message to the database."""
         try:
             # English translation for non-English calls
-            translated = None
+            entities = {}
             if business_context.get("language") != "en-US":
                 translated = translation_service.translate_transcript(
                     content, source_lang=business_context.get("language", "auto")
                 )
+                entities["translation"] = translated
 
             msg = ConversationMessage(
                 call_session_id=ws_session.get("_session_id"),
                 sender=sender,
                 content=content,
-                translated_content=translated,
-                message_type=msg_type
+                message_type=msg_type,
+                entities=entities
             )
             db.add(msg)
             db.commit()

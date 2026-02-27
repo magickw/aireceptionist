@@ -146,18 +146,19 @@ async def _run_streaming_relay(
         try:
             # Re-get DB session to ensure thread safety / freshness if needed
             # but here we use the one passed to the relay
-            translated = None
+            entities = {}
             if ws_session.get("language") != "en-US":
                 translated = translation_service.translate_transcript(
                     content, source_lang=ws_session.get("language", "auto")
                 )
+                entities["translation"] = translated
 
             msg = ConversationMessage(
                 call_session_id=session_id,
                 sender=sender,
                 content=content,
-                translated_content=translated,
-                message_type=msg_type
+                message_type=msg_type,
+                entities=entities
             )
             db.add(msg)
             db.commit()

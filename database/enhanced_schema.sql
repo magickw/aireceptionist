@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS users (
 
 -- Update businesses table to link with users
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS user_id INTEGER REFERENCES users(id);
+ALTER TABLE businesses ADD COLUMN IF NOT EXISTS language VARCHAR(10) DEFAULT 'en-US';
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS phone VARCHAR(20);
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS address TEXT;
 ALTER TABLE businesses ADD COLUMN IF NOT EXISTS website VARCHAR(255);
@@ -34,12 +35,22 @@ CREATE TABLE IF NOT EXISTS call_sessions (
   id VARCHAR(100) PRIMARY KEY,
   business_id INTEGER REFERENCES businesses(id),
   customer_phone VARCHAR(20),
-  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'ended', 'transferred')),
+  customer_name VARCHAR(255),
+  status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'ended', 'transferred', 'voicemail')),
   started_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   ended_at TIMESTAMP,
   duration_seconds INTEGER,
   ai_confidence DECIMAL(3,2),
   summary TEXT,
+  sentiment VARCHAR(20),
+  language VARCHAR(10) DEFAULT 'en',
+  detected_language VARCHAR(10),
+  recording_url TEXT,
+  recording_duration INTEGER,
+  voicemail_detected BOOLEAN DEFAULT FALSE,
+  quality_score DECIMAL(5,2),
+  satisfaction_prediction DECIMAL(3,2),
+  customer_id INTEGER, -- Link to Customer 360 (defined later)
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -49,6 +60,7 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
   call_session_id VARCHAR(100) REFERENCES call_sessions(id),
   sender VARCHAR(20) NOT NULL CHECK (sender IN ('customer', 'ai', 'agent')),
   content TEXT NOT NULL,
+  translated_content TEXT,
   message_type VARCHAR(20) DEFAULT 'text' CHECK (message_type IN ('text', 'action', 'system')),
   confidence DECIMAL(3,2),
   intent VARCHAR(50),
