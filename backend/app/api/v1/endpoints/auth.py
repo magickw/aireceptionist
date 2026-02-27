@@ -84,17 +84,27 @@ def login_access_token(
                 user.failed_login_attempts = (user.failed_login_attempts or 0) + 1
                 if user.failed_login_attempts >= MAX_FAILED_ATTEMPTS:
                     user.locked_until = now + timedelta(minutes=LOCKOUT_DURATION_MINUTES)
-                    create_audit_log(
-                        db,
-                        user_id=user.id,
-                        operation="user.account_locked",
-                        resource_type="user",
-                        resource_id=user.id,
-                        new_values={"failed_attempts": user.failed_login_attempts},
-                        ip_address=request.client.host if request.client else None,
-                        user_agent=request.headers.get("user-agent"),
-                    )
-                db.commit()
+                    db.commit() # Commit lockout first
+                    
+                    try:
+                        create_audit_log(
+                            db,
+                            user_id=user.id,
+                            operation="user.account_locked",
+                            resource_type="user",
+                            resource_id=user.id,
+                            new_values={"failed_attempts": user.failed_login_attempts},
+                            ip_address=request.client.host if request.client else None,
+                            user_agent=request.headers.get("user-agent"),
+                        )
+                        db.commit()
+                    except Exception as e:
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.warning(f"Failed to create audit log for lockout: {e}")
+                        db.rollback()
+                else:
+                    db.commit()
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Incorrect email or password",
@@ -105,6 +115,7 @@ def login_access_token(
         # Successful login — reset lockout counters
         user.failed_login_attempts = 0
         user.locked_until = None
+        db.commit() # Commit lockout reset first
 
         access_token_expires = timedelta(minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = security.create_access_token(
@@ -120,16 +131,25 @@ def login_access_token(
             expires_at=now + timedelta(days=settings.REFRESH_TOKEN_EXPIRE_DAYS),
         )
         db.add(db_refresh)
-        create_audit_log(
-            db,
-            user_id=user.id,
-            operation="user.login",
-            resource_type="user",
-            resource_id=user.id,
-            ip_address=request.client.host if request.client else None,
-            user_agent=request.headers.get("user-agent"),
-        )
-        db.commit()
+        db.commit() # Commit refresh token
+
+        # Attempt audit logging separately so it doesn't break login
+        try:
+            create_audit_log(
+                db,
+                user_id=user.id,
+                operation="user.login",
+                resource_type="user",
+                resource_id=user.id,
+                ip_address=request.client.host if request.client else None,
+                user_agent=request.headers.get("user-agent"),
+            )
+            db.commit()
+        except Exception as e:
+            import logging
+            logger = logging.getLogger(__name__)
+            logger.warning(f"Failed to create audit log for login: {e}")
+            db.rollback() # Rollback only the audit log transaction if it failed
 
         return {
             "access_token": access_token,
