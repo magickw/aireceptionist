@@ -138,6 +138,32 @@ async def _run_streaming_relay(
     Background task that reads from NovaSonicStreamSession queues
     and relays events to the WebSocket client.
     """
+    from app.services.translation_service import translation_service
+    from app.models.models import ConversationMessage
+
+    def _save_message(content: str, sender: str, msg_type: str = "text"):
+        """Save a conversation message to the database."""
+        try:
+            # Re-get DB session to ensure thread safety / freshness if needed
+            # but here we use the one passed to the relay
+            translated = None
+            if ws_session.get("language") != "en-US":
+                translated = translation_service.translate_transcript(
+                    content, source_lang=ws_session.get("language", "auto")
+                )
+
+            msg = ConversationMessage(
+                call_session_id=session_id,
+                sender=sender,
+                content=content,
+                translated_content=translated,
+                message_type=msg_type
+            )
+            db.add(msg)
+            db.commit()
+        except Exception as e:
+            print(f"[Voice WS] Failed to save message: {e}")
+
     async def _relay_transcripts():
         while sonic_session.is_active:
             item = await sonic_session.transcript_queue.get()
@@ -149,9 +175,10 @@ async def _run_streaming_relay(
 
             print(f"[Voice WS] Relay: Sending transcript to WebSocket: {text} (is_partial={is_partial})")
 
-            # Only add final transcripts to conversation history
-            if not is_partial:
+            # Only add final transcripts to conversation history and DB
+            if not is_partial and text:
                 conversation_history.append({"role": "customer", "content": text})
+                _save_message(text, "customer")
 
             try:
                 await websocket.send_json({"type": "transcript", "text": text, "is_partial": is_partial})
@@ -227,6 +254,7 @@ async def _run_streaming_relay(
                 # Assistant turn finished — send final signal and record in history
                 if accumulated_text:
                     conversation_history.append({"role": "ai", "content": accumulated_text})
+                    _save_message(accumulated_text, "ai")
                     try:
                         await websocket.send_json({
                             "type": "text_chunk",
@@ -258,6 +286,9 @@ async def _run_streaming_relay(
             tool_name = item.get("name", "")
             tool_input = item.get("input", {})
             tool_use_id = item.get("tool_use_id", "")
+
+            # Log tool execution as a system message
+            _save_message(f"AI using tool: {tool_name} with input {json.dumps(tool_input)}", "ai", "action")
 
             try:
                 result = await handle_tool_use(
@@ -374,6 +405,7 @@ async def voice_websocket(
                 # Allow client to specify customer info in auth message (simulator)
                 customer_phone = auth_data.get("customer_phone")
                 customer_name = auth_data.get("customer_name")
+                language = auth_data.get("language", "en-US") # Allow dynamic language choice
             except asyncio.TimeoutError:
                 await websocket.send_json({"type": "error", "message": "Authentication timeout"})
                 await websocket.close(code=status.WS_1008_POLICY_VIOLATION)
@@ -392,7 +424,8 @@ async def voice_websocket(
         "created_at": datetime.now(timezone.utc),
         "business_id": business_id,
         "customer_name": customer_name,
-        "customer_phone": customer_phone
+        "customer_phone": customer_phone,
+        "language": language # Store session language
     }
     
     # Store connection in manager (already accepted)
@@ -499,7 +532,8 @@ async def voice_websocket(
                 knowledge_context=_knowledge_ctx,
                 training_context=_training_ctx,
                 db=db,
-                briefing=briefing # Pass briefing to prompt builder
+                briefing=briefing, # Pass briefing to prompt builder
+                language=ws_session.get("language") or business_context.get("language", "en-US")
             )
 
             ws_session["_session_id"] = session_id
@@ -1474,6 +1508,7 @@ async def voice_websocket(
                             {
                                 "business_context": await _get_business_context(business_id),
                                 "customer_context": context,
+                                "language": ws_session.get("language") or business_context.get("language", "en-US")
                             }
                         ):
                             if response["type"] == "transcript":
@@ -1782,6 +1817,7 @@ def _create_call_session(ws_session: Dict[str, Any], session_id: str) -> None:
             business_id=business_id,
             customer_name=ws_session.get("customer_name"),
             customer_phone=ws_session.get("customer_phone"),
+            language=ws_session.get("language", "en-US"),
             status="active"
         )
         db.add(call_session)
@@ -1915,7 +1951,8 @@ async def _get_business_context(business_id: int, db: Session = None) -> Dict[st
         "services": services,
         "operating_hours": business.settings.get("operating_hours", "Mon-Fri 9AM-5PM") if business.settings else "Mon-Fri 9AM-5PM",
         "available_slots": business.settings.get("available_slots", ["Today 2PM", "Tomorrow 10AM"]) if business.settings else ["Today 2PM", "Tomorrow 10AM"],
-        "menu": menu
+        "menu": menu,
+        "language": business.settings.get("language", "en-US") if business.settings else "en-US"
     }
 
 

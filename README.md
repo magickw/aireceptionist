@@ -1,26 +1,40 @@
-# Receptium
+# Receptium: AI-Orchestrated Business Operations Platform (AIBOP)
 
-An autonomous, AI-powered business operations platform that handles voice calls, reasons through complex customer intents, and executes real-world workflows.
+**Receptium** is an **AI-native operating layer** that sits on top of business infrastructure—powered by models like **Amazon Nova Sonic** and **Nova Lite**.
+
+It is **not** a chatbot.
+It is **not** a CRM plugin.
+It is an intelligent execution engine that unifies:
+- **Real-Time Voice Reception** (Speech-to-Speech)
+- **Deterministic Workflow Execution** (Scheduling, Orders, CRM Sync)
+- **Predictive Customer Intelligence** (Churn Risk, LTV Analysis)
 
 Built for the **Amazon Nova Hackathon**.
 
 ## 🚀 The Nova Advantage
 
-This platform is built from the ground up to leverage the full power of the Amazon Nova model family:
+This platform demonstrates the full power of the Amazon Nova model family working in concert:
 
-*   **Nova 2 Sonic:** Low-latency conversational voice AI (Speech-to-Speech integration).
-*   **Nova 2 Lite:** High-confidence structured reasoning for autonomous decision making.
+*   **Nova 2 Sonic:** Low-latency conversational voice AI (Speech-to-Speech integration) for natural, interruptible dialogue.
+*   **Nova 2 Lite:** High-confidence structured reasoning for autonomous decision making and intent classification.
 *   **Nova Act:** Autonomous UI automation for executing real-world workflows (Calendly, CRM, etc.).
 *   **Nova Embeddings:** Multimodal embeddings for advanced customer intelligence and RAG.
 
-## 🏗 Architecture
+## 🏗 Architecture & Strategic Positioning
 
-- **Backend:** FastAPI (Python 3.10+)
-- **Frontend:** Next.js 14 (TypeScript, Material UI)
-- **Database:** PostgreSQL with pgvector for semantic search
-- **AI Engine:** Amazon Bedrock (Nova Pro/Lite/Sonic/Act)
-- **Voice Infrastructure:** WebSocket-based streaming with Twilio support
-- **Automation:** Nova Act Planner + Simulated UI Execution
+Receptium utilizes a **Stream-Reason-Execute** architecture designed for enterprise reliability.
+
+### 1. Real-Time Voice Engine (Streaming)
+- **Sub-150ms Latency:** Optimized bidirectional audio streaming.
+- **Thinking Block Filter:** Automatically strips internal reasoning tokens from the audio stream, ensuring the user hears only the final response.
+
+### 2. Context-Aware Orchestration
+- **Dynamic Prompting:** System prompts are compiled at runtime using Customer 360 data, business state (e.g., "inventory level"), and RAG knowledge.
+- **Deterministic Execution:** AI extracts *intent* and *parameters*, but code handles the *execution*, preventing hallucinations.
+
+### 3. Customer 360 "Data Moat"
+- **Unified Profile:** Aggregates calls, orders, appointments, and sentiment scores.
+- **Predictive Analytics:** Uses historical data to predict churn risk and identify VIPs.
 
 ## 🌟 Key Features
 

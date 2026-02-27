@@ -34,6 +34,7 @@ import Person from '@mui/icons-material/Person';
 import Notifications from '@mui/icons-material/Notifications';
 import VpnKey from '@mui/icons-material/VpnKey';
 import Tune from '@mui/icons-material/Tune';
+import MenuItem from '@mui/material/MenuItem';
 import Save from '@mui/icons-material/Save';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
@@ -61,6 +62,16 @@ interface IntegrationStatus {
   email: { connected: boolean; details: string };
 }
 
+interface Business {
+  id: number;
+  name: string;
+  type: string;
+  language: string;
+  phone: string;
+  address: string;
+  settings: any;
+}
+
 interface SnackbarState {
   open: boolean;
   message: string;
@@ -71,8 +82,27 @@ interface SnackbarState {
 // Component
 // ---------------------------------------------------------------------------
 
+const LANGUAGES = [
+  { code: 'en-US', label: 'English (US)' },
+  { code: 'en-GB', label: 'English (UK)' },
+  { code: 'es-US', label: 'Spanish (US)' },
+  { code: 'es-ES', label: 'Spanish (Spain)' },
+  { code: 'fr-FR', label: 'French' },
+  { code: 'de-DE', label: 'German' },
+  { code: 'it-IT', label: 'Italian' },
+  { code: 'ja-JP', label: 'Japanese' },
+  { code: 'ko-KR', label: 'Korean' },
+  { code: 'pt-BR', label: 'Portuguese' },
+  { code: 'zh-CN', label: 'Chinese (Mandarin)' },
+  { code: 'auto', label: 'Auto-Detect (Experimental)' },
+];
+
 export default function SettingsPage() {
   const { user, isAuthenticated } = useAuth();
+
+  // Business data
+  const [business, setBusiness] = useState<Business | null>(null);
+  const [savingBusiness, setSavingBusiness] = useState(false);
 
   // Profile / Password
   const [userEmail, setUserEmail] = useState<string>('');
@@ -159,17 +189,59 @@ export default function SettingsPage() {
     });
   }, []);
 
+  const fetchBusiness = useCallback(async () => {
+    try {
+      const response = await api.get('/businesses/');
+      if (response.data && response.data.length > 0) {
+        setBusiness(response.data[0]);
+        // Also sync businessConfig from business.settings if exists
+        const b = response.data[0];
+        if (b.settings) {
+          setBusinessConfig(prev => ({
+            ...prev,
+            ...b.settings
+          }));
+        }
+      }
+    } catch (error) {
+      console.warn('Settings: failed to fetch business', error);
+    }
+  }, []);
+
+  const handleSaveBusiness = async () => {
+    if (!business) return;
+    setSavingBusiness(true);
+    try {
+      await api.put(`/businesses/${business.id}`, {
+        ...business,
+        settings: {
+          ...business.settings,
+          ...businessConfig
+        }
+      });
+      showSnackbar('Business settings saved successfully.');
+    } catch (error) {
+      showSnackbar('Failed to save business settings.', 'error');
+    } finally {
+      setSavingBusiness(false);
+    }
+  };
+
   useEffect(() => {
     if (!isAuthenticated) return;
 
     const loadAll = async () => {
       setIsLoading(true);
-      await Promise.allSettled([fetchUserProfile(), fetchIntegrationStatus()]);
+      await Promise.allSettled([
+        fetchUserProfile(),
+        fetchIntegrationStatus(),
+        fetchBusiness()
+      ]);
       setIsLoading(false);
     };
 
     loadAll();
-  }, [isAuthenticated, fetchUserProfile, fetchIntegrationStatus]);
+  }, [isAuthenticated, fetchUserProfile, fetchIntegrationStatus, fetchBusiness]);
 
   // ---------------------------------------------------------------------------
   // Handlers
@@ -679,9 +751,36 @@ export default function SettingsPage() {
             <Divider />
             <CardContent>
               <Grid container spacing={4}>
-                {/* AI Autonomy Level */}
+                {/* Language Configuration */}
                 <Grid item xs={12} md={6}>
                   <Box sx={{ pr: { md: 2 } }}>
+                    <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
+                      AI Response Language
+                    </Typography>
+                    <TextField
+                      select
+                      fullWidth
+                      size="small"
+                      value={business?.language || 'en-US'}
+                      onChange={(e) => {
+                        if (business) {
+                          setBusiness({ ...business, language: e.target.value });
+                        }
+                      }}
+                      helperText="The language the AI will use to respond to customers"
+                    >
+                      {LANGUAGES.map((option) => (
+                        <MenuItem key={option.code} value={option.code}>
+                          {option.label}
+                        </MenuItem>
+                      ))}
+                    </TextField>
+                  </Box>
+                </Grid>
+
+                {/* AI Autonomy Level */}
+                <Grid item xs={12} md={6}>
+                  <Box sx={{ pl: { md: 2 } }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                         AI Autonomy Level
@@ -714,7 +813,7 @@ export default function SettingsPage() {
 
                 {/* AI Confidence Threshold */}
                 <Grid item xs={12} md={6}>
-                  <Box sx={{ pl: { md: 2 } }}>
+                  <Box sx={{ pr: { md: 2 } }}>
                     <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 1 }}>
                       <Typography variant="subtitle2" sx={{ fontWeight: 'bold' }}>
                         AI Confidence Threshold
@@ -747,7 +846,7 @@ export default function SettingsPage() {
 
                 {/* Max Call Duration */}
                 <Grid item xs={12} md={6}>
-                  <Box sx={{ pr: { md: 2 } }}>
+                  <Box sx={{ pl: { md: 2 } }}>
                     <Typography variant="subtitle2" sx={{ fontWeight: 'bold', mb: 1 }}>
                       Max Call Duration
                     </Typography>
@@ -775,12 +874,12 @@ export default function SettingsPage() {
               <Box sx={{ mt: 4 }}>
                 <Button
                   variant="contained"
-                  startIcon={savingBusinessConfig ? <CircularProgress size={16} color="inherit" /> : <Save />}
-                  onClick={handleSaveBusinessConfig}
-                  disabled={savingBusinessConfig}
+                  startIcon={savingBusiness ? <CircularProgress size={16} color="inherit" /> : <Save />}
+                  onClick={handleSaveBusiness}
+                  disabled={savingBusiness || !business}
                   size="small"
                 >
-                  {savingBusinessConfig ? 'Saving...' : 'Save Configuration'}
+                  {savingBusiness ? 'Saving...' : 'Save Configuration'}
                 </Button>
               </Box>
             </CardContent>

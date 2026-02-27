@@ -60,12 +60,30 @@ class NovaService:
         
         return response['output']['message']
 
-    def text_to_speech(self, text):
+    def text_to_speech(self, text, language_code="en-US"):
+        # Map language codes to natural Polly voices
+        voice_map = {
+            "en-US": "Joanna",
+            "en-GB": "Amy",
+            "es-US": "Lupe",
+            "es-ES": "Lucia",
+            "fr-FR": "Lea",
+            "de-DE": "Vicki",
+            "it-IT": "Bianca",
+            "ja-JP": "Mizuki",
+            "ko-KR": "Seoyeon",
+            "pt-BR": "Camila",
+            "zh-CN": "Zhiyu"
+        }
+        
+        base_lang = language_code.split('-')[0]
+        voice_id = voice_map.get(language_code) or voice_map.get(base_lang, "Joanna")
+
         response = self.polly.synthesize_speech(
             Text=text,
             OutputFormat='mp3',
-            VoiceId='Joanna',
-            Engine='neural'
+            VoiceId=voice_id,
+            Engine='neural' if voice_id != "Zhiyu" else "standard"
         )
         return response['AudioStream'].read()
 

@@ -309,12 +309,14 @@ class NovaSonicStreamSession:
         tool_definitions: Optional[List[Dict[str, Any]]] = None,
         safety_checker: Optional[Callable[[str], Optional[Dict[str, Any]]]] = None,
         model_id: str = "amazon.nova-lite-v1:0",
+        language: str = "en-US",
     ):
         self.session_id = session_id
         self.system_prompt = system_prompt
         self.tool_definitions = tool_definitions or []
         self.safety_checker = safety_checker
         self.model_id = model_id
+        self.language = language
 
         # Queues for dispatching output events
         self.text_queue: asyncio.Queue = asyncio.Queue(maxsize=200)
@@ -337,6 +339,11 @@ class NovaSonicStreamSession:
         
         # Conversational fillers
         self.fillers = ["Uh-huh", "I see", "Got it", "One moment", "Let me check that"]
+        if self.language.startswith("es"):
+            self.fillers = ["Ajá", "Ya veo", "Entendido", "Un momento", "Déjeme revisar eso"]
+        elif self.language.startswith("fr"):
+            self.fillers = ["Ah bon", "Je vois", "D'accord", "Un instant", "Laissez-moi vérifier"]
+            
         self._filler_task = None
 
         # Bedrock client
@@ -353,7 +360,7 @@ class NovaSonicStreamSession:
         while self.is_active:
             filler = random.choice(self.fillers)
             from app.services.nova_sonic import nova_sonic
-            audio_data = await nova_sonic._synthesize_speech(filler)
+            audio_data = await nova_sonic._synthesize_speech(filler, language_code=self.language)
             if audio_data:
                 audio_b64 = nova_sonic.encode_audio_base64(audio_data)
                 await self.audio_queue.put({
@@ -419,8 +426,8 @@ class NovaSonicStreamSession:
             except asyncio.QueueFull:
                 logger.warning("transcript_queue full, dropping partial transcript")
         
-        transcript = await nova_sonic._transcribe_audio_with_nova(audio_data, on_partial=on_partial_transcript)
-        logger.info(f"Transcription result: '{transcript[:100] if transcript else 'EMPTY'}...'")
+        transcript, detected_lang = await nova_sonic._transcribe_audio_with_nova(audio_data, on_partial=on_partial_transcript, language_code=self.language)
+        logger.info(f"Transcription result: '{transcript[:100] if transcript else 'EMPTY'}...' (Detected: {detected_lang})")
 
         if not transcript:
             if self._filler_task:
@@ -432,6 +439,14 @@ class NovaSonicStreamSession:
             })
             await self.text_queue.put({"turn_complete": True})
             return
+
+        # Update language if auto-detected
+        if (self.language == "auto" or not self.language) and detected_lang:
+            logger.info(f"Switching session language from {self.language} to {detected_lang}")
+            self.language = detected_lang
+            # Note: Ideally we would also update the system prompt here, 
+            # but for now we'll let the model respond naturally to the transcript.
+            # Most LLMs will respond in the same language as the input.
 
         # Emit transcript to client
         logger.info(f"Sending transcript to client: {transcript}")
@@ -713,8 +728,8 @@ class NovaSonicStreamSession:
                 else:
                     ssml_text = f"<speak>{accumulated_text}</speak>"
 
-                logger.info(f"[nova_sonic_stream] Synthesizing speech with sentiment '{sentiment}': {accumulated_text[:100]}...")
-                audio_data = await self._synthesize_ssml(ssml_text)
+                logger.info(f"[nova_sonic_stream] Synthesizing speech with sentiment '{sentiment}' and language '{self.language}': {accumulated_text[:100]}...")
+                audio_data = await self._synthesize_ssml(ssml_text, language=self.language)
                 
                 if audio_data:
                     audio_b64 = nova_sonic.encode_audio_base64(audio_data)
@@ -736,7 +751,7 @@ class NovaSonicStreamSession:
             await self.text_queue.put({"error": str(e)})
             await self.text_queue.put({"turn_complete": True})
 
-    async def _synthesize_ssml(self, ssml_text: str) -> Optional[bytes]:
+    async def _synthesize_ssml(self, ssml_text: str, language: str = "en-US") -> Optional[bytes]:
         """Synthesize SSML to speech using Polly."""
         try:
             polly = boto3.client(
@@ -746,13 +761,42 @@ class NovaSonicStreamSession:
                 aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
             )
             
+            # Map language codes to natural Polly voices
+            voice_map = {
+                "en-US": "Joanna",
+                "en-GB": "Amy",
+                "es-US": "Lupe",
+                "es-ES": "Lucia",
+                "fr-FR": "Lea",
+                "de-DE": "Vicki",
+                "it-IT": "Bianca",
+                "ja-JP": "Mizuki",
+                "ko-KR": "Seoyeon",
+                "pt-BR": "Camila",
+                "zh-CN": "Zhiyu"
+            }
+            
+            base_lang = language.split('-')[0]
+            voice_id = voice_map.get(language) or voice_map.get(base_lang)
+            
+            # Final fallback search
+            if not voice_id:
+                try:
+                    voices = polly.describe_voices(LanguageCode=language)
+                    if voices.get('Voices'):
+                        voice_id = voices['Voices'][0]['Id']
+                    else:
+                        voice_id = "Joanna"
+                except:
+                    voice_id = "Joanna"
+
             response = polly.synthesize_speech(
                 Text=ssml_text,
                 TextType='ssml',
                 OutputFormat='pcm',
-                VoiceId='Joanna',
+                VoiceId=voice_id,
                 SampleRate='16000',
-                Engine='neural'
+                Engine='neural' if voice_id != "Zhiyu" else "standard"
             )
             return response['AudioStream'].read()
         except Exception as e:
@@ -761,7 +805,7 @@ class NovaSonicStreamSession:
             from app.services.nova_sonic import nova_sonic
             # Strip tags for fallback
             plain_text = re.sub(r'<[^>]+>', '', ssml_text)
-            return await nova_sonic._synthesize_speech(plain_text)
+            return await nova_sonic._synthesize_speech(plain_text, language_code=language)
 
     # ------------------------------------------------------------------
     # Thinking-block filter
@@ -866,6 +910,7 @@ def build_nova_sonic_system_prompt(
     knowledge_context: str = "",
     training_context: str = "",
     briefing: str = "",
+    language: str = "en-US",
 ) -> str:
     """Build the system prompt for Nova Sonic voice conversations."""
     business_name = business_context.get("name", "our business")
@@ -882,7 +927,44 @@ def build_nova_sonic_system_prompt(
     # Use custom welcome message if provided
     custom_welcome = business_context.get("welcome_message", "")
 
+    # Language mapping for the prompt
+    lang_names = {
+        "en-US": "English (US)",
+        "en-GB": "English (UK)",
+        "es-US": "Spanish (US)",
+        "es-ES": "Spanish (Spain)",
+        "fr-FR": "French",
+        "de-DE": "German",
+        "it-IT": "Italian",
+        "ja-JP": "Japanese",
+        "ko-KR": "Korean",
+        "pt-BR": "Portuguese",
+        "zh-CN": "Chinese (Mandarin)"
+    }
+    lang_name = lang_names.get(language, "English")
+
+    # Cultural adaptation tips
+    cultural_tips = {
+        "ja-JP": "- Emphasize politeness and use appropriate honorifics (Desu/Masu form).\n- Be very humble and apologetic if an issue arises.\n- Avoid being too direct; use soft, indirect phrasing.",
+        "ko-KR": "- Use formal/polite speech levels (Jondaetmal).\n- Show high respect for the customer's time and status.\n- Use clear, professional honorifics.",
+        "es-US": "- Maintain a warm, friendly, and slightly more informal tone compared to English.\n- Use common friendly greetings like '¡Hola!' or '¿En qué puedo ayudarle?'.\n- Focus on building a rapport.",
+        "es-ES": "- Use 'Usted' for formal politeness until directed otherwise.\n- Be direct but professional.\n- Use standard Peninsular Spanish vocabulary.",
+        "fr-FR": "- Always start with 'Bonjour' or 'Bonsoir'.\n- Use 'Vous' for all customers (formal politeness).\n- Maintain a professional and slightly reserved but helpful demeanor.",
+        "de-DE": "- Be very direct, efficient, and punctual in your communication.\n- Use 'Sie' for formal address.\n- Focus on providing precise information and following procedures correctly.",
+        "it-IT": "- Use a warm, enthusiastic, and helpful tone.\n- Use 'Lei' for formal politeness.\n- Small talk about the weather or local events can be appropriate if natural.",
+        "zh-CN": "- Use polite forms like 'Nin' (您) instead of 'Ni' (你).\n- Be professional, efficient, and show respect.\n- Use common business greetings like 'Nin hao'.",
+    }
+    
+    base_lang = language.split('-')[0]
+    culture_guideline = cultural_tips.get(language) or cultural_tips.get(base_lang, "")
+
     prompt = f"""You are an AI voice receptionist for {business_name}, a {business_type} business.
+
+**LANGUAGE DIRECTIVE:**
+You MUST respond entirely in {lang_name}. This is a {lang_name} speaking environment. 
+Maintain the appropriate tone, cultural nuances, and honorifics for {lang_name}.
+
+{f"**CULTURAL GUIDELINES for {lang_name}:**{chr(10)}{culture_guideline}{chr(10)}" if culture_guideline else ""}
 
 Your role is to:
 - Provide friendly, professional customer service via voice

@@ -62,6 +62,7 @@ class NovaSonicHandler:
         training_context: str = "",
         db=None,
         briefing: str = "", # New briefing parameter
+        language: str = "en-US", # New language parameter
     ):
         """
         Factory method: creates a NovaSonicStreamSession with proper context.
@@ -88,6 +89,7 @@ class NovaSonicHandler:
             knowledge_context=knowledge_context,
             training_context=training_context,
             briefing=briefing, # Pass briefing to prompt builder
+            language=language, # Pass language to prompt builder
         )
 
         # Build tool definitions with dynamic provisioning support
@@ -104,6 +106,7 @@ class NovaSonicHandler:
             system_prompt=system_prompt,
             tool_definitions=tool_defs,
             safety_checker=safety_checker,
+            language=language, # Pass language to session
         )
 
         await session.initialize()
@@ -172,31 +175,9 @@ class NovaSonicHandler:
         
         # Step 1: Use Nova Lite to understand the audio
         try:
-            # For the demo, we'll use Nova Lite's multimodal capabilities
-            # We need to wrap the audio in a format it understands
-            
-            # Use Nova Lite as the reasoning engine for audio
-            from app.services.nova_reasoning import nova_reasoning
-            
-            # Build the multimodal request
-            # Note: Bedrock expects audio in specific formats (wav, mp3, etc.)
-            # We'll assume the input is PCM and wrap it or send as is if supported
-            
-            # For now, we'll use Nova Lite to "transcribe" and reason simultaneously
-            # In a real streaming setup, we'd use Nova Sonic's streaming API
-            
-            # Since we have the audio_data (PCM16), we'll simulate the multimodal call
-            # or use a very fast STT if the audio is short.
-            
-            # REAL INTEGRATION: Use Nova Lite to reason about the audio
-            # We'll use a placeholder transcript for the demo if Bedrock call fails,
-            # but we attempt a real multimodal-style logic.
-            
-            # Mocking the result of a multimodal call for the demo stability
-            # but structuring it as if it came from Nova Lite.
-            
             # 1. Simulate transcript from Nova Lite
-            transcript = await self._transcribe_audio_with_nova(audio_data)
+            language_code = context.get("language", "en-US") if context else "en-US"
+            transcript, detected_lang = await self._transcribe_audio_with_nova(audio_data, language_code=language_code)
             
             if not transcript:
                 yield {
@@ -207,13 +188,24 @@ class NovaSonicHandler:
 
             yield {
                 "type": "transcript",
-                "text": transcript
+                "text": transcript,
+                "detected_lang": detected_lang
             }
+            
+            # Use detected language for synthesis if it was auto-detected
+            if (language_code == "auto" or not language_code) and detected_lang:
+                language_code = detected_lang
             
             # 2. Get reasoning and response
             business_context = context.get("business_context", {}) if context else {}
             customer_context = context.get("customer_context", {}) if context else {}
             
+            # Inject language instruction into reasoning if it's not English
+            if language_code != "en-US":
+                # We can't easily modify the reasoning prompt here without knowing its structure,
+                # but Nova Lite should respond in the same language.
+                pass
+
             reasoning_result = await nova_reasoning.reason(
                 conversation=transcript,
                 business_context=business_context,
@@ -228,7 +220,7 @@ class NovaSonicHandler:
             }
             
             # 3. Synthesize speech (using Polly for now as Nova Sonic TTS is often a separate API)
-            audio_response = await self._synthesize_speech(text_response)
+            audio_response = await self._synthesize_speech(text_response, language_code=language_code)
             
             if audio_response:
                 yield {
@@ -240,7 +232,8 @@ class NovaSonicHandler:
                 "type": "complete",
                 "transcript": transcript,
                 "response": text_response,
-                "reasoning": reasoning_result
+                "reasoning": reasoning_result,
+                "language": language_code
             }
             
         except Exception as e:
@@ -250,7 +243,7 @@ class NovaSonicHandler:
                 "message": f"Nova Sonic error: {str(e)}"
             }
 
-    async def _transcribe_audio_with_nova(self, audio_data: bytes, on_partial=None) -> str:
+    async def _transcribe_audio_with_nova(self, audio_data: bytes, on_partial=None, language_code: str = "en-US") -> tuple[str, Optional[str]]:
         """
         Transcribe audio to text.
 
@@ -259,14 +252,14 @@ class NovaSonicHandler:
         """
         if not audio_data or len(audio_data) < 1000:
             logger.warning("Audio data too small for transcription")
-            return ""
+            return "", None
 
         # Try streaming SDK first (no S3 required)
         try:
-            logger.info("Attempting streaming transcription...")
-            result = await self._transcribe_streaming(audio_data)
+            logger.info(f"Attempting streaming transcription in {language_code}...")
+            result, detected_lang = await self._transcribe_streaming(audio_data, on_partial=on_partial, language_code=language_code)
             if result:
-                return result
+                return result, detected_lang
             logger.warning("Streaming transcription returned empty result")
         except ImportError:
             logger.info("amazon-transcribe SDK not installed, falling back to batch pipeline")
@@ -274,14 +267,14 @@ class NovaSonicHandler:
             logger.warning(f"Streaming transcription failed ({e}), trying batch pipeline")
 
         # Fallback: S3 → Transcribe batch pipeline
-        logger.info("Attempting batch transcription...")
+        logger.info(f"Attempting batch transcription in {language_code}...")
         try:
-            return await self._transcribe_batch(audio_data)
+            return await self._transcribe_batch(audio_data, language_code=language_code)
         except Exception as e:
             logger.error(f"Batch transcription also failed ({e}), returning empty transcript")
-            return ""
+            return "", None
 
-    async def _transcribe_streaming(self, audio_data: bytes, on_partial=None) -> str:
+    async def _transcribe_streaming(self, audio_data: bytes, on_partial=None, language_code: str = "en-US") -> tuple[str, Optional[str]]:
         """Transcribe using Amazon Transcribe Streaming (no S3 needed)."""
         from amazon_transcribe.client import TranscribeStreamingClient
         from amazon_transcribe.handlers import TranscriptResultStreamHandler
@@ -300,6 +293,7 @@ class NovaSonicHandler:
         logger.info(f"Starting streaming transcription with {len(audio_data)} bytes of audio data")
 
         transcript_parts: list[str] = []
+        detected_languages: list[str] = []
         
         # Create a queue for partial results
         partial_queue = asyncio.Queue()
@@ -311,6 +305,10 @@ class NovaSonicHandler:
             async def handle_transcript_event(self, transcript_event: TranscriptEvent):
                 results = transcript_event.transcript.results
                 for result in results:
+                    # Capture detected language if available
+                    if hasattr(result, 'language_code') and result.language_code:
+                        detected_languages.append(result.language_code)
+                        
                     for alt in result.alternatives:
                         if alt.transcript:
                             if result.is_partial:
@@ -331,11 +329,22 @@ class NovaSonicHandler:
 
         client = TranscribeStreamingClient(region=settings.AWS_REGION)
 
-        stream = await client.start_stream_transcription(
-            language_code="en-US",
-            media_sample_rate_hz=16000,
-            media_encoding="pcm",
-        )
+        # Use identify_language=True if no specific language is provided or if it's "auto"
+        is_auto = language_code == "auto" or not language_code
+        
+        start_args = {
+            "media_sample_rate_hz": 16000,
+            "media_encoding": "pcm",
+        }
+        
+        if is_auto:
+            start_args["identify_language"] = True
+            # Optional: provide a list of expected languages to improve accuracy
+            start_args["language_options"] = "en-US, es-US, fr-FR, de-DE, it-IT, ja-JP, ko-KR, pt-BR, zh-CN"
+        else:
+            start_args["language_code"] = language_code
+
+        stream = await client.start_stream_transcription(**start_args)
 
         # Send audio in chunks (Transcribe Streaming max chunk ≈ 25 KB)
         chunk_size = 16384
@@ -372,13 +381,16 @@ class NovaSonicHandler:
         )
 
         transcript = " ".join(transcript_parts).strip()
+        detected_lang = detected_languages[-1] if detected_languages else None
+        
         if transcript:
-            logger.info(f"Streaming STT result: {transcript[:100]}...")
+            logger.info(f"Streaming STT result: {transcript[:100]}... (Detected Lang: {detected_lang})")
         else:
             logger.warning("Streaming STT returned empty transcript")
-        return transcript
+            
+        return transcript, detected_lang
 
-    async def _transcribe_batch(self, audio_data: bytes) -> str:
+    async def _transcribe_batch(self, audio_data: bytes, language_code: str = "en-US") -> tuple[str, Optional[str]]:
         """
         Fallback: S3 → Amazon Transcribe batch pipeline.
         Requires S3 CreateBucket / PutObject and Transcribe permissions.
@@ -387,7 +399,7 @@ class NovaSonicHandler:
         import time
         
         if not audio_data or len(audio_data) < 1000:
-            return ""
+            return "", None
         
         try:
             # Create a unique job name
@@ -443,15 +455,21 @@ class NovaSonicHandler:
             
             media_uri = f"s3://{bucket_name}/{s3_key}"
             
-            transcribe.start_transcription_job(
-                TranscriptionJobName=job_name,
-                Media={'MediaFileUri': media_uri},
-                MediaFormat='wav',
-                LanguageCode='en-US',
-                Settings={
-                    'ShowSpeakerLabels': False
-                }
-            )
+            # Setup job args
+            job_args = {
+                "TranscriptionJobName": job_name,
+                "Media": {'MediaFileUri': media_uri},
+                "MediaFormat": 'wav',
+                "Settings": {'ShowSpeakerLabels': False}
+            }
+            
+            if language_code == "auto" or not language_code:
+                job_args["IdentifyLanguage"] = True
+                job_args["LanguageOptions"] = ["en-US", "es-US", "fr-FR", "de-DE", "it-IT", "ja-JP", "ko-KR", "pt-BR", "zh-CN"]
+            else:
+                job_args["LanguageCode"] = language_code
+            
+            transcribe.start_transcription_job(**job_args)
             
             # Poll for completion (with timeout)
             max_wait = 30  # seconds
@@ -465,6 +483,7 @@ class NovaSonicHandler:
                 
                 if status == 'COMPLETED':
                     transcript_uri = result['TranscriptionJob']['Transcript']['TranscriptFileUri']
+                    detected_lang = result['TranscriptionJob'].get('LanguageCode')
                     
                     # Fetch the transcript
                     import urllib.request
@@ -483,7 +502,7 @@ class NovaSonicHandler:
                     except:
                         pass
                     
-                    return transcript
+                    return transcript, detected_lang
                 
                 elif status == 'FAILED':
                     logger.error(f"Transcription job failed: {result}")
@@ -497,11 +516,11 @@ class NovaSonicHandler:
             except:
                 pass
             
-            return ""
+            return "", None
             
         except Exception as e:
             logger.error(f"Transcription error: {e}")
-            return ""
+            return "", None
     
     def _pcm_to_wav(self, pcm_data: bytes, sample_rate: int = 16000, channels: int = 1, bits: int = 16) -> bytes:
         """Convert PCM audio data to WAV format."""
@@ -531,7 +550,7 @@ class NovaSonicHandler:
         
         return header + pcm_data
     
-    async def _synthesize_speech(self, text: str) -> Optional[bytes]:
+    async def _synthesize_speech(self, text: str, language_code: str = "en-US") -> Optional[bytes]:
         """
         Synthesize text to speech using Polly or Nova TTS.
         
@@ -545,12 +564,44 @@ class NovaSonicHandler:
                 aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
             )
             
+            # Map language codes to natural Polly voices
+            voice_map = {
+                "en-US": "Joanna",
+                "en-GB": "Amy",
+                "es-US": "Lupe",
+                "es-ES": "Lucia",
+                "fr-FR": "Lea",
+                "de-DE": "Vicki",
+                "it-IT": "Bianca",
+                "ja-JP": "Mizuki",
+                "ko-KR": "Seoyeon",
+                "pt-BR": "Camila",
+                "zh-CN": "Zhiyu"
+            }
+            
+            # Extract base language if it's a full locale (e.g., 'en' from 'en-US')
+            base_lang = language_code.split('-')[0]
+            
+            # Find a suitable voice
+            voice_id = voice_map.get(language_code) or voice_map.get(base_lang)
+            
+            # Search for any voice matching the base language if not in map
+            if not voice_id:
+                try:
+                    voices = polly.describe_voices(LanguageCode=language_code)
+                    if voices.get('Voices'):
+                        voice_id = voices['Voices'][0]['Id']
+                    else:
+                        voice_id = "Joanna" # Final fallback
+                except:
+                    voice_id = "Joanna"
+            
             response = polly.synthesize_speech(
                 Text=text,
                 OutputFormat='pcm',
-                VoiceId='Joanna',  # Neural voice for natural sound
+                VoiceId=voice_id,
                 SampleRate='16000',
-                Engine='neural'
+                Engine='neural' if voice_id != "Zhiyu" else "standard" # Chinese might not support neural in all regions
             )
             
             # Read the audio stream
@@ -562,17 +613,18 @@ class NovaSonicHandler:
             logger.error(f"Speech synthesis error: {e}")
             return None
     
-    async def process_text_to_speech(self, text: str) -> bytes:
+    async def process_text_to_speech(self, text: str, language_code: str = "en-US") -> bytes:
         """
         Convert text to speech (for non-voice interactions).
         
         Args:
             text: Text to synthesize
+            language_code: Language code for synthesis
             
         Returns:
             PCM16 audio bytes at 16kHz
         """
-        return await self._synthesize_speech(text)
+        return await self._synthesize_speech(text, language_code=language_code)
     
     def get_audio_config(self) -> Dict[str, Any]:
         """

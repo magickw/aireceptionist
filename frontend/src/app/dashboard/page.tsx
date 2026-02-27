@@ -71,6 +71,7 @@ interface WorkflowExecution {
 export default function Dashboard() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
+  const theme = useTheme();
   const [metrics, setMetrics] = useState<DashboardMetrics>({
     totalCalls: 0,
     autonomousResolutions: 0,

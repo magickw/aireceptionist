@@ -1,4 +1,4 @@
-# Nova Autonomous Business Agent Platform
+# Receptium: AI-Orchestrated Business Operations Platform (AIBOP)
 
 ## Submission Category
 **Best of Agentic AI** | **Best of Voice AI** | **Best of UI Automation** | **First Prize Overall**
@@ -7,94 +7,88 @@
 
 ## Executive Summary
 
-We've completely refactored **AI Receptionist Pro** - a near-enterprise SaaS platform - into a **Nova-native autonomous business operations agent system**. The platform demonstrates the full power of Amazon Nova's model family (Sonic, Lite, Act) working together to handle live voice calls, reason through complex customer intents, and autonomously execute real-world workflows via UI automation - all with real-time analytics and business impact tracking.
+Receptium is not just an AI receptionist, a chatbot, or a CRM plugin. It is an **AI-Orchestrated Business Operations Platform (AIBOP)**—an intelligent execution layer that sits on top of business infrastructure to autonomously manage operations.
+
+Powered by **Amazon Nova Sonic** for real-time speech-to-speech interaction and **Amazon Nova Lite/Pro** for reasoning, Receptium moves beyond simple "conversation" to deterministic "execution." It unifies voice reception, inventory management, dynamic scheduling, and customer intelligence into a single, self-driving operating system for SMBs.
+
+### The Shift: From "Tool" to "Infrastructure"
+> **Old World:** "I have a chatbot that answers calls and a separate CRM."
+> **Receptium World:** "I have an AI-native operating layer that answers calls, checks live inventory, predicts churn risk, and updates my ledger autonomously."
 
 ### One-Liner Pitch
-> "Nova-powered autonomous agents manage business operations end-to-end: answer calls, reason through requests, and autonomously book appointments via Calendly and update Salesforce CRM."
+> "An AI-native business operating system that unifies real-time voice, deterministic workflow execution, and predictive customer intelligence into a single autonomous platform."
 
 ---
 
-## Technical Innovation
+## Technical Architecture & Data Flow
 
-### Architecture Overview
+Receptium utilizes a **Stream-Reason-Execute** architecture designed for sub-second latency and high-reliability operations.
 
-```
-Twilio / Web Call
-        │
-        ▼
-┌─────────────────────────────────────┐
-│  Nova 2 Sonic (Speech-to-Speech)    │
-│  - Real-time voice streaming       │
-│  - <150ms latency                  │
-│  - Natural conversation flow        │
-└─────────────────────────────────────┘
-        │
-        ▼
-┌─────────────────────────────────────┐
-│  Conversation Orchestrator (FastAPI)│
-│  - WebSocket real-time communication│
-│  - Session management               │
-│  - Context persistence              │
-└─────────────────────────────────────┘
-        │
-        ├── Nova 2 Lite (Reasoning Core)
-        │   - Intent detection (94%+ confidence)
-        │   - Entity extraction
-        │   - Multi-step planning
-        │   - Action selection with reasoning
-        │   - Confidence scoring
-        │   - Sentiment analysis
-        │   - Escalation risk assessment
-        │
-        ├── Memory Store (Session + Customer Context)
-        │   - Conversation history
-        │   - Customer profile
-        │   - Business configuration
-        │   - Multimodal embeddings
-        │
-        ├── Nova Act (UI Automation)
-        │   - Autonomous Calendly booking
-        │   - CRM integration (Salesforce/HubSpot)
-        │   - Step-by-step workflow execution
-        │   - Error handling and fallbacks
-        │   - Screenshot verification
-        │
-        └── Multimodal Embeddings (Customer Intelligence)
-            - Semantic search across history
-            - Churn risk detection
-            - VIP identification
-            - Complaint pattern recognition
+```mermaid
+graph TD
+    User((User/Caller)) <-->|PCM16 Audio Stream <150ms| Edge[Twilio Edge / WebRTC]
+    
+    subgraph "AI Interaction Layer"
+        Edge <-->|WebSocket| Sonic[Nova Sonic Stream Session]
+        Sonic -->|Audio Buffer| VAD[Voice Activity Detection]
+        Sonic -->|Text Stream| Filter[Thinking Block Filter]
+        Filter -->|Clean Text| Client[Frontend/Phone]
+    end
+    
+    subgraph "Orchestration Kernel"
+        Filter -->|Intent & Context| Orch[Orchestrator Service]
+        Orch -->|Retrieve Context| Memory[Redis Session Store]
+        Orch -->|Vector Search| RAG[pgvector Knowledge Base]
+        Orch -->|Customer Profile| C360[Customer 360 DB]
+    end
+    
+    subgraph "Reasoning & Decision Engine"
+        Orch -->|Enriched Prompt| Planner[Nova Lite/Pro Reasoner]
+        Planner -->|Thought Chain| Validator[Safety & Logic Guardrails]
+        Validator -->|Approved Action| Exec[Action Dispatcher]
+    end
+    
+    subgraph "Deterministic Execution Layer"
+        Exec -->|Book| Cal[Smart Scheduling Engine]
+        Exec -->|Order| Inv[Inventory & Order System]
+        Exec -->|Update| CRM[External CRM Sync]
+        Exec -->|Notify| Comm[Omnichannel Notification Service]
+    end
+    
+    subgraph "Feedback Loop"
+        Exec -->|Outcome| Analytics[Strategic Analytics Engine]
+        Analytics -->|Churn Risk/LTV| C360
+    end
 ```
 
-### Key Technical Achievements
+### Critical Architectural Decisions
 
-**1. Nova 2 Lite Integration - Structured Reasoning Engine**
-- Built complete reasoning system with intent detection, entity extraction, and action selection
-- Implemented 5-step visible reasoning chain for transparency
-- Created confidence scoring system (0-1) with action recommendations
-- Developed sentiment analysis and escalation risk assessment
-- Built multi-factor decision-making with fallback mechanisms
+#### 1. Real-Time Streaming (TTFT + Thinking Filter)
+We don't just "transcribe and reply." We implemented a production-grade streaming architecture:
+- **Latency Tracking:** Measures Time-to-First-Token (TTFT) and total round-trip latency.
+- **Thinking Block Filtering:** Nova models generate "thoughts" before "speech." Our stream parser strips these internal reasoning blocks in real-time, ensuring the user hears only the final response while the system logs the logic for audit.
+- **Outcome:** Perceived latency drops significantly, and conversation feels human-natural.
 
-**2. Nova 2 Sonic Integration - Speech-to-Speech Streaming**
-- Implemented bidirectional audio streaming with sub-150ms latency
-- Created audio processing pipeline: transcribe → reason → synthesize
-- Built PCM16 audio format support at 16kHz sample rate
-- Developed real-time transcription and metrics tracking
-- Implemented audio buffer management for smooth playback
+#### 2. Deterministic Tool Execution
+We separate **Intent** (AI) from **Execution** (Code).
+- The AI does *not* directly write to the database.
+- Instead, it emits structured tool calls (e.g., `bookAppointment(time="14:00")`).
+- A rigid validation layer checks business rules (e.g., "Is the shop open?", "Is the item in stock?") before execution.
+- **Outcome:** Zero hallucinated bookings or orders.
 
-**3. Nova Act Integration - Autonomous UI Automation**
-- Built autonomous Calendly booking workflow
-- Implemented CRM integration for Salesforce and HubSpot
-- Created step-by-step workflow execution with visual progress
-- Developed Playwright-based UI automation with error handling
-- Built screenshot capture for verification and debugging
+#### 3. Context-Aware Prompt Orchestration
+System prompts are not static. They are dynamically compiled at runtime using:
+- **Customer 360 Data:** "This is a VIP customer who prefers text over email."
+- **Business State:** "We are currently out of stock of item X."
+- **RAG Knowledge:** "Here is the return policy relevant to their question."
+- **Outcome:** Hyper-personalized, situationally aware responses.
 
-**4. Customer Intelligence - Advanced Analytics**
-- Implemented multimodal embeddings for semantic search
-- Built churn risk detection with multi-factor analysis
-- Created VIP identification system with tier classification
-- Developed complaint pattern detection with recommendations
-- Built customer history semantic search using natural language
+#### 4. The Data Moat (Customer 360)
+Every interaction feeds into a unified customer profile.
+- **Sentiment Analysis:** Updates the customer's "happiness score."
+- **Operational Data:** Tracks total spend, appointment history, and no-show rates.
+- **Predictive Modeling:** Calculates "Churn Risk" to alert staff before a customer leaves.
+- **Outcome:** The system gets smarter and more valuable with every interaction.
 
 ---
 
@@ -109,30 +103,27 @@ Twilio / Web Call
 - **94%+** confidence in intent detection
 
 ### Value Proposition
-- **Cost Reduction**: 66% of calls handled autonomously without human intervention
-- **Revenue Growth**: Automated booking captures more opportunities
-- **Customer Satisfaction**: 98.4% success rate with personalized responses
-- **Operational Efficiency**: Real-time automation across multiple platforms
-- **Scalability**: Handle unlimited concurrent calls with Nova infrastructure
+- **Enterprise-Grade Voice:** Sub-second latency and natural prosody (via Nova Sonic) creates trust.
+- **Unified Operations:** One platform replaces the receptionist, the scheduler, the order taker, and the CRM data entry clerk.
+- **Predictive Intelligence:** Stops customer churn *before* it happens with real-time sentiment tracking.
+- **Zero Hallucination Risk:** Deterministic tool execution prevents "AI lies."
 
 ---
 
 ## What Makes This Different
 
 ### Most Hackathon Entries Are:
-- Basic chatbots or simple workflow demos
-- Text-only interfaces
-- Single-purpose tools
-- Limited business context
+- Basic chatbots or simple RAG demos.
+- Text-only interfaces wrapped in a UI.
+- Single-purpose tools (e.g., "just a scheduler").
+- Dependent on "magic" prompts without safety rails.
 
-### Our Solution Shows:
-- ✅ **Full SaaS Platform**: Complete business management system
-- ✅ **Voice AI**: Real speech-to-speech with natural conversation
-- ✅ **Agent Reasoning**: Visible, structured reasoning with confidence scores
-- ✅ **UI Automation**: Autonomous execution across 5+ platforms
-- ✅ **Analytics**: Real-time metrics and business intelligence
-- ✅ **Memory**: Customer context and conversation history
-- ✅ **Business Impact**: Measurable ROI and operational efficiency
+### Receptium Is:
+- ✅ **An Operating System**: A full vertical SaaS platform (10+ modules).
+- ✅ **Voice-Native**: Real-time, interruptible speech-to-speech.
+- ✅ **Deterministic**: Structured reasoning + code execution = reliability.
+- ✅ **Governance-First**: Human-in-the-loop approval workflows for high-risk actions.
+- ✅ **Data-Moated**: Compounding value through Customer 360 profiles.
 
 ---
 

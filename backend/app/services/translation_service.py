@@ -112,15 +112,22 @@ class TranslationService:
                 "confidence": 0.9
             }
             
-        except ClientError as e:
+        except Exception as e:
             print(f"[Translation] Translation failed: {e}")
             return {
                 "translated_text": text,
-                "source_language": source_lang,
+                "source_language": source_lang if source_lang != "auto" else "unknown",
                 "target_language": target_lang,
                 "confidence": 0.0,
                 "error": str(e)
             }
+
+    def translate_transcript(self, text: str, source_lang: str = "auto") -> str:
+        """Helper to translate transcript to English for logging"""
+        if not text:
+            return ""
+        result = self.translate_text(text, source_lang=source_lang, target_lang="en")
+        return result.get("translated_text", text)
     
     async def translate_for_voice(
         self, 

@@ -49,6 +49,7 @@ class Business(Base):
     user_id = Column(Integer, ForeignKey("users.id"))
     name = Column(String(255), nullable=False)
     type = Column(String(50), nullable=False)
+    language = Column(String(10), default="en-US")
     settings = Column(JSON)
     phone = Column(String(20))
     address = Column(Text)
@@ -220,6 +221,7 @@ class ConversationMessage(Base):
     call_session_id = Column(String(100), ForeignKey("call_sessions.id"))
     sender = Column(String(20), nullable=False) # customer, ai, agent
     content = Column(Text, nullable=False)
+    translated_content = Column(Text) # English translation for multi-language calls
     message_type = Column(String(20), default="text") # text, action, system
     confidence = Column(DECIMAL(3, 2))
     intent = Column(String(50))

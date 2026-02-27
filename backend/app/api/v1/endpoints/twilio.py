@@ -130,6 +130,7 @@ async def websocket_endpoint(
         "operating_hours": business.operating_hours or {},
         "menu": business.menu or [],
         "business_id": business.id,
+        "language": business.settings.get("language", "en-US") if business.settings else "en-US"
     }
 
     # Check for custom welcome greeting to personalize AI response
@@ -154,6 +155,7 @@ async def websocket_endpoint(
         business_context=business_context,
         customer_context=customer_context,
         db=db,
+        language=business_context.get("language", "en-US")
     )
 
     if not sonic_session:
@@ -308,6 +310,30 @@ async def _run_twilio_relay(
     and relays events to the Twilio WebSocket.
     Mirrors _run_streaming_relay in voice.py with 4 concurrent coroutines.
     """
+    from app.services.translation_service import translation_service
+    from app.models.models import ConversationMessage
+
+    def _save_message(content: str, sender: str, msg_type: str = "text"):
+        """Save a conversation message to the database."""
+        try:
+            # English translation for non-English calls
+            translated = None
+            if business_context.get("language") != "en-US":
+                translated = translation_service.translate_transcript(
+                    content, source_lang=business_context.get("language", "auto")
+                )
+
+            msg = ConversationMessage(
+                call_session_id=ws_session.get("_session_id"),
+                sender=sender,
+                content=content,
+                translated_content=translated,
+                message_type=msg_type
+            )
+            db.add(msg)
+            db.commit()
+        except Exception as e:
+            print(f"[Twilio Relay] Failed to save message: {e}")
 
     async def _relay_transcripts():
         while sonic_session.is_active:
@@ -318,6 +344,7 @@ async def _run_twilio_relay(
             is_partial = item.get("is_partial", False)
             if not is_partial and text:
                 conversation_history.append({"role": "customer", "content": text})
+                _save_message(text, "customer")
                 print(f"[Twilio Relay] Transcript: {text}")
 
     async def _relay_audio():
@@ -345,12 +372,14 @@ async def _run_twilio_relay(
             if item is None:
                 if accumulated_text:
                     conversation_history.append({"role": "ai", "content": accumulated_text})
+                    _save_message(accumulated_text, "ai")
                 break
             if item.get("thinking"):
                 continue
             if item.get("turn_complete"):
                 if accumulated_text:
                     conversation_history.append({"role": "ai", "content": accumulated_text})
+                    _save_message(accumulated_text, "ai")
                     print(f"[Twilio Relay] AI response: {accumulated_text[:100]}...")
                 accumulated_text = ""
                 continue
@@ -366,6 +395,10 @@ async def _run_twilio_relay(
             tool_name = item.get("name", "")
             tool_input = item.get("input", {})
             tool_use_id = item.get("tool_use_id", "")
+
+            # Log tool execution as a system message
+            _save_message(f"AI using tool: {tool_name} with input {json.dumps(tool_input)}", "ai", "action")
+
             try:
                 result = await handle_tool_use(
                     tool_name=tool_name,
