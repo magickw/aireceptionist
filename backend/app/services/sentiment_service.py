@@ -249,6 +249,24 @@ Return only valid JSON."""
         """Real-time AI sentiment analysis for live calls"""
         result = await self.analyze_text_ai(text, context="live call")
         return result
+
+    async def detect_vocal_emotion(self, audio_data: bytes) -> Dict:
+        """
+        Analyze vocal characteristics (pitch, tone, speed) to detect emotion.
+        Complements text-based sentiment analysis with acoustic cues.
+        """
+        # In a production environment, this would use a specialized acoustic model 
+        # or Amazon Transcribe's call analytics features.
+        # For the prototype, we simulate detection of high-intensity vocal cues.
+        
+        # Simulated analysis results based on audio characteristics
+        return {
+            "vocal_intensity": "medium",
+            "detected_emotions": ["calm"],
+            "vocal_urgency": 0.3,
+            "tone_stability": 0.9,
+            "speech_rate_wpm": 140
+        }
     
     # ==================== CALL QUALITY SCORING ====================
     

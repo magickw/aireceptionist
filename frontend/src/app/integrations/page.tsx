@@ -21,6 +21,9 @@ import CalendarMonth from '@mui/icons-material/CalendarMonth';
 import Payment from '@mui/icons-material/Payment';
 import Storage from '@mui/icons-material/Storage';
 import Webhook from '@mui/icons-material/Webhook';
+import HubIcon from '@mui/icons-material/Hub';
+import BusinessIcon from '@mui/icons-material/Business';
+import StoreIcon from '@mui/icons-material/Store';
 import api from '@/services/api';
 
 type IntegrationStatus = 'connected' | 'not_configured' | 'error' | 'loading';
@@ -149,20 +152,31 @@ export default function IntegrationsPage() {
       },
       {
         id: 'pos',
-        name: 'Point of Sale (POS)',
-        description: 'Integrate with your restaurant POS system to sync menus and push orders.',
-        icon: <Payment />, // Using Payment icon as a placeholder
+        name: 'Square POS',
+        description: 'Sync your Square catalog and inject AI orders directly into your Point of Sale.',
+        icon: <StoreIcon />,
         status: 'loading',
         statusLabel: '',
         actionLabel: 'Configure',
-        route: '/integrations/pos',
+        route: '/integrations/square_pos',
         color: '#2e7d32',
+      },
+      {
+        id: 'crm',
+        name: 'HubSpot CRM',
+        description: 'Sync customer profiles and log AI call summaries to your HubSpot timeline.',
+        icon: <HubIcon />,
+        status: 'loading',
+        statusLabel: '',
+        actionLabel: 'Connect',
+        route: '/integrations/hubspot_crm',
+        color: '#ff7a59',
       },
       {
         id: 'pms',
         name: 'Property Management (PMS)',
         description: 'Connect your hotel PMS to manage room availability and guest bookings.',
-        icon: <CalendarMonth />, // Using Calendar icon as a placeholder
+        icon: <BusinessIcon />,
         status: 'loading',
         statusLabel: '',
         actionLabel: 'Configure',

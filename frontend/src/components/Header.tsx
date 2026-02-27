@@ -42,6 +42,7 @@ import LibraryBooksIcon from '@mui/icons-material/LibraryBooks';
 import SchoolIcon from '@mui/icons-material/School';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
 import RecordVoiceOverIcon from '@mui/icons-material/RecordVoiceOver';
+import CampaignIcon from '@mui/icons-material/Campaign';
 import RouteIcon from '@mui/icons-material/Route';
 import SmartToyIcon from '@mui/icons-material/SmartToy';
 import ExtensionIcon from '@mui/icons-material/Extension';
@@ -74,6 +75,8 @@ const aiItems = [
   { label: 'Knowledge Base', href: '/knowledge-base', icon: <LibraryBooksIcon fontSize="small" /> },
   { label: 'AI Training', href: '/ai-training', icon: <SchoolIcon fontSize="small" /> },
   { label: 'AI Approvals', href: '/approvals', icon: <CheckCircleIcon fontSize="small" /> },
+  { label: 'Campaigns', href: '/campaigns', icon: <CampaignIcon fontSize="small" /> },
+  { label: 'Voice Persona', href: '/voice-personas', icon: <RecordVoiceOverIcon fontSize="small" /> },
   { label: 'Voice Greetings', href: '/voice-greetings', icon: <RecordVoiceOverIcon fontSize="small" /> },
   { label: 'Call Routing', href: '/call-routing', icon: <RouteIcon fontSize="small" /> },
   { label: 'Chatbot', href: '/chatbot', icon: <SmartToyIcon fontSize="small" /> },

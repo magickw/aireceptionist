@@ -37,8 +37,14 @@ interface IntegrationData {
 export default function IntegrationConfigPage() {
   const params = useParams();
   const router = useRouter();
-  const type = params.type as string; // 'pos' or 'pms'
+  const type = params.type as string; 
   
+  const getDisplayType = () => {
+    if (type === 'square_pos') return 'Square POS';
+    if (type === 'hubspot_crm') return 'HubSpot CRM';
+    return type.toUpperCase();
+  };
+
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
@@ -48,7 +54,7 @@ export default function IntegrationConfigPage() {
     integration_type: '',
     status: 'pending',
     configuration: {},
-    credentials: { api_key: '' }
+    credentials: { api_key: '', access_token: '', location_id: '' }
   });
 
   useEffect(() => {
@@ -59,17 +65,17 @@ export default function IntegrationConfigPage() {
     try {
       setLoading(true);
       const response = await api.get('/integrations');
-      const existing = response.data.find((i: any) => i.integration_type.includes(type));
+      const existing = response.data.find((i: any) => i.integration_type === type);
       if (existing) {
         setIntegration(existing);
       } else {
         // Initialize with default for this type
         setIntegration({
-          name: `${type.toUpperCase()} Integration`,
-          integration_type: `mock_${type}`, // Default to mock for now
+          name: `${getDisplayType()}`,
+          integration_type: type,
           status: 'pending',
           configuration: {},
-          credentials: { api_key: '' }
+          credentials: { api_key: '', access_token: '', location_id: '' }
         });
       }
     } catch (err: any) {
@@ -145,10 +151,10 @@ export default function IntegrationConfigPage() {
 
       <Box sx={{ mb: 4 }}>
         <Typography variant="h4" fontWeight={700} gutterBottom>
-          {type.toUpperCase()} Integration
+          {getDisplayType()} Integration
         </Typography>
         <Typography variant="body1" color="text.secondary">
-          Configure how your AI receptionist interacts with your {type.toUpperCase()} system.
+          Configure how your AI receptionist interacts with your {getDisplayType()} system.
         </Typography>
       </Box>
 
@@ -214,22 +220,52 @@ export default function IntegrationConfigPage() {
               </select>
             </div>
 
-            <div style={{ marginBottom: '24px' }}>
-              <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>API Key / Credentials</label>
-              <input 
-                type="password"
-                value={integration.credentials?.api_key || ''}
-                onChange={(e) => setIntegration({ 
-                  ...integration, 
-                  credentials: { ...integration.credentials, api_key: e.target.value } 
-                })}
-                placeholder="Enter your API key or connection token"
-                style={{ width: '100%', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
-              />
-              <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-                Your credentials are encrypted and stored securely.
-              </Typography>
-            </div>
+            {type === 'square_pos' ? (
+              <>
+                <div style={{ marginBottom: '24px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Square Access Token</label>
+                  <input 
+                    type="password"
+                    value={integration.credentials?.access_token || ''}
+                    onChange={(e) => setIntegration({ 
+                      ...integration, 
+                      credentials: { ...integration.credentials, access_token: e.target.value } 
+                    })}
+                    placeholder="EAAA..."
+                    style={{ width: '100%', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                </div>
+                <div style={{ marginBottom: '24px' }}>
+                  <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>Location ID</label>
+                  <input 
+                    type="text"
+                    value={integration.credentials?.location_id || ''}
+                    onChange={(e) => setIntegration({ 
+                      ...integration, 
+                      credentials: { ...integration.credentials, location_id: e.target.value } 
+                    })}
+                    placeholder="L..."
+                    style={{ width: '100%', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                  />
+                </div>
+              </>
+            ) : (
+              <div style={{ marginBottom: '24px' }}>
+                <label style={{ display: 'block', marginBottom: '8px', fontWeight: 500 }}>
+                  {type === 'hubspot_crm' ? 'HubSpot API Key' : 'API Key / Credentials'}
+                </label>
+                <input 
+                  type="password"
+                  value={integration.credentials?.api_key || ''}
+                  onChange={(e) => setIntegration({ 
+                    ...integration, 
+                    credentials: { ...integration.credentials, api_key: e.target.value } 
+                  })}
+                  placeholder="Enter your API key"
+                  style={{ width: '100%', padding: '12px', borderRadius: '4px', border: '1px solid #ccc' }}
+                />
+              </div>
+            )}
 
             <Box sx={{ display: 'flex', gap: 2, justifyContent: 'space-between', mt: 4 }}>
               <Box sx={{ display: 'flex', gap: 2 }}>

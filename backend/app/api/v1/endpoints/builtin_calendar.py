@@ -11,7 +11,7 @@ from datetime import date, datetime
 
 router = APIRouter()
 
-@router.post("/appointments", response_model=Appointment, status_code=201)
+@router.post("/appointments/", response_model=Appointment, status_code=201)
 def create_builtin_appointment(
     *,
     db: Session = Depends(deps.get_db),
@@ -38,7 +38,7 @@ def create_builtin_appointment(
     db.refresh(db_obj)
     return db_obj
 
-@router.get("/appointments", response_model=List[Appointment])
+@router.get("/appointments/", response_model=List[Appointment])
 def read_builtin_appointments(
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(get_current_active_user),
@@ -128,7 +128,7 @@ def delete_builtin_appointment(
     # Return nothing for 204 No Content
 
 
-@router.get("/availability", response_model=List[dict])
+@router.get("/availability/", response_model=List[dict])
 async def get_availability(
     db: Session = Depends(deps.get_db),
     current_user: Any = Depends(get_current_active_user),

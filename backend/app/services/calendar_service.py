@@ -158,7 +158,8 @@ class CalendarService:
                 tokens = await response.json()
 
                 integration.access_token = encryption_service.encrypt_if_needed(tokens["access_token"])
-                integration.token_expires_at = datetime.now(timezone.utc) + timedelta(
+                now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+                integration.token_expires_at = now_naive + timedelta(
                     seconds=tokens.get("expires_in", 3600)
                 )
                 integration.status = "active"
@@ -177,7 +178,8 @@ class CalendarService:
     ) -> Dict[str, Any]:
         """Create an event on the calendar"""
         # Check token validity
-        if integration.token_expires_at and integration.token_expires_at < datetime.now(timezone.utc):
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+        if integration.token_expires_at and integration.token_expires_at < now_naive:
             if not await self.refresh_google_token(integration, db):
                 raise Exception("Failed to refresh calendar token")
         
@@ -220,7 +222,8 @@ class CalendarService:
     ) -> List[Dict[str, Any]]:
         """Get events from the calendar"""
         # Check token validity
-        if integration.token_expires_at and integration.token_expires_at < datetime.now(timezone.utc):
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+        if integration.token_expires_at and integration.token_expires_at < now_naive:
             if not await self.refresh_google_token(integration, db):
                 raise Exception("Failed to refresh calendar token")
         
@@ -263,7 +266,8 @@ class CalendarService:
             }
         """
         # Check token validity
-        if integration.token_expires_at and integration.token_expires_at < datetime.now(timezone.utc):
+        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+        if integration.token_expires_at and integration.token_expires_at < now_naive:
             if not await self.refresh_google_token(integration, db):
                 raise Exception("Failed to refresh calendar token")
         
@@ -514,9 +518,10 @@ class CalendarService:
         day_end = date.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
         
         # Ensure we don't go past today's current time for future slots
-        if date.date() == datetime.now().date():
-            if day_start < datetime.now():
-                day_start = datetime.now()
+        now = datetime.now(timezone.utc).replace(tzinfo=None)
+        if date.date() == now.date():
+            if day_start < now:
+                day_start = now
             
         # Get all appointments for the day (internal + external)
         all_appointments = db.query(Appointment).filter(
@@ -560,7 +565,7 @@ class CalendarService:
             
             if is_available:
                 # Only add if the slot is in the future
-                if slot_start > datetime.now():
+                if slot_start > now:
                     slots.append({
                         "start": slot_start.isoformat(),
                         "end": slot_end.isoformat(),

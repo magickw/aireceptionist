@@ -243,6 +243,12 @@ def get_integration_instance(db: Session, business_id: int, integration_type: st
     if integration_type == "mock_pos":
         from app.services.integrations.mock_pos import MockPOSIntegration
         return MockPOSIntegration(db, business_id, integration_config)
+    elif integration_type == "square_pos":
+        from app.services.integrations.square import SquareIntegration
+        return SquareIntegration(db, business_id, integration_config)
+    elif integration_type == "hubspot_crm":
+        from app.services.integrations.hubspot import HubSpotIntegration
+        return HubSpotIntegration(db, business_id, integration_config)
     elif integration_type == "mock_pms":
         # Example: return MockPMSIntegration(db, business_id, integration_config)
         pass

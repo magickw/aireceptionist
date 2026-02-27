@@ -29,6 +29,8 @@ import SpeedIcon from '@mui/icons-material/Speed';
 import SupportAgentIcon from '@mui/icons-material/SupportAgent';
 import AccessTimeIcon from '@mui/icons-material/AccessTime';
 import CheckCircleIcon from '@mui/icons-material/CheckCircle';
+import MonetizationOnIcon from '@mui/icons-material/MonetizationOn';
+import SavingsIcon from '@mui/icons-material/Savings';
 import { MetricCard } from '@/components/ui/MetricCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import api from '@/services/api';
@@ -68,6 +70,14 @@ interface WorkflowExecution {
   time: string;
 }
 
+interface ROIMetrics {
+  human_hours_saved: number;
+  cost_savings: number;
+  revenue_captured: number;
+  appointment_opportunity: number;
+  total_value_generated: number;
+}
+
 export default function Dashboard() {
   const router = useRouter();
   const { isAuthenticated } = useAuth();
@@ -79,6 +89,13 @@ export default function Dashboard() {
     aiSuccessRate: 0,
     avgResponseTime: 0,
     avgCallDuration: 0,
+  });
+  const [roi, setRoi] = useState<ROIMetrics>({
+    human_hours_saved: 0,
+    cost_savings: 0,
+    revenue_captured: 0,
+    appointment_opportunity: 0,
+    total_value_generated: 0,
   });
   const [liveCalls, setLiveCalls] = useState<LiveCall[]>([]);
   const [recentActivity, setRecentActivity] = useState<RecentActivity[]>([]);
@@ -99,13 +116,14 @@ export default function Dashboard() {
           setBusinessId(bizId);
 
           // Fetch all dashboard data in parallel — use allSettled so one failure doesn't kill the whole dashboard
-          const [analyticsResult, realtimeResult, callLogsResult, appointmentsResult, ordersResult] =
+          const [analyticsResult, realtimeResult, callLogsResult, appointmentsResult, ordersResult, roiResult] =
             await Promise.allSettled([
               api.get(`/analytics/business/${bizId}`),
               api.get(`/analytics/business/${bizId}/realtime`),
               api.get(`/call-logs/?business_id=${bizId}`),
               api.get(`/appointments/business/${bizId}`),
               api.get(`/orders/?business_id=${bizId}`),
+              api.get(`/analytics/roi?business_id=${bizId}`),
             ]);
 
           const analyticsData = analyticsResult.status === 'fulfilled' ? analyticsResult.value.data : {};
@@ -113,10 +131,15 @@ export default function Dashboard() {
           const callLogs = callLogsResult.status === 'fulfilled' ? (callLogsResult.value.data || []) : [];
           const appointments = appointmentsResult.status === 'fulfilled' ? (appointmentsResult.value.data || []) : [];
           const orders = ordersResult.status === 'fulfilled' ? (ordersResult.value.data || []) : [];
+          const roiData = roiResult.status === 'fulfilled' ? roiResult.value.data : null;
+
+          if (roiData) {
+            setRoi(roiData);
+          }
 
           // Log individual failures for debugging without crashing the dashboard
-          const results = [analyticsResult, realtimeResult, callLogsResult, appointmentsResult, ordersResult];
-          const names = ['analytics', 'realtime', 'call-logs', 'appointments', 'orders'];
+          const results = [analyticsResult, realtimeResult, callLogsResult, appointmentsResult, ordersResult, roiResult];
+          const names = ['analytics', 'realtime', 'call-logs', 'appointments', 'orders', 'roi'];
           results.forEach((r, i) => {
             if (r.status === 'rejected') console.warn(`Dashboard: ${names[i]} failed:`, r.reason?.message);
           });
@@ -359,6 +382,47 @@ export default function Dashboard() {
           </Card>
         </Grid>
       </Grid>
+
+      {/* ROI Insights */}
+      <Box sx={{ mb: 3 }}>
+        <Typography variant="h6" sx={{ fontWeight: 700, mb: 2 }}>
+          Autonomous ROI Insights
+        </Typography>
+        <Grid container spacing={3} sx={{ mb: 5 }}>
+          <Grid item xs={12} sm={6} md={3}>
+            <MetricCard
+              title="Human Hours Saved"
+              value={`${roi.human_hours_saved} hrs`}
+              icon={<AccessTimeIcon />}
+              color="info"
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <MetricCard
+              title="Operational Savings"
+              value={`$${roi.cost_savings}`}
+              icon={<SavingsIcon />}
+              color="success"
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <MetricCard
+              title="Revenue Captured"
+              value={`$${roi.revenue_captured}`}
+              icon={<MonetizationOnIcon />}
+              color="primary"
+            />
+          </Grid>
+          <Grid item xs={12} sm={6} md={3}>
+            <MetricCard
+              title="Total Value Generated"
+              value={`$${roi.total_value_generated}`}
+              icon={<TrendingUpIcon />}
+              color="warning"
+            />
+          </Grid>
+        </Grid>
+      </Box>
 
       <Grid container spacing={3}>
         {/* Live Orchestration */}

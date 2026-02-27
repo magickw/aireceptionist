@@ -152,6 +152,58 @@ class ReportingService:
             })
         
         return summaries
+
+    def calculate_roi_metrics(
+        self,
+        db: Session,
+        business_id: int,
+        start_date: datetime,
+        end_date: datetime,
+        avg_hourly_wage: float = 25.0
+    ) -> Dict:
+        """
+        Calculate Return on Investment (ROI) metrics.
+        Quantifies human hours saved and revenue captured by AI.
+        """
+        from app.models.models import CallSession, Order, Appointment
+        
+        # 1. Human Hours Saved (total call duration)
+        total_seconds = db.query(func.sum(CallSession.duration_seconds)).filter(
+            CallSession.business_id == business_id,
+            CallSession.started_at >= start_date,
+            CallSession.started_at <= end_date
+        ).scalar() or 0
+        
+        hours_saved = total_seconds / 3600.0
+        cost_savings = hours_saved * avg_hourly_wage
+        
+        # 2. Revenue Captured (Orders)
+        order_revenue = db.query(func.sum(Order.total_amount)).filter(
+            Order.business_id == business_id,
+            Order.created_at >= start_date,
+            Order.created_at <= end_date,
+            Order.status.in_(["confirmed", "completed"])
+        ).scalar() or 0
+        
+        # 3. Revenue Opportunity (Appointments - estimated value)
+        # Assume an average appointment value of $50 if not specified
+        appt_count = db.query(func.count(Appointment.id)).filter(
+            Appointment.business_id == business_id,
+            Appointment.created_at >= start_date,
+            Appointment.created_at <= end_date,
+            Appointment.status != "cancelled"
+        ).scalar() or 0
+        
+        estimated_appt_revenue = appt_count * 50.0
+        
+        return {
+            "human_hours_saved": round(hours_saved, 2),
+            "cost_savings": round(float(cost_savings), 2),
+            "revenue_captured": round(float(order_revenue), 2),
+            "appointment_opportunity": round(float(estimated_appt_revenue), 2),
+            "total_value_generated": round(float(cost_savings + float(order_revenue) + estimated_appt_revenue), 2),
+            "avg_hourly_wage_baseline": avg_hourly_wage
+        }
     
     def export_to_csv(
         self,

@@ -378,6 +378,7 @@ async def voice_websocket(
     
     customer_phone = None
     customer_name = None
+    language = "en-US"
 
     try:
         if token:
@@ -1843,9 +1844,14 @@ def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str 
         call_session = db.query(CallSession).filter(CallSession.id == session_id).first()
         if call_session:
             call_session.status = "ended"
-            call_session.ended_at = datetime.now(timezone.utc)
+            now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
+            call_session.ended_at = now_naive
             if call_session.started_at:
-                call_session.duration_seconds = int((datetime.now(timezone.utc) - call_session.started_at).total_seconds())
+                # Ensure started_at is also compared/subtracted correctly
+                started_at = call_session.started_at
+                if started_at.tzinfo is not None:
+                    started_at = started_at.replace(tzinfo=None)
+                call_session.duration_seconds = int((now_naive - started_at).total_seconds())
             if summary:
                 call_session.summary = summary
             if sentiment:

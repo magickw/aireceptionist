@@ -78,7 +78,10 @@ async def get_current_user(
             db.commit()
             db.refresh(user)
         return user
-    except Exception:
+    except Exception as e:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(f"Firebase token verification failed or user creation failed: {str(e)}")
         pass
 
     raise HTTPException(
