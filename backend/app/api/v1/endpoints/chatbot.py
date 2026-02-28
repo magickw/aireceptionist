@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from typing import Optional
 
 from app.api import deps
+from app.models.models import User
 from app.services.chatbot_service import chatbot_service
 
 

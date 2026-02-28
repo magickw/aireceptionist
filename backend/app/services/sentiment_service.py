@@ -155,7 +155,7 @@ Return only valid JSON."""
         """Legacy synchronous method - uses keyword fallback"""
         return self._fallback_analyze(text)
     
-    async def analyze_call_sentiment(self, db: Session, call_id: int) -> Dict:
+    async def analyze_call_sentiment(self, db: Session, call_id: str) -> Dict:
         """Analyze sentiment for a specific call using AI"""
         from app.models.models import CallSession
         
@@ -273,7 +273,7 @@ Return only valid JSON."""
     async def calculate_call_quality_score(
         self, 
         db: Session, 
-        call_id: int,
+        call_id: str,
         include_transcript_analysis: bool = True
     ) -> Dict:
         """

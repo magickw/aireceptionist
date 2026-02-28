@@ -26,10 +26,10 @@ async def analyze_text(request: SentimentAnalyzeRequest):
 
 @router.post("/analyze-call/{call_id}")
 async def analyze_call(
-    call_id: int,
+    call_id: str,
     db: Session = Depends(deps.get_db)
 ):
-    result = sentiment_service.analyze_call_sentiment(db, call_id)
+    result = await sentiment_service.analyze_call_sentiment(db, call_id)
     return result
 
 
@@ -45,5 +45,5 @@ async def get_business_sentiment(
 
 @router.post("/realtime")
 async def analyze_realtime(request: SentimentAnalyzeRequest):
-    result = sentiment_service.analyze_realtime(request.text)
+    result = await sentiment_service.analyze_realtime(request.text)
     return result
