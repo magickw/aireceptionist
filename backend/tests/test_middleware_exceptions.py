@@ -1,7 +1,7 @@
 """Tests for request logging middleware and global exception handlers."""
 
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from sqlalchemy.exc import IntegrityError
 
 from app.models.models import Business
@@ -49,20 +49,17 @@ class TestExceptionHandlers:
         assert "INSERT" not in body["detail"]
         assert "duplicate key" not in body["detail"]
 
-    def test_generic_exception_returns_500_no_stacktrace(self, mock_db, mock_admin_user):
+    def test_generic_exception_returns_500_no_stacktrace(self, client, mock_db):
         """Unhandled exceptions should return 500 with no stack trace."""
         from app.main import app
         from app.api.deps import get_db, get_current_user, get_current_active_user
         from fastapi.testclient import TestClient
 
-        app.dependency_overrides[get_db] = lambda: mock_db
-        app.dependency_overrides[get_current_user] = lambda: mock_admin_user
-        app.dependency_overrides[get_current_active_user] = lambda: mock_admin_user
+        # client fixture user owns business id=1, so ownership check passes.
+        # Make reporting_service raise to trigger the generic exception handler.
+        with patch("app.api.v1.endpoints.analytics.reporting_service") as mock_rs:
+            mock_rs.generate_report.side_effect = RuntimeError("unexpected DB crash")
 
-        # Admin bypasses ownership check; db.query directly raises
-        mock_db.query.side_effect = RuntimeError("unexpected DB crash")
-
-        try:
             with TestClient(app, raise_server_exceptions=False) as c:
                 resp = c.get("/api/analytics/business/1")
                 assert resp.status_code == 500
@@ -70,5 +67,3 @@ class TestExceptionHandlers:
                 assert "detail" in body
                 assert "unexpected DB crash" not in body["detail"]
                 assert "Traceback" not in body.get("detail", "")
-        finally:
-            app.dependency_overrides.clear()

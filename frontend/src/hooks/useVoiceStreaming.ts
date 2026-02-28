@@ -42,9 +42,9 @@ export function useVoiceStreaming({
   const silenceStartRef = useRef<number | null>(null);
   const recordingStartRef = useRef<number | null>(null);
   const audioBufferRef = useRef<Int16Array[]>([]);
-  const SILENCE_THRESHOLD = 0.015; // Threshold for silence detection
-  const SILENCE_DURATION = 1200; // 1.2 seconds of silence before auto-stop (more responsive)
-  const MIN_RECORDING_DURATION = 800; // Minimum 0.8 seconds of recording before allowing auto-stop
+  const SILENCE_THRESHOLD = 0.008; // Lower threshold — only true silence triggers, not soft speech
+  const SILENCE_DURATION = 2500; // 2.5 seconds of continuous silence before auto-stop
+  const MIN_RECORDING_DURATION = 3000; // Minimum 3 seconds before allowing auto-stop
   const AUTO_STOP_ENABLED = true; // Enabled for natural voice interaction
 
   // Playback queue

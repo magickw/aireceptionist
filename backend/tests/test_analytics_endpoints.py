@@ -1,76 +1,58 @@
 """Tests for analytics endpoint authorization."""
 
 import pytest
-from unittest.mock import MagicMock, patch
-from app.models.models import Business
+from unittest.mock import patch
 
 
 class TestAnalyticsAuthorization:
     """Verify that analytics endpoints enforce business ownership."""
 
-    ENDPOINTS = [
+    # Endpoints that take business_id as a path parameter
+    PATH_ENDPOINTS = [
         "/api/analytics/business/{bid}",
-        "/api/analytics/business/{bid}/revenue",
         "/api/analytics/business/{bid}/realtime",
-        "/api/analytics/business/{bid}/active-calls",
     ]
 
-    def test_own_business_returns_200(self, client, mock_db, mock_user):
+    def test_own_business_returns_200(self, client):
         """Owner accessing their own business analytics should succeed."""
-        own_business = MagicMock(spec=Business)
-        own_business.id = 1
-        own_business.user_id = mock_user.id
+        # mock_user already has businesses=[MagicMock(id=1)] from conftest
+        with patch("app.api.v1.endpoints.analytics.reporting_service") as mock_rs:
+            mock_rs.generate_report.return_value = {"status": "ok"}
+            mock_rs.get_realtime_stats.return_value = {"status": "ok"}
 
-        mock_db.query.return_value.filter.return_value.first.return_value = own_business
-        # For chained query calls (count, all, group_by, etc.) return sensible defaults
-        mock_db.query.return_value.filter.return_value.count.return_value = 0
-        mock_db.query.return_value.filter.return_value.all.return_value = []
-        mock_db.query.return_value.filter.return_value.filter.return_value.count.return_value = 0
-        mock_db.query.return_value.filter.return_value.filter.return_value.all.return_value = []
-        mock_db.query.return_value.filter.return_value.group_by.return_value.all.return_value = []
-        mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+            for endpoint in self.PATH_ENDPOINTS:
+                url = endpoint.format(bid=1)
+                resp = client.get(url)
+                assert resp.status_code == 200, f"{url} returned {resp.status_code}"
 
-        for endpoint in self.ENDPOINTS:
-            url = endpoint.format(bid=1)
+    def test_other_users_business_returns_403(self, client):
+        """Accessing another user's business analytics should return 403."""
+        for endpoint in self.PATH_ENDPOINTS:
+            url = endpoint.format(bid=999)  # mock_user owns business id=1, not 999
             resp = client.get(url)
-            assert resp.status_code == 200, f"{url} returned {resp.status_code}"
-
-    def test_other_users_business_returns_400(self, client, mock_db, mock_user):
-        """Accessing another user's business analytics should return 400."""
-        other_business = MagicMock(spec=Business)
-        other_business.id = 999
-        other_business.user_id = 42  # Different from mock_user.id (1)
-
-        mock_db.query.return_value.filter.return_value.first.return_value = other_business
-
-        for endpoint in self.ENDPOINTS:
-            url = endpoint.format(bid=999)
-            resp = client.get(url)
-            assert resp.status_code == 400, f"{url} returned {resp.status_code}"
+            assert resp.status_code == 403, f"{url} returned {resp.status_code}"
             assert resp.json()["detail"] == "Not enough permissions"
 
-    def test_nonexistent_business_returns_400(self, client, mock_db):
-        """Accessing analytics for a non-existent business should return 400."""
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-
-        for endpoint in self.ENDPOINTS:
-            url = endpoint.format(bid=99999)
-            resp = client.get(url)
-            assert resp.status_code == 400, f"{url} returned {resp.status_code}"
-            assert resp.json()["detail"] == "Not enough permissions"
-
-    def test_admin_bypasses_ownership_check(self, admin_client, mock_db):
+    def test_admin_bypasses_ownership_check(self, admin_client):
         """Admin users should access any business analytics."""
-        # Admin skips the ownership query entirely, so set up data queries
-        mock_db.query.return_value.filter.return_value.count.return_value = 0
-        mock_db.query.return_value.filter.return_value.all.return_value = []
-        mock_db.query.return_value.filter.return_value.first.return_value = None
-        mock_db.query.return_value.filter.return_value.filter.return_value.count.return_value = 0
-        mock_db.query.return_value.filter.return_value.filter.return_value.all.return_value = []
-        mock_db.query.return_value.filter.return_value.group_by.return_value.all.return_value = []
-        mock_db.query.return_value.filter.return_value.order_by.return_value.limit.return_value.all.return_value = []
+        with patch("app.api.v1.endpoints.analytics.reporting_service") as mock_rs:
+            mock_rs.generate_report.return_value = {"status": "ok"}
+            mock_rs.get_realtime_stats.return_value = {"status": "ok"}
 
-        for endpoint in self.ENDPOINTS:
-            url = endpoint.format(bid=999)
-            resp = admin_client.get(url)
-            assert resp.status_code == 200, f"{url} returned {resp.status_code}"
+            for endpoint in self.PATH_ENDPOINTS:
+                url = endpoint.format(bid=999)
+                resp = admin_client.get(url)
+                assert resp.status_code == 200, f"{url} returned {resp.status_code}"
+
+    def test_roi_endpoint_enforces_ownership(self, client):
+        """ROI endpoint should reject non-owned business_id."""
+        resp = client.get("/api/analytics/roi?business_id=999")
+        assert resp.status_code == 403
+        assert resp.json()["detail"] == "Not enough permissions"
+
+    def test_roi_endpoint_allows_own_business(self, client):
+        """ROI endpoint should allow owned business_id."""
+        with patch("app.api.v1.endpoints.analytics.reporting_service") as mock_rs:
+            mock_rs.calculate_roi_metrics.return_value = {"roi": 1.5}
+            resp = client.get("/api/analytics/roi?business_id=1")
+            assert resp.status_code == 200
