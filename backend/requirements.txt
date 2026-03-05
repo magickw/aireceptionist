@@ -25,3 +25,4 @@ mangum>=0.17.0
 cryptography>=42.0.0
 slowapi>=0.1.9
 redis>=4.2.0
+APScheduler>=3.10.0

@@ -146,17 +146,17 @@ class TestPlaywrightBrowserManagement:
         mock_playwright = Mock()
         mock_browser = Mock()
         mock_page = Mock()
-        
+
         mock_browser.new_page = AsyncMock(return_value=mock_page)
         mock_playwright.chromium.launch = AsyncMock(return_value=mock_browser)
-        
+
         with patch('app.services.nova_act.async_playwright') as mock_async_playwright:
-            mock_async_playwright.return_value.start.return_value = mock_playwright
-            
+            mock_async_playwright.return_value.start = AsyncMock(return_value=mock_playwright)
+
             page = await automation_service._get_page_for_workflow({"workflow_id": "test-1"})
-            
-            assert page is not None
+            assert page == mock_page
             assert "test-1" in automation_service._pages
+            assert automation_service._pages["test-1"] == mock_page
     
     @pytest.mark.asyncio
     async def test_close_browser_for_workflow(self, automation_service):
@@ -287,7 +287,7 @@ class TestPlaywrightActionExecutors:
     async def test_execute_verify(self, automation_service):
         """Test executing verify action"""
         mock_page = Mock()
-        mock_page.query_selector = Mock(return_value=True)
+        mock_page.query_selector = AsyncMock(return_value=True)
         
         step = AutomationStep(
             step_id=1,
@@ -308,7 +308,7 @@ class TestPlaywrightActionExecutors:
         mock_element = Mock()
         mock_element.text_content = AsyncMock(return_value="Extracted text")
         mock_page = Mock()
-        mock_page.query_selector = Mock(return_value=mock_element)
+        mock_page.query_selector = AsyncMock(return_value=mock_element)
         
         step = AutomationStep(
             step_id=1,
@@ -438,12 +438,13 @@ class TestWorkflowStatus:
         
         assert status is None
     
-    def test_cancel_workflow(self, automation_service, sample_workflow):
+    @pytest.mark.asyncio
+    async def test_cancel_workflow(self, automation_service, sample_workflow):
         """Test canceling a workflow"""
         automation_service.active_workflows[sample_workflow.workflow_id] = sample_workflow
-        
+
         result = automation_service.cancel_workflow(sample_workflow.workflow_id)
-        
+
         assert result is True
         assert sample_workflow.status == AutomationStatus.CANCELLED
     

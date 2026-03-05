@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
-from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments, customer_360, revenue_analytics, smart_scheduling, builtin_calendar, campaigns, voice_personas, portal
+from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments, customer_360, revenue_analytics, smart_scheduling, builtin_calendar, campaigns, voice_personas, portal, dashboard_ws
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestLoggingMiddleware
@@ -99,9 +99,22 @@ async def startup_event():
     except Exception as e:
         print(f"[Startup] Error checking/creating refresh_tokens table: {e}")
 
+    # E5: Start the campaign scheduler
+    try:
+        from app.services.scheduler import start_scheduler
+        start_scheduler()
+        print("[Startup] Campaign scheduler started")
+    except Exception as e:
+        print(f"[Startup] Scheduler start failed (non-fatal): {e}")
+
 @app.on_event("shutdown")
 async def shutdown_event():
     """Dispose database connection pool on shutdown."""
+    try:
+        from app.services.scheduler import stop_scheduler
+        stop_scheduler()
+    except Exception:
+        pass
     try:
         engine.dispose()
         logger.info("[Shutdown] Database connection pool disposed")
@@ -185,6 +198,7 @@ app.include_router(builtin_calendar.router, prefix=f"{settings.API_V1_STR}/calen
 app.include_router(campaigns.router, prefix=f"{settings.API_V1_STR}/campaigns", tags=["campaigns"])
 app.include_router(voice_personas.router, prefix=f"{settings.API_V1_STR}/voice-personas", tags=["voice-personas"])
 app.include_router(portal.router, prefix=f"{settings.API_V1_STR}/portal", tags=["portal"])
+app.include_router(dashboard_ws.router, prefix=f"{settings.API_V1_STR}", tags=["dashboard-ws"])
 
 
 @app.get("/health")

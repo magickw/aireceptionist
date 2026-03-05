@@ -101,6 +101,9 @@ async def websocket_endpoint(
     business_id: int = Query(..., description="Business ID for the AI context"),
     call_sid: str = Query(..., description="Twilio Call SID"),
     from_number: str = Query(..., description="Caller phone number"),
+    campaign_id: Optional[int] = Query(None, description="Campaign ID for outbound calls"),
+    campaign_call_id: Optional[int] = Query(None, description="Campaign call ID"),
+    briefing: Optional[str] = Query(None, description="Campaign briefing text"),
     db: Session = Depends(deps.get_db)
 ):
     """
@@ -139,6 +142,13 @@ async def websocket_endpoint(
     if welcome_greeting and welcome_greeting.get("text"):
         business_context["welcome_message"] = welcome_greeting["text"]
 
+    # E5: Inject campaign briefing for outbound calls
+    campaign_briefing = ""
+    if briefing:
+        import urllib.parse
+        campaign_briefing = urllib.parse.unquote(briefing)
+        business_context["welcome_message"] = campaign_briefing
+
     customer_context = {
         "name": "Unknown",
         "phone": from_number,
@@ -161,6 +171,28 @@ async def websocket_endpoint(
     if not sonic_session:
         await websocket.close(code=4000, reason="Failed to create AI session")
         return
+
+    # E2: Register session and publish call_start event
+    try:
+        from app.services.event_bus import event_bus, session_registry
+        session_registry.register(call_sid, {
+            "business_id": business_id,
+            "customer_phone": from_number,
+            "sonic_session": sonic_session,
+            "source": "twilio",
+            "campaign_id": campaign_id,
+        })
+        import asyncio as _aio
+        _aio.get_event_loop().create_task(event_bus.publish({
+            "type": "call_start",
+            "session_id": call_sid,
+            "business_id": business_id,
+            "customer_phone": from_number,
+            "source": "twilio",
+            "campaign_id": campaign_id,
+        }))
+    except Exception:
+        pass
 
     conversation_history = []
 
@@ -500,3 +532,58 @@ async def twilio_status():
         "phone_number": TWILIO_PHONE_NUMBER if configured else None,
         "has_credentials": bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN),
     }
+
+
+# ======================================================================
+# E5: Outbound campaign status callback
+# ======================================================================
+
+@router.post("/outbound-status")
+async def outbound_status_callback(
+    request: Request,
+    db: Session = Depends(deps.get_db),
+):
+    """
+    Twilio status callback for outbound campaign calls.
+    Updates CampaignCall records with final call status and duration.
+    """
+    form_data = await request.form()
+    call_sid = form_data.get("CallSid")
+    call_status = form_data.get("CallStatus")  # completed, busy, no-answer, failed, canceled
+    call_duration = form_data.get("CallDuration")  # seconds
+
+    if not call_sid:
+        return {"status": "ignored", "reason": "no CallSid"}
+
+    from app.models.models import CampaignCall
+
+    campaign_call = db.query(CampaignCall).filter(
+        CampaignCall.call_session_id == call_sid
+    ).first()
+
+    if not campaign_call:
+        return {"status": "ignored", "reason": "no matching campaign call"}
+
+    # Map Twilio status to our status
+    status_map = {
+        "completed": "completed",
+        "busy": "no_answer",
+        "no-answer": "no_answer",
+        "failed": "failed",
+        "canceled": "failed",
+    }
+    campaign_call.status = status_map.get(call_status, "failed")
+    if call_duration:
+        campaign_call.call_duration_seconds = int(call_duration)
+    campaign_call.completed_at = datetime.now(timezone.utc)
+
+    # Update campaign metrics
+    from app.models.models import Campaign
+    campaign = db.query(Campaign).filter(Campaign.id == campaign_call.campaign_id).first()
+    if campaign:
+        if campaign_call.status == "completed":
+            campaign.calls_answered = (campaign.calls_answered or 0) + 1
+        campaign.calls_made = (campaign.calls_made or 0) + 1
+
+    db.commit()
+    return {"status": "updated", "campaign_call_id": campaign_call.id}

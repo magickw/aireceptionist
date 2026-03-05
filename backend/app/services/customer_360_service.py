@@ -222,7 +222,10 @@ class Customer360Service:
         # Engagement insight
         days_since_last = None
         if customer.last_interaction:
-            days_since_last = (datetime.now(timezone.utc) - customer.last_interaction).days
+            last_interaction = customer.last_interaction
+            if last_interaction.tzinfo is None:
+                last_interaction = last_interaction.replace(tzinfo=timezone.utc)
+            days_since_last = (datetime.now(timezone.utc) - last_interaction).days
             
             if days_since_last > 30:
                 insights.append({
@@ -391,7 +394,7 @@ class Customer360Service:
     
     def _calculate_loyalty_tier(self, total_spent: float, total_interactions: int) -> str:
         """Calculate loyalty tier based on spend and interactions"""
-        for tier, thresholds in reversed(list(self.LOYALTY_TIERS.items())):
+        for tier, thresholds in self.LOYALTY_TIERS.items():
             if total_spent >= thresholds["min_spend"] and total_interactions >= thresholds["min_interactions"]:
                 return tier
         return "standard"
@@ -404,7 +407,10 @@ class Customer360Service:
         
         # Time since last interaction
         if customer.last_interaction:
-            days_inactive = (datetime.now(timezone.utc) - customer.last_interaction).days
+            last_interaction = customer.last_interaction
+            if last_interaction.tzinfo is None:
+                last_interaction = last_interaction.replace(tzinfo=timezone.utc)
+            days_inactive = (datetime.now(timezone.utc) - last_interaction).days
             if days_inactive > 60:
                 risk_score += 0.3
             elif days_inactive > 30:
@@ -620,7 +626,10 @@ class Customer360Service:
         
         # Time since last interaction
         if customer.last_interaction:
-            days_inactive = (datetime.now(timezone.utc) - customer.last_interaction).days
+            last_interaction = customer.last_interaction
+            if last_interaction.tzinfo is None:
+                last_interaction = last_interaction.replace(tzinfo=timezone.utc)
+            days_inactive = (datetime.now(timezone.utc) - last_interaction).days
             if days_inactive > 60:
                 risk_score += 0.4
             elif days_inactive > 30:
@@ -718,9 +727,9 @@ class Customer360Service:
         
         for c in customers:
             risk = float(c.churn_risk or 0.5)
-            if risk < 0.3:
+            if risk <= 0.3:
                 segments["low"] += 1
-            elif risk < 0.6:
+            elif risk <= 0.7:
                 segments["medium"] += 1
             else:
                 segments["high"] += 1
@@ -747,7 +756,7 @@ class Customer360Service:
             Order.customer_id == customer_id
         ).all()
         
-        ltv = await self._calculate_lifetime_value(customer_id, db)
+        ltv = await self._calculate_lifetime_value(db, customer)
         
         return {
             "customer": {

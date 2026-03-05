@@ -5,9 +5,11 @@ Autonomous Business Operations Agent - Automation Layer
 import boto3
 import json
 import asyncio
+import base64
 from typing import Dict, Any, List, Optional, AsyncGenerator
 from datetime import datetime
 from enum import Enum
+from playwright.async_api import async_playwright
 from app.core.config import settings
 
 
@@ -173,8 +175,6 @@ class NovaActAutomation:
             return self._pages[workflow_id]
         
         # Create new browser context
-        from playwright.async_api import async_playwright
-        
         if not hasattr(self, '_playwright'):
             self._playwright = await async_playwright().start()
         

@@ -190,6 +190,9 @@ class TestAvailableActions:
             "SEND_DIRECTIONS",
             "PLACE_ORDER",
             "CONFIRM_ORDER",
+            "GET_MENU_ITEMS_FROM_POS",
+            "SEND_ORDER_TO_POS",
+            "GET_ORDER_STATUS_FROM_POS",
             "HUMAN_INTERVENTION"
         ]
         

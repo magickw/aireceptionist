@@ -130,12 +130,19 @@ class TestCheckAvailability:
         # Mock response
         mock_response = MockAiohttpResponse(
             status=200,
-            json_data={"busy": []}
+            json_data={
+                "calendars": {
+                    sample_integration.calendar_id: {
+                        "busy": []
+                    }
+                }
+            }
         )
         
         # Mock session
         mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_session.get = Mock(return_value=mock_response)
+        mock_session.post = Mock(return_value=mock_response)
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
         
@@ -143,17 +150,18 @@ class TestCheckAvailability:
         mock_session_instance = AsyncMock()
         mock_session_instance.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_instance.__aexit__ = AsyncMock(return_value=None)
-        mock_session_instance.get = AsyncMock(return_value=mock_response)
+        mock_session_instance.get = Mock(return_value=mock_response)
+        mock_session_instance.post = Mock(return_value=mock_response)
         
         mock_session_class.return_value = mock_session_instance
         
-        is_available = await calendar_service.check_availability(
+        result = await calendar_service.check_availability(
             integration=sample_integration,
             start_time=start_time,
             end_time=end_time
         )
         
-        assert is_available is True
+        assert result["available"] is True
     
     @pytest.mark.asyncio
     @patch('aiohttp.ClientSession')
@@ -166,18 +174,23 @@ class TestCheckAvailability:
         mock_response = MockAiohttpResponse(
             status=200,
             json_data={
-                "busy": [
-                    {
-                        "start": start_time.isoformat(),
-                        "end": end_time.isoformat()
+                "calendars": {
+                    sample_integration.calendar_id: {
+                        "busy": [
+                            {
+                                "start": start_time.isoformat(),
+                                "end": end_time.isoformat()
+                            }
+                        ]
                     }
-                ]
+                }
             }
         )
         
         # Mock session
         mock_session = AsyncMock()
-        mock_session.get = AsyncMock(return_value=mock_response)
+        mock_session.get = Mock(return_value=mock_response)
+        mock_session.post = Mock(return_value=mock_response)
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
         
@@ -185,17 +198,18 @@ class TestCheckAvailability:
         mock_session_instance = AsyncMock()
         mock_session_instance.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_instance.__aexit__ = AsyncMock(return_value=None)
-        mock_session_instance.get = AsyncMock(return_value=mock_response)
+        mock_session_instance.get = Mock(return_value=mock_response)
+        mock_session_instance.post = Mock(return_value=mock_response)
         
         mock_session_class.return_value = mock_session_instance
         
-        is_available = await calendar_service.check_availability(
+        result = await calendar_service.check_availability(
             integration=sample_integration,
             start_time=start_time,
             end_time=end_time
         )
         
-        assert is_available is False
+        assert result["available"] is False
 
 
 class TestCalendarEventOperations:
@@ -223,7 +237,7 @@ class TestCalendarEventOperations:
         
         # Mock session
         mock_session = AsyncMock()
-        mock_session.post = AsyncMock(return_value=mock_response)
+        mock_session.post = Mock(return_value=mock_response)
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
         
@@ -231,7 +245,7 @@ class TestCalendarEventOperations:
         mock_session_instance = AsyncMock()
         mock_session_instance.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session_instance.__aexit__ = AsyncMock(return_value=None)
-        mock_session_instance.post = AsyncMock(return_value=mock_response)
+        mock_session_instance.post = Mock(return_value=mock_response)
         
         mock_session_class.return_value = mock_session_instance
         

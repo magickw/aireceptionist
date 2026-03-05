@@ -227,6 +227,9 @@ class IntentClassifier:
         db: Session
     ) -> List[IntentClassification]:
         """Get training data for a business type"""
+        if db is None:
+            return []
+            
         # Check cache
         cache_key = f"{business_type}_{db.hash_key if hasattr(db, 'hash_key') else 'default'}"
         if cache_key in self._training_cache:

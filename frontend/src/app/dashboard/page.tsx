@@ -35,6 +35,8 @@ import { MetricCard } from '@/components/ui/MetricCard';
 import { EmptyState } from '@/components/ui/EmptyState';
 import api from '@/services/api';
 import { useAuth } from '@/context/AuthContext';
+import { useDashboardWebSocket } from '@/hooks/useDashboardWebSocket';
+import LiveCallPanel from '@/components/dashboard/LiveCallPanel';
 
 interface DashboardMetrics {
   totalCalls: number;
@@ -103,6 +105,9 @@ export default function Dashboard() {
   const [isLoading, setIsLoading] = useState(true);
   const [businessId, setBusinessId] = useState<number | null>(null);
   const [error, setError] = useState('');
+
+  // E2: Real-time dashboard WebSocket
+  const { isConnected, activeSessions, liveTranscripts, sendCommand } = useDashboardWebSocket(businessId);
 
   useEffect(() => {
     if (!isAuthenticated) return;
@@ -227,8 +232,8 @@ export default function Dashboard() {
 
     fetchDashboardData();
 
-    // Set up real-time updates (every 30 seconds)
-    const interval = setInterval(fetchDashboardData, 30000);
+    // Aggregate metrics polling (live calls handled via WebSocket E2)
+    const interval = setInterval(fetchDashboardData, 60000);
     return () => clearInterval(interval);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isAuthenticated]);
@@ -313,6 +318,19 @@ export default function Dashboard() {
 
       {/* Key Metrics */}
       <Grid container spacing={{ xs: 2, sm: 3 }} sx={{ mb: { xs: 4, sm: 5 } }}>
+
+        {/* E2: Live Call Panel with real-time transcription and supervisor controls */}
+        <Grid item xs={12}>
+          <LiveCallPanel
+            activeSessions={activeSessions}
+            liveTranscripts={liveTranscripts}
+            isConnected={isConnected}
+            onWhisper={(sessionId, text) => sendCommand('whisper', sessionId, { text })}
+            onBargeIn={(sessionId, text) => sendCommand('barge_in', sessionId, { text })}
+            onEndCall={(sessionId) => sendCommand('end_call', sessionId)}
+          />
+        </Grid>
+
         <Grid item xs={12} sm={6} md={2}>
           <MetricCard
             title="Total Traffic"

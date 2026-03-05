@@ -55,6 +55,11 @@ class Settings(BaseSettings):
     NOVA_SONIC_VOICE_ID: str = "matthew"
     NOVA_SONIC_OUTPUT_SAMPLE_RATE: int = 24000
 
+    # E4: Voice Latency Optimization
+    STREAMING_STT_ENABLED: bool = False  # Optional streaming STT (behind flag)
+    INCREMENTAL_TTS_ENABLED: bool = True  # Sentence-level TTS for lower latency
+    TTS_MIN_SENTENCE_LENGTH: int = 20  # Minimum chars before synthesizing a sentence
+
     class Config:
         case_sensitive = True
         env_file = ".env"

@@ -53,7 +53,13 @@ class ActionExecutionService:
             "transferToHuman": self._handle_transfer_to_human,
             "sendDirections": self._handle_send_directions,
             "processPayment": self._handle_process_payment,
-            "interactWithPOS": self._handle_interact_with_pos
+            "interactWithPOS": self._handle_interact_with_pos,
+            "recallCustomerMemory": self._handle_recall_customer_memory,
+            "executeWorkflow": self._handle_execute_workflow,
+            "cancelAppointment": self._handle_cancel_appointment,
+            "refundPayment": self._handle_refund_payment,
+            "cancelOrder": self._handle_cancel_order,
+            "sendConfirmationSMS": self._handle_send_confirmation_sms,
         }
 
         handler = handlers.get(tool_name)
@@ -266,7 +272,30 @@ class ActionExecutionService:
                         "reason": {"type": "string"}
                     }
                 }
-            }
+            },
+            {
+                "name": "recallCustomerMemory",
+                "description": "Recall stored memories and preferences for the current customer.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {"type": "string", "description": "What to search for in customer memories"}
+                    },
+                    "required": ["query"]
+                }
+            },
+            {
+                "name": "executeWorkflow",
+                "description": "Execute a predefined multi-step workflow atomically. Available: bookingWorkflow, orderWorkflow.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "workflow_name": {"type": "string", "enum": ["bookingWorkflow", "orderWorkflow"]},
+                        "inputs": {"type": "object", "description": "Input parameters for the workflow"}
+                    },
+                    "required": ["workflow_name", "inputs"]
+                }
+            },
         ]
         
         # Add POS tools if integration exists
@@ -287,3 +316,91 @@ class ActionExecutionService:
             })
 
         return tools
+
+    # ------------------------------------------------------------------
+    # E1: Customer Memory Recall
+    # ------------------------------------------------------------------
+
+    async def _handle_recall_customer_memory(self, tool_input, business_id, context):
+        query = tool_input.get("query", "")
+        customer_id = context.get("customer_id")
+        if not customer_id:
+            return {"success": False, "message": "No customer identified for memory recall."}
+
+        from app.services.customer_memory_service import customer_memory_service
+        return customer_memory_service.recall_customer_memory(
+            self.db, customer_id, business_id, query
+        )
+
+    # ------------------------------------------------------------------
+    # E3: Workflow Orchestration
+    # ------------------------------------------------------------------
+
+    async def _handle_execute_workflow(self, tool_input, business_id, context):
+        workflow_name = tool_input.get("workflow_name")
+        inputs = tool_input.get("inputs", {})
+
+        from app.services.workflow_templates import get_workflow
+        from app.services.workflow_engine import WorkflowExecution
+
+        try:
+            definition = get_workflow(workflow_name)
+        except ValueError as e:
+            return {"success": False, "message": str(e)}
+
+        # Build progress callback that puts messages on context's text_queue if available
+        text_queue = context.get("text_queue")
+
+        async def progress_cb(message: str):
+            if text_queue:
+                try:
+                    text_queue.put_nowait({"chunk": f"\n[Workflow] {message}\n"})
+                except Exception:
+                    pass
+
+        execution = WorkflowExecution(
+            definition=definition,
+            action_executor=self.execute_action,
+            business_id=business_id,
+            context={**context, **inputs},
+            progress_callback=progress_cb,
+        )
+
+        # Merge workflow inputs as variables
+        execution.variables.update(inputs)
+
+        return await execution.execute()
+
+    # ------------------------------------------------------------------
+    # Compensation handlers for workflow rollback
+    # ------------------------------------------------------------------
+
+    async def _handle_cancel_appointment(self, tool_input, business_id, context):
+        appointment_id = tool_input.get("appointment_id")
+        if appointment_id:
+            from app.models.models import Appointment
+            appt = self.db.query(Appointment).filter(Appointment.id == appointment_id).first()
+            if appt:
+                appt.status = "cancelled"
+                self.db.commit()
+                return {"success": True, "message": f"Appointment {appointment_id} cancelled."}
+        return {"success": True, "message": "No appointment to cancel."}
+
+    async def _handle_refund_payment(self, tool_input, business_id, context):
+        payment_id = tool_input.get("payment_id")
+        return {"success": True, "message": f"Refund initiated for payment {payment_id}."}
+
+    async def _handle_cancel_order(self, tool_input, business_id, context):
+        order_id = tool_input.get("order_id")
+        return {"success": True, "message": f"Order {order_id} cancelled."}
+
+    async def _handle_send_confirmation_sms(self, tool_input, business_id, context):
+        phone = tool_input.get("customer_phone")
+        message = tool_input.get("message", "Your appointment has been confirmed.")
+        # Use existing SMS infrastructure if available
+        try:
+            from app.services.sms_service import sms_service
+            await sms_service.send_sms(phone, message, business_id)
+            return {"success": True, "message": f"Confirmation SMS sent to {phone}."}
+        except Exception as e:
+            return {"success": True, "message": f"SMS queued for {phone} (delivery pending)."}

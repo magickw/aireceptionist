@@ -1,7 +1,7 @@
 """Unit tests for Customer 360 Service"""
 
 import pytest
-from unittest.mock import Mock, AsyncMock
+from unittest.mock import Mock, AsyncMock, MagicMock, patch
 from datetime import datetime, timedelta
 
 from app.services.customer_360_service import Customer360Service
@@ -444,6 +444,7 @@ class TestUpdateCustomerMetrics:
                 mock_q.filter.return_value.first.return_value = mock_customer
             elif model.__name__ == 'CallSession':
                 mock_q.filter.return_value.all.return_value = mock_calls
+                mock_q.filter.return_value.count.return_value = 0
             elif model.__name__ == 'Order':
                 mock_q.filter.return_value.all.return_value = mock_orders
             elif model.__name__ == 'Appointment':
@@ -470,25 +471,28 @@ class TestGetCustomerInsights:
     @pytest.mark.asyncio
     async def test_get_customer_insights_comprehensive(self, customer_360_service, mock_db):
         """Test comprehensive customer insights"""
-        mock_customer = Mock(
-            id=1,
-            name="John Doe",
-            email="john@example.com",
-            loyalty_tier="gold",
-            churn_risk=0.2,
-            is_vip=True,
-            lifetime_value=5000.00,
-            satisfaction_score=4.5
-        )
-        
+        mock_customer = MagicMock()
+        mock_customer.id = 1
+        mock_customer.name = "John Doe"
+        mock_customer.email = "john@example.com"
+        mock_customer.total_spent = 5000.00
+        mock_customer.avg_sentiment = 0.8
+        mock_customer.loyalty_tier = "gold"
+        mock_customer.churn_risk = 0.2
+        mock_customer.is_vip = True
+        mock_customer.lifetime_value = 5000.00
+        mock_customer.satisfaction_score = 4.2
+        mock_customer.total_calls = 5
+        mock_customer.total_orders = 3
+
         mock_calls = [
             Mock(call_date=datetime.now() - timedelta(days=1), sentiment="positive")
         ]
         mock_orders = [
-            Mock(total_amount=100.00),
-            Mock(total_amount=200.00)
+            Mock(total_amount=100.00, created_at=datetime.now() - timedelta(days=60)),
+            Mock(total_amount=200.00, created_at=datetime.now() - timedelta(days=1))
         ]
-        
+
         # Setup mock queries
         def mock_query_side_effect(model):
             mock_query = Mock()
@@ -498,18 +502,19 @@ class TestGetCustomerInsights:
                 mock_query.filter.return_value.order_by.return_value.all.return_value = mock_calls
             elif model == Order:
                 mock_query.filter.return_value.all.return_value = mock_orders
+                mock_query.filter.return_value.order_by.return_value.all.return_value = mock_orders
             return mock_query
-        
+
         mock_db.query.side_effect = mock_query_side_effect
-        
+
         insights = await customer_360_service.get_customer_insights(
             customer_id=1,
             db=mock_db
         )
-        
+
         assert insights["customer"]["name"] == "John Doe"
-        assert insights["metrics"]["lifetime_value"] == 5000.00
-        assert insights["metrics"]["satisfaction_score"] == 4.5
+        assert insights["metrics"]["lifetime_value"]["historical"] == 5000.00
+        assert insights["metrics"]["satisfaction_score"] == 4.2
         assert insights["risk"]["churn_risk"] == 0.2
         assert insights["tier"] == "gold"
         assert insights["is_vip"] is True

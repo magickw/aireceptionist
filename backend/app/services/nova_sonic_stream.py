@@ -243,6 +243,7 @@ import traceback
 import random
 import re
 from typing import Dict, Any, Optional, Callable, List
+from sqlalchemy.orm import Session
 from queue import Full as QueueFull
 from concurrent.futures import ThreadPoolExecutor
 
@@ -257,11 +258,16 @@ _executor = ThreadPoolExecutor(max_workers=32)
 
 
 class StreamLatencyTracker:
-    """Tracks latency for streaming responses."""
+    """Tracks latency for streaming responses with per-stage metrics."""
     def __init__(self):
         self._start_time: Optional[float] = None
         self._first_chunk_at: Optional[float] = None
         self._end_time: Optional[float] = None
+        self._stt_start: Optional[float] = None
+        self._stt_end: Optional[float] = None
+        self._llm_start: Optional[float] = None
+        self._tts_start: Optional[float] = None
+        self._first_audio: Optional[float] = None
 
     def mark_start(self):
         self._start_time = time.monotonic()
@@ -273,6 +279,22 @@ class StreamLatencyTracker:
     def mark_end(self):
         self._end_time = time.monotonic()
 
+    def mark_stt_start(self):
+        self._stt_start = time.monotonic()
+
+    def mark_stt_end(self):
+        self._stt_end = time.monotonic()
+
+    def mark_llm_start(self):
+        self._llm_start = time.monotonic()
+
+    def mark_tts_start(self):
+        self._tts_start = time.monotonic()
+
+    def mark_first_audio(self):
+        if self._first_audio is None:
+            self._first_audio = time.monotonic()
+
     def get_metrics(self) -> Dict[str, float]:
         metrics = {}
         base = self._start_time
@@ -282,12 +304,25 @@ class StreamLatencyTracker:
             metrics["time_to_first_chunk_ms"] = round((self._first_chunk_at - base) * 1000, 2)
         if self._end_time is not None:
             metrics["total_latency_ms"] = round((self._end_time - base) * 1000, 2)
+        if self._stt_start is not None and self._stt_end is not None:
+            metrics["stt_ms"] = round((self._stt_end - self._stt_start) * 1000, 2)
+        if self._llm_start is not None and self._first_chunk_at is not None:
+            metrics["llm_first_token_ms"] = round((self._first_chunk_at - self._llm_start) * 1000, 2)
+        if self._tts_start is not None and self._first_audio is not None:
+            metrics["tts_first_audio_ms"] = round((self._first_audio - self._tts_start) * 1000, 2)
+        if self._start_time is not None and self._first_audio is not None:
+            metrics["voice_to_voice_ms"] = round((self._first_audio - self._start_time) * 1000, 2)
         return metrics
 
     def reset(self):
         self._start_time = None
         self._first_chunk_at = None
         self._end_time = None
+        self._stt_start = None
+        self._stt_end = None
+        self._llm_start = None
+        self._tts_start = None
+        self._first_audio = None
 
 
 class NovaSonicStreamSession:
@@ -336,6 +371,9 @@ class NovaSonicStreamSession:
         # Thinking-block filter state (reset per assistant turn)
         self._in_thinking_block = False
         self._partial_text = ""
+
+        # Incremental TTS sentence buffer
+        self._tts_sentence_buffer = ""
         
         # Conversational fillers
         self.fillers = ["Uh-huh", "I see", "Got it", "One moment", "Let me check that"]
@@ -417,6 +455,7 @@ class NovaSonicStreamSession:
         # --- STT ---
         from app.services.nova_sonic import nova_sonic
         logger.info("Calling transcription service...")
+        self.latency.mark_stt_start()
         
         # Callback to send partial transcripts for live preview
         async def on_partial_transcript(text: str, is_partial: bool = False):
@@ -427,6 +466,7 @@ class NovaSonicStreamSession:
                 logger.warning("transcript_queue full, dropping partial transcript")
         
         transcript, detected_lang = await nova_sonic._transcribe_audio_with_nova(audio_data, on_partial=on_partial_transcript, language_code=self.language)
+        self.latency.mark_stt_end()
         logger.info(f"Transcription result: '{transcript[:100] if transcript else 'EMPTY'}...' (Detected: {detected_lang})")
 
         if not transcript:
@@ -594,6 +634,7 @@ class NovaSonicStreamSession:
             
             logger.info(f"[nova_sonic_stream] Generating assistant response with {len(self._conversation_history)} messages in history")
             logger.info(f"[nova_sonic_stream] System prompt: {self.system_prompt[:100] if self.system_prompt else 'None'}...")
+            self.latency.mark_llm_start()
 
             # Bridge blocking stream -> async via an intermediate queue
             loop = asyncio.get_event_loop()
@@ -664,6 +705,26 @@ class NovaSonicStreamSession:
                                 accumulated_text += filtered
                                 await self.text_queue.put({"chunk": filtered})
 
+                                # Incremental TTS: detect sentence boundaries and synthesize immediately
+                                from app.core.config import settings as app_cfg
+                                if app_cfg.INCREMENTAL_TTS_ENABLED:
+                                    self._tts_sentence_buffer += filtered
+                                    # Check for sentence-ending punctuation
+                                    while self._tts_sentence_buffer:
+                                        # Find first sentence boundary
+                                        boundary = -1
+                                        for punct in ['. ', '! ', '? ', '.\n', '!\n', '?\n']:
+                                            idx = self._tts_sentence_buffer.find(punct)
+                                            if idx != -1 and (boundary == -1 or idx < boundary):
+                                                boundary = idx + len(punct)
+                                        if boundary == -1:
+                                            break
+                                        sentence = self._tts_sentence_buffer[:boundary].strip()
+                                        self._tts_sentence_buffer = self._tts_sentence_buffer[boundary:]
+                                        if len(sentence) >= app_cfg.TTS_MIN_SENTENCE_LENGTH:
+                                            self.latency.mark_tts_start()
+                                            asyncio.create_task(self._synthesize_and_queue(sentence))
+
                 # --- contentBlockStop ---
                 elif "contentBlockStop" in event:
                     if in_tool_block and current_tool_name:
@@ -727,38 +788,45 @@ class NovaSonicStreamSession:
             # --- Turn complete ---
             await self.text_queue.put({"turn_complete": True})
 
-            # --- TTS: synthesize audio for the full text response ---
+            # --- TTS: synthesize audio (incremental or monolithic) ---
             if accumulated_text:
-                from app.services.nova_sonic import nova_sonic
-                
-                # Apply sentiment-aware SSML
-                ssml_text = accumulated_text
-                sentiment = getattr(self, "current_sentiment", "neutral")
-                
-                if sentiment == "negative":
-                    # Use a more soft, empathetic tone
-                    ssml_text = f"<speak><amazon:emotion name='soft' intensity='high'>{accumulated_text}</amazon:emotion></speak>"
-                elif sentiment == "positive":
-                    # Use a more cheerful tone
-                    ssml_text = f"<speak><amazon:emotion name='cheerful' intensity='medium'>{accumulated_text}</amazon:emotion></speak>"
+                from app.core.config import settings as app_cfg
+                if app_cfg.INCREMENTAL_TTS_ENABLED:
+                    # Sentence-level TTS was already dispatched during streaming
+                    # (handled by _tts_sentence_buffer logic below). Flush any remainder.
+                    if self._tts_sentence_buffer.strip():
+                        await self._synthesize_and_queue(self._tts_sentence_buffer)
+                        self._tts_sentence_buffer = ""
                 else:
-                    ssml_text = f"<speak>{accumulated_text}</speak>"
+                    # Legacy monolithic TTS
+                    from app.services.nova_sonic import nova_sonic
 
-                logger.info(f"[nova_sonic_stream] Synthesizing speech with sentiment '{sentiment}' and language '{self.language}': {accumulated_text[:100]}...")
-                audio_data = await self._synthesize_ssml(ssml_text, language=self.language)
-                
-                if audio_data:
-                    audio_b64 = nova_sonic.encode_audio_base64(audio_data)
-                    try:
-                        await asyncio.wait_for(
-                            self.audio_queue.put({
-                                "audio": audio_b64,
-                                "sample_rate": 16000,
-                            }),
-                            timeout=5.0,
-                        )
-                    except asyncio.TimeoutError:
-                        logger.warning("audio_queue full, dropping TTS audio chunk")
+                    # Apply sentiment-aware SSML
+                    ssml_text = accumulated_text
+                    sentiment = getattr(self, "current_sentiment", "neutral")
+
+                    if sentiment == "negative":
+                        ssml_text = f"<speak><amazon:emotion name='soft' intensity='high'>{accumulated_text}</amazon:emotion></speak>"
+                    elif sentiment == "positive":
+                        ssml_text = f"<speak><amazon:emotion name='cheerful' intensity='medium'>{accumulated_text}</amazon:emotion></speak>"
+                    else:
+                        ssml_text = f"<speak>{accumulated_text}</speak>"
+
+                    logger.info(f"[nova_sonic_stream] Synthesizing speech with sentiment '{sentiment}' and language '{self.language}': {accumulated_text[:100]}...")
+                    audio_data = await self._synthesize_ssml(ssml_text, language=self.language)
+
+                    if audio_data:
+                        audio_b64 = nova_sonic.encode_audio_base64(audio_data)
+                        try:
+                            await asyncio.wait_for(
+                                self.audio_queue.put({
+                                    "audio": audio_b64,
+                                    "sample_rate": 16000,
+                                }),
+                                timeout=5.0,
+                            )
+                        except asyncio.TimeoutError:
+                            logger.warning("audio_queue full, dropping TTS audio chunk")
             else:
                 logger.warning(f"[nova_sonic_stream] accumulated_text is None or empty, skipping TTS")
 
@@ -844,6 +912,39 @@ class NovaSonicStreamSession:
             return await nova_sonic._synthesize_speech(plain_text, language_code=language)
 
     # ------------------------------------------------------------------
+    # Incremental TTS: synthesize and queue individual sentences
+    # ------------------------------------------------------------------
+
+    async def _synthesize_and_queue(self, text: str):
+        """Synthesize a single sentence/chunk and put audio on audio_queue."""
+        if not text or not text.strip():
+            return
+        from app.services.nova_sonic import nova_sonic
+
+        sentiment = getattr(self, "current_sentiment", "neutral")
+        if sentiment == "negative":
+            ssml_text = f"<speak><amazon:emotion name='soft' intensity='high'>{text}</amazon:emotion></speak>"
+        elif sentiment == "positive":
+            ssml_text = f"<speak><amazon:emotion name='cheerful' intensity='medium'>{text}</amazon:emotion></speak>"
+        else:
+            ssml_text = f"<speak>{text}</speak>"
+
+        audio_data = await self._synthesize_ssml(ssml_text, language=self.language)
+        if audio_data:
+            self.latency.mark_first_audio()
+            audio_b64 = nova_sonic.encode_audio_base64(audio_data)
+            try:
+                await asyncio.wait_for(
+                    self.audio_queue.put({
+                        "audio": audio_b64,
+                        "sample_rate": 16000,
+                    }),
+                    timeout=5.0,
+                )
+            except asyncio.TimeoutError:
+                logger.warning("audio_queue full, dropping TTS sentence chunk")
+
+    # ------------------------------------------------------------------
     # Thinking-block filter
     # ------------------------------------------------------------------
 
@@ -879,6 +980,8 @@ class NovaSonicStreamSession:
                     if thinking_content:
                         asyncio.create_task(self.text_queue.put({"thinking": thinking_content}))
                     self._partial_text = self._partial_text[idx + 11:]
+                    if self._partial_text.startswith(" ") and output.endswith(" "):
+                        self._partial_text = self._partial_text[1:]
                     self._in_thinking_block = False
                     continue
                 elif self._partial_text and self._is_partial_tag(self._partial_text, "</thinking>"):
@@ -1247,6 +1350,43 @@ def build_tool_definitions(
                             "description": "Payment amount",
                         }
                     },
+                }
+            },
+        },
+        {
+            "name": "recallCustomerMemory",
+            "description": "Recall stored memories and preferences for the current customer. Use this to look up past interactions, preferences, or facts about the customer.",
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "What to search for in customer memories (e.g., 'preferred time', 'last visit', 'allergies')",
+                        }
+                    },
+                    "required": ["query"],
+                }
+            },
+        },
+        {
+            "name": "executeWorkflow",
+            "description": "Execute a predefined multi-step workflow atomically. Available workflows: 'bookingWorkflow' (check availability, book appointment, send SMS), 'orderWorkflow' (place order, confirm, process payment). The workflow handles all steps automatically and rolls back on failure.",
+            "inputSchema": {
+                "json": {
+                    "type": "object",
+                    "properties": {
+                        "workflow_name": {
+                            "type": "string",
+                            "description": "Name of the workflow to execute",
+                            "enum": ["bookingWorkflow", "orderWorkflow"],
+                        },
+                        "inputs": {
+                            "type": "object",
+                            "description": "Input parameters for the workflow (varies by workflow type)",
+                        },
+                    },
+                    "required": ["workflow_name", "inputs"],
                 }
             },
         },

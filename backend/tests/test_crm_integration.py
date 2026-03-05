@@ -39,13 +39,19 @@ class TestSalesforceIntegration:
             })
             
             # Create a proper async context manager mock
+            mock_auth_response.__aenter__ = AsyncMock(return_value=mock_auth_response)
+            mock_auth_response.__aexit__ = AsyncMock(return_value=None)
+            
+            mock_contact_response.__aenter__ = AsyncMock(return_value=mock_contact_response)
+            mock_contact_response.__aexit__ = AsyncMock(return_value=None)
+            
             mock_session = AsyncMock()
-            mock_session.post = AsyncMock(side_effect=[
+            mock_session.post = Mock(side_effect=[
                 mock_auth_response,
                 mock_contact_response
             ])
             mock_session.__aenter__.return_value = mock_session
-            mock_session.__aexit__.return_value = AsyncMock()
+            mock_session.__aexit__.return_value = None
             mock_session_class.return_value = mock_session
             
             result = await crm_service.create_salesforce_contact(
@@ -89,10 +95,13 @@ class TestSalesforceIntegration:
         mock_auth_response.json = AsyncMock(return_value={"error": "invalid_grant"})
         
         with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_auth_response.__aenter__ = AsyncMock(return_value=mock_auth_response)
+            mock_auth_response.__aexit__ = AsyncMock(return_value=None)
+            
             mock_session = AsyncMock()
-            mock_session.post = AsyncMock(return_value=mock_auth_response)
+            mock_session.post = Mock(return_value=mock_auth_response)
             mock_session.__aenter__.return_value = mock_session
-            mock_session.__aexit__.return_value = AsyncMock()
+            mock_session.__aexit__.return_value = None
             mock_session_class.return_value = mock_session
             
             result = await crm_service.create_salesforce_contact(
@@ -127,13 +136,19 @@ class TestHubSpotIntegration:
         })
         
         with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_search_response.__aenter__ = AsyncMock(return_value=mock_search_response)
+            mock_search_response.__aexit__ = AsyncMock(return_value=None)
+            
+            mock_create_response.__aenter__ = AsyncMock(return_value=mock_create_response)
+            mock_create_response.__aexit__ = AsyncMock(return_value=None)
+            
             mock_session = AsyncMock()
-            mock_session.post = AsyncMock(side_effect=[
+            mock_session.post = Mock(side_effect=[
                 mock_search_response,
                 mock_create_response
             ])
             mock_session.__aenter__.return_value = mock_session
-            mock_session.__aexit__.return_value = AsyncMock()
+            mock_session.__aexit__.return_value = None
             mock_session_class.return_value = mock_session
             
             result = await crm_service.create_hubspot_contact(
@@ -164,10 +179,13 @@ class TestHubSpotIntegration:
         })
         
         with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_search_response.__aenter__ = AsyncMock(return_value=mock_search_response)
+            mock_search_response.__aexit__ = AsyncMock(return_value=None)
+            
             mock_session = AsyncMock()
-            mock_session.post = AsyncMock(return_value=mock_search_response)
+            mock_session.post = Mock(return_value=mock_search_response)
             mock_session.__aenter__.return_value = mock_session
-            mock_session.__aexit__.return_value = AsyncMock()
+            mock_session.__aexit__.return_value = None
             mock_session_class.return_value = mock_session
             
             result = await crm_service.create_hubspot_contact(
@@ -222,8 +240,8 @@ class TestCRMErrorHandling:
         crm_service.sf_security_token = "token123"
         
         # Mock network error
-        mock_session = Mock()
-        mock_session.post = AsyncMock(side_effect=Exception("Network error"))
+        mock_session = AsyncMock()
+        mock_session.post = Mock(side_effect=Exception("Network error"))
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
@@ -243,8 +261,8 @@ class TestCRMErrorHandling:
         """Test HubSpot contact creation with network error"""
         crm_service.hs_api_key = "test_api_key"
         
-        mock_session = Mock()
-        mock_session.post = AsyncMock(side_effect=Exception("Network error"))
+        mock_session = AsyncMock()
+        mock_session.post = Mock(side_effect=Exception("Network error"))
         mock_session.__aenter__ = AsyncMock(return_value=mock_session)
         mock_session.__aexit__ = AsyncMock(return_value=None)
         mock_session_class.return_value = mock_session
@@ -280,13 +298,19 @@ class TestCRMDataValidation:
         mock_contact_response.json = AsyncMock(return_value={"id": "003xx000003ABC"})
         
         with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_auth_response.__aenter__ = AsyncMock(return_value=mock_auth_response)
+            mock_auth_response.__aexit__ = AsyncMock(return_value=None)
+            
+            mock_contact_response.__aenter__ = AsyncMock(return_value=mock_contact_response)
+            mock_contact_response.__aexit__ = AsyncMock(return_value=None)
+            
             mock_session = AsyncMock()
-            mock_session.post = AsyncMock(side_effect=[
+            mock_session.post = Mock(side_effect=[
                 mock_auth_response,
                 mock_contact_response
             ])
             mock_session.__aenter__.return_value = mock_session
-            mock_session.__aexit__.return_value = AsyncMock()
+            mock_session.__aexit__.return_value = None
             mock_session_class.return_value = mock_session
             
             result = await crm_service.create_salesforce_contact(
@@ -318,13 +342,19 @@ class TestCRMDataValidation:
         mock_contact_response.json = AsyncMock(return_value={"id": "003xx000003ABC"})
         
         with patch('aiohttp.ClientSession') as mock_session_class:
+            mock_auth_response.__aenter__ = AsyncMock(return_value=mock_auth_response)
+            mock_auth_response.__aexit__ = AsyncMock(return_value=None)
+            
+            mock_contact_response.__aenter__ = AsyncMock(return_value=mock_contact_response)
+            mock_contact_response.__aexit__ = AsyncMock(return_value=None)
+            
             mock_session = AsyncMock()
-            mock_session.post = AsyncMock(side_effect=[
+            mock_session.post = Mock(side_effect=[
                 mock_auth_response,
                 mock_contact_response
             ])
             mock_session.__aenter__.return_value = mock_session
-            mock_session.__aexit__.return_value = AsyncMock()
+            mock_session.__aexit__.return_value = None
             mock_session_class.return_value = mock_session
             
             result = await crm_service.create_salesforce_contact(

@@ -616,6 +616,111 @@ class CallRecording(Base):
     business = relationship("Business", backref="recordings")
 
 
+# ======================================================================
+# E1: Conversation Memory & Context Persistence
+# ======================================================================
+
+class CustomerMemory(Base):
+    """Persistent customer memories across sessions."""
+    __tablename__ = "customer_memories"
+
+    id = Column(Integer, primary_key=True, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False, index=True)
+    memory_type = Column(String(50), nullable=False)  # preference, fact, complaint, note
+    key = Column(String(255), nullable=False)
+    value = Column(Text, nullable=False)
+    confidence = Column(DECIMAL(3, 2), default=1.0)
+    access_count = Column(Integer, default=0)
+    expires_at = Column(DateTime)
+    is_active = Column(Boolean, default=True)
+    source_session_id = Column(String(100))
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    customer = relationship("Customer", backref="memories")
+    business = relationship("Business")
+
+
+class CallSummaryV2(Base):
+    """AI-generated call summaries with structured extraction."""
+    __tablename__ = "call_summaries_v2"
+
+    id = Column(Integer, primary_key=True, index=True)
+    call_session_id = Column(String(100), ForeignKey("call_sessions.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False, index=True)
+    summary_text = Column(Text)
+    key_topics = Column(JSON)  # ["appointment", "billing"]
+    outcome = Column(String(100))  # "booked_appointment", "resolved_complaint", etc.
+    action_items = Column(JSON)  # ["Follow up on insurance", "Send menu"]
+    sentiment_arc = Column(String(100))  # "neutral->positive"
+    extracted_facts = Column(JSON)  # {"preferred_time": "mornings", "pet_count": "2"}
+    created_at = Column(DateTime, server_default=func.now())
+
+    call_session = relationship("CallSession", backref="summary_v2")
+    customer = relationship("Customer")
+    business = relationship("Business")
+
+
+# ======================================================================
+# E5: Proactive Outbound AI Calls
+# ======================================================================
+
+class Campaign(Base):
+    """Outbound AI campaign management."""
+    __tablename__ = "campaigns"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False, index=True)
+    name = Column(String(255), nullable=False)
+    campaign_type = Column(String(50), nullable=False)  # appointment_reminder, follow_up, re_engagement, custom
+    status = Column(String(20), default="draft")  # draft, scheduled, running, paused, completed, cancelled
+    briefing = Column(Text)  # AI briefing for the campaign calls
+    target_criteria = Column(JSON)  # {"min_days_since_last_visit": 30, "loyalty_tier": "standard"}
+    schedule = Column(JSON)  # {"start_time": "09:00", "end_time": "17:00", "timezone": "US/Eastern"}
+    max_concurrent_calls = Column(Integer, default=3)
+    max_retries = Column(Integer, default=2)
+
+    # Metrics
+    total_targets = Column(Integer, default=0)
+    calls_made = Column(Integer, default=0)
+    calls_answered = Column(Integer, default=0)
+    calls_successful = Column(Integer, default=0)
+
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    started_at = Column(DateTime)
+    completed_at = Column(DateTime)
+
+    business = relationship("Business", backref="campaigns")
+    campaign_calls = relationship("CampaignCall", back_populates="campaign", cascade="all, delete-orphan")
+
+
+class CampaignCall(Base):
+    """Individual call within a campaign."""
+    __tablename__ = "campaign_calls"
+
+    id = Column(Integer, primary_key=True, index=True)
+    campaign_id = Column(Integer, ForeignKey("campaigns.id"), nullable=False, index=True)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=False)
+    call_session_id = Column(String(100), ForeignKey("call_sessions.id"))
+    status = Column(String(20), default="pending")  # pending, calling, answered, no_answer, failed, completed
+    attempt_number = Column(Integer, default=1)
+    outcome = Column(String(50))  # confirmed, declined, voicemail, callback_requested
+    outcome_details = Column(Text)
+    call_duration_seconds = Column(Integer)
+    scheduled_at = Column(DateTime)
+    called_at = Column(DateTime)
+    completed_at = Column(DateTime)
+    created_at = Column(DateTime, server_default=func.now())
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+
+    campaign = relationship("Campaign", back_populates="campaign_calls")
+    customer = relationship("Customer")
+    call_session = relationship("CallSession")
+
+
 class TeamMember(Base):
     """Team members for staff management"""
     __tablename__ = "team_members"

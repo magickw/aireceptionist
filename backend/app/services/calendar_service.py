@@ -178,10 +178,15 @@ class CalendarService:
     ) -> Dict[str, Any]:
         """Create an event on the calendar"""
         # Check token validity
-        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
-        if integration.token_expires_at and integration.token_expires_at < now_naive:
-            if not await self.refresh_google_token(integration, db):
-                raise Exception("Failed to refresh calendar token")
+        now = datetime.now(timezone.utc)
+        token_expires_at = integration.token_expires_at
+        if token_expires_at:
+            if token_expires_at.tzinfo is None:
+                token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
+            
+            if token_expires_at < now:
+                if not await self.refresh_google_token(integration, db):
+                    raise Exception("Failed to refresh calendar token")
         
         event = {
             "summary": summary,
@@ -222,10 +227,15 @@ class CalendarService:
     ) -> List[Dict[str, Any]]:
         """Get events from the calendar"""
         # Check token validity
-        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
-        if integration.token_expires_at and integration.token_expires_at < now_naive:
-            if not await self.refresh_google_token(integration, db):
-                raise Exception("Failed to refresh calendar token")
+        now = datetime.now(timezone.utc)
+        token_expires_at = integration.token_expires_at
+        if token_expires_at:
+            if token_expires_at.tzinfo is None:
+                token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
+            
+            if token_expires_at < now:
+                if not await self.refresh_google_token(integration, db):
+                    raise Exception("Failed to refresh calendar token")
         
         headers = {
             "Authorization": f"Bearer {encryption_service.decrypt_if_needed(integration.access_token)}"
@@ -266,10 +276,15 @@ class CalendarService:
             }
         """
         # Check token validity
-        now_naive = datetime.now(timezone.utc).replace(tzinfo=None)
-        if integration.token_expires_at and integration.token_expires_at < now_naive:
-            if not await self.refresh_google_token(integration, db):
-                raise Exception("Failed to refresh calendar token")
+        now = datetime.now(timezone.utc)
+        token_expires_at = integration.token_expires_at
+        if token_expires_at:
+            if token_expires_at.tzinfo is None:
+                token_expires_at = token_expires_at.replace(tzinfo=timezone.utc)
+            
+            if token_expires_at < now:
+                if not await self.refresh_google_token(integration, db):
+                    raise Exception("Failed to refresh calendar token")
         
         headers = {
             "Authorization": f"Bearer {encryption_service.decrypt_if_needed(integration.access_token)}",

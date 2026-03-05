@@ -180,6 +180,17 @@ async def _run_streaming_relay(
             if not is_partial and text:
                 conversation_history.append({"role": "customer", "content": text})
                 _save_message(text, "customer")
+                # E2: Publish transcript event
+                try:
+                    from app.services.event_bus import event_bus
+                    asyncio.create_task(event_bus.publish({
+                        "type": "transcript",
+                        "session_id": session_id,
+                        "business_id": ws_session.get("business_id"),
+                        "text": text,
+                    }))
+                except Exception:
+                    pass
 
             try:
                 await websocket.send_json({"type": "transcript", "text": text, "is_partial": is_partial})
@@ -256,6 +267,17 @@ async def _run_streaming_relay(
                 if accumulated_text:
                     conversation_history.append({"role": "ai", "content": accumulated_text})
                     _save_message(accumulated_text, "ai")
+                    # E2: Publish AI response event
+                    try:
+                        from app.services.event_bus import event_bus
+                        asyncio.create_task(event_bus.publish({
+                            "type": "ai_response",
+                            "session_id": session_id,
+                            "business_id": ws_session.get("business_id"),
+                            "text": accumulated_text,
+                        }))
+                    except Exception:
+                        pass
                     try:
                         await websocket.send_json({
                             "type": "text_chunk",
@@ -437,6 +459,19 @@ async def voice_websocket(
     
     # Create CallSession record in database
     _create_call_session(ws_session, session_id)
+
+    # E2: Publish call_start event and register session
+    try:
+        from app.services.event_bus import event_bus, session_registry
+        asyncio.create_task(event_bus.publish({
+            "type": "call_start",
+            "session_id": session_id,
+            "business_id": business_id,
+            "customer_phone": ws_session.get("customer_phone"),
+            "customer_name": ws_session.get("customer_name"),
+        }))
+    except Exception:
+        pass
     
     # Send connection acknowledgment with audio config
     await manager.send_json(session_id, {
@@ -527,6 +562,26 @@ async def voice_websocket(
                 except Exception as e:
                     print(f"[Voice WS] Briefing error: {e}")
 
+            # E1: Append persistent memory briefing
+            try:
+                from app.services.customer_memory_service import customer_memory_service
+                customer_record = None
+                if current_phone:
+                    from app.models.models import Customer
+                    customer_record = db.query(Customer).filter(
+                        Customer.business_id == business_id,
+                        Customer.phone == current_phone
+                    ).first()
+                if customer_record:
+                    memory_briefing = customer_memory_service.build_memory_briefing(
+                        db, customer_record.id, business_id
+                    )
+                    if memory_briefing:
+                        briefing += f"\n{memory_briefing}"
+                    ws_session["customer_id"] = customer_record.id
+            except Exception as e:
+                print(f"[Voice WS] Memory briefing error: {e}")
+
             sonic_session = await nova_sonic.create_streaming_session(
                 session_id=session_id,
                 business_context=business_context,
@@ -539,6 +594,18 @@ async def voice_websocket(
             )
 
             ws_session["_session_id"] = session_id
+
+            # E2: Register session for supervisor controls
+            try:
+                from app.services.event_bus import session_registry
+                session_registry.register(session_id, {
+                    "business_id": business_id,
+                    "customer_phone": ws_session.get("customer_phone"),
+                    "customer_name": ws_session.get("customer_name"),
+                    "sonic_session": sonic_session,
+                })
+            except Exception:
+                pass
 
             # Start relay task
             relay_task = asyncio.create_task(
@@ -1840,7 +1907,7 @@ def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str 
         from app.api.deps import get_db
         gen = get_db()
         db = next(gen)
-        
+
         call_session = db.query(CallSession).filter(CallSession.id == session_id).first()
         if call_session:
             call_session.status = "ended"
@@ -1856,7 +1923,47 @@ def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str 
                 call_session.summary = summary
             if sentiment:
                 call_session.sentiment = sentiment
-            
+
+            # E2: Publish call_end event to event bus
+            try:
+                from app.services.event_bus import event_bus, session_registry
+                asyncio.create_task(event_bus.publish({
+                    "type": "call_end",
+                    "session_id": session_id,
+                    "business_id": ws_session.get("business_id"),
+                    "duration_seconds": call_session.duration_seconds,
+                    "sentiment": sentiment,
+                }))
+                session_registry.deregister(session_id)
+            except Exception as eb_err:
+                print(f"[Voice WS] Event bus call_end error: {eb_err}")
+
+            # E1: Trigger async call summarization
+            customer_id = ws_session.get("customer_id")
+            business_id = ws_session.get("business_id")
+            async def summarize_and_save():
+                try:
+                    from app.db.session import SessionLocal
+                    from app.models.models import ConversationMessage
+                    from app.services.customer_memory_service import customer_memory_service
+                    with SessionLocal() as bg_db:
+                        messages = bg_db.query(ConversationMessage).filter(
+                            ConversationMessage.call_session_id == session_id
+                        ).order_by(ConversationMessage.timestamp).all()
+                        if messages and customer_id and business_id:
+                            conv_msgs = [
+                                {"sender": m.sender, "content": m.content}
+                                for m in messages
+                            ]
+                            customer_memory_service.summarize_call(
+                                bg_db, session_id, customer_id, business_id, conv_msgs
+                            )
+                except Exception as se:
+                    print(f"[Voice WS] Call summarization error: {se}")
+
+            if customer_id:
+                asyncio.create_task(summarize_and_save())
+
             # OPERATIONAL: Background Quality Analysis
             from app.services.sentiment_service import sentiment_service
             async def analyze_and_update():
