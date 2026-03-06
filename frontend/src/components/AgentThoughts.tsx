@@ -190,17 +190,19 @@ const AgentThoughts: React.FC<AgentThoughtsProps> = ({ thoughts, reasoningData }
                   label="APPROVE OVERRIDE" 
                   size="small" 
                   color="success" 
-                  clickable 
+                  clickable={!isProcessing}
                   onClick={handleApprove}
-                  sx={{ fontWeight: 'bold' }} 
+                  disabled={isProcessing}
+                  sx={{ fontWeight: 'bold', opacity: isProcessing ? 0.5 : 1 }} 
                 />
                 <Chip 
                   label="REJECT & TAKE OVER" 
                   size="small" 
                   color="error" 
-                  clickable 
+                  clickable={!isProcessing}
                   onClick={handleReject}
-                  sx={{ fontWeight: 'bold' }} 
+                  disabled={isProcessing}
+                  sx={{ fontWeight: 'bold', opacity: isProcessing ? 0.5 : 1 }} 
                 />
               </Box>
             </Alert>

@@ -78,11 +78,11 @@ async def approve_override(
     context = request.context or {}
     notes = request.notes or ""
     
-    # Create or update approval request
+    # Create or update approval request - query for any request (not just pending)
+    # to prevent duplicate insertions when endpoint is called multiple times
     approval = db.query(ApprovalRequest).filter(
         ApprovalRequest.call_session_id == call_session_id,
-        ApprovalRequest.request_type == request_type,
-        ApprovalRequest.status == "pending"
+        ApprovalRequest.request_type == request_type
     ).first()
     
     if not approval:
@@ -130,11 +130,11 @@ async def reject_request(
     context = request.context or {}
     notes = request.notes or ""
     
-    # Create or update approval request
+    # Create or update approval request - query for any request (not just pending)
+    # to prevent duplicate insertions when endpoint is called multiple times
     approval = db.query(ApprovalRequest).filter(
         ApprovalRequest.call_session_id == call_session_id,
-        ApprovalRequest.request_type == request_type,
-        ApprovalRequest.status == "pending"
+        ApprovalRequest.request_type == request_type
     ).first()
     
     if not approval:
