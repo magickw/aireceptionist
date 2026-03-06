@@ -140,7 +140,7 @@ async def test_create_campaign(service, mock_db):
         with patch("app.services.outbound_campaign_service.Campaign") as MockCampaign, \
              patch("app.services.outbound_campaign_service.CampaignCall") as MockCampaignCall:
 
-            campaign_instance = _make_campaign_mock(id=99, total_targets=2)
+            campaign_instance = _make_campaign_mock(id=99, total_targets=2, name="Follow-up Campaign", campaign_type="follow_up", status="draft")
             MockCampaign.return_value = campaign_instance
 
             cc1 = _make_campaign_call_mock(id=1, campaign_id=99, customer_id=10)

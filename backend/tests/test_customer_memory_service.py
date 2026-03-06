@@ -92,7 +92,7 @@ def test_save_memory_creates_new(service, mock_db):
 
     mock_db.refresh.side_effect = fake_refresh
 
-    with patch("app.services.customer_memory_service.CustomerMemory") as MockModel:
+    with patch("app.models.models.CustomerMemory") as MockModel:
         instance = _make_memory_mock(id=None, key="preferred_time", value="mornings")
         MockModel.return_value = instance
         MockModel.customer_id = MagicMock()
@@ -364,7 +364,7 @@ def test_summarize_call(mock_settings, mock_boto3, service, mock_db):
     }
 
     # Mock the query for CallSummaryV2 (used internally)
-    with patch("app.services.customer_memory_service.CallSummaryV2") as MockSummaryModel:
+    with patch("app.models.models.CallSummaryV2") as MockSummaryModel:
         mock_summary_instance = MagicMock()
         mock_summary_instance.id = 99
         MockSummaryModel.return_value = mock_summary_instance
@@ -372,7 +372,7 @@ def test_summarize_call(mock_settings, mock_boto3, service, mock_db):
         # For save_memory calls on extracted facts, mock the CustomerMemory query
         mock_db.query.return_value.filter.return_value.first.return_value = None
 
-        with patch("app.services.customer_memory_service.CustomerMemory") as MockMemModel:
+        with patch("app.models.models.CustomerMemory") as MockMemModel:
             MockMemModel.return_value = _make_memory_mock()
             MockMemModel.customer_id = MagicMock()
             MockMemModel.key = MagicMock()
@@ -432,7 +432,7 @@ def test_flush_session_memories(service, mock_db):
 
     mock_db.query.return_value.filter.return_value.first.return_value = None
 
-    with patch("app.services.customer_memory_service.CustomerMemory") as MockModel:
+    with patch("app.models.models.CustomerMemory") as MockModel:
         MockModel.return_value = _make_memory_mock()
         MockModel.customer_id = MagicMock()
         MockModel.key = MagicMock()

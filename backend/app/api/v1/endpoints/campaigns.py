@@ -57,7 +57,7 @@ async def get_campaign(
 ) -> Any:
     """Get campaign details with call statistics."""
     service = OutboundCampaignService(db)
-    result = service.get_campaign_details(campaign_id)
+    result = await service.get_campaign_details(campaign_id)
     if not result:
         raise HTTPException(status_code=404, detail="Campaign not found")
     _check_business_permission(current_user, result["business_id"])
@@ -103,11 +103,11 @@ async def start_campaign(
 ) -> Any:
     """Start a campaign."""
     service = OutboundCampaignService(db)
-    details = service.get_campaign_details(campaign_id)
+    details = await service.get_campaign_details(campaign_id)
     if not details:
         raise HTTPException(status_code=404, detail="Campaign not found")
     _check_business_permission(current_user, details["business_id"])
-    return service.start_campaign(campaign_id)
+    return await service.start_campaign(campaign_id)
 
 
 @router.post("/{campaign_id}/pause", response_model=Dict[str, Any])
@@ -118,11 +118,11 @@ async def pause_campaign(
 ) -> Any:
     """Pause a running campaign."""
     service = OutboundCampaignService(db)
-    details = service.get_campaign_details(campaign_id)
+    details = await service.get_campaign_details(campaign_id)
     if not details:
         raise HTTPException(status_code=404, detail="Campaign not found")
     _check_business_permission(current_user, details["business_id"])
-    return service.pause_campaign(campaign_id)
+    return await service.pause_campaign(campaign_id)
 
 
 @router.post("/{campaign_id}/cancel", response_model=Dict[str, Any])
@@ -133,11 +133,11 @@ async def cancel_campaign(
 ) -> Any:
     """Cancel a campaign."""
     service = OutboundCampaignService(db)
-    details = service.get_campaign_details(campaign_id)
+    details = await service.get_campaign_details(campaign_id)
     if not details:
         raise HTTPException(status_code=404, detail="Campaign not found")
     _check_business_permission(current_user, details["business_id"])
-    return service.cancel_campaign(campaign_id)
+    return await service.cancel_campaign(campaign_id)
 
 
 @router.get("/{campaign_id}/calls", response_model=List[Dict[str, Any]])
@@ -149,7 +149,7 @@ async def get_campaign_calls(
 ) -> Any:
     """Get calls for a campaign."""
     service = OutboundCampaignService(db)
-    details = service.get_campaign_details(campaign_id)
+    details = await service.get_campaign_details(campaign_id)
     if not details:
         raise HTTPException(status_code=404, detail="Campaign not found")
     _check_business_permission(current_user, details["business_id"])
@@ -186,7 +186,7 @@ async def get_stats(
     """Get outbound campaign statistics."""
     _check_business_permission(current_user, business_id)
     service = OutboundCampaignService(db)
-    return service.get_outbound_stats(business_id)
+    return await service.get_outbound_stats(business_id)
 
 
 @router.post("/trigger-reminders", response_model=Dict[str, Any])

@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { BACKEND_URL } from '@/services/api';
 
 interface DashboardEvent {
   type: string;
@@ -37,9 +38,9 @@ export function useDashboardWebSocket(businessId: number | null): UseDashboardWe
   const connect = useCallback(() => {
     if (!businessId) return;
 
-    const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const host = process.env.NEXT_PUBLIC_API_URL?.replace(/^https?:\/\//, '') || window.location.host;
-    const wsUrl = `${protocol}//${host}/api/ws/dashboard?business_id=${businessId}`;
+    const wsProtocol = BACKEND_URL.startsWith('https') ? 'wss' : 'ws';
+    const wsHost = BACKEND_URL.replace(/^https?:\/\//, '');
+    const wsUrl = `${wsProtocol}://${wsHost}/api/ws/dashboard?business_id=${businessId}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
