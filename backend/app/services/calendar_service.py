@@ -668,9 +668,9 @@ Booked via AI Receptionist
     ) -> Dict[str, Any]:
         """
         Check availability and book an appointment if the slot is free.
-        
+
         This combines conflict checking and appointment creation for convenience.
-        
+
         Returns:
             {
                 "success": bool,
@@ -680,6 +680,18 @@ Booked via AI Receptionist
                 "message": str
             }
         """
+        # CRITICAL: Validate appointment time is in the future
+        if start_time <= datetime.now():
+            date_fmt = start_time.strftime("%B %d")
+            time_fmt = start_time.strftime("%I:%M %p")
+            return {
+                "success": False,
+                "appointment": None,
+                "calendar_event": None,
+                "conflicts": [],
+                "message": f"The requested time ({date_fmt} at {time_fmt}) has already passed. Please choose a future date and time."
+            }
+
         # Validate appointment time is within business operating hours
         from app.models.models import Business
         business = db.query(Business).filter(Business.id == business_id).first()

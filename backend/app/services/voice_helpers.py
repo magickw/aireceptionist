@@ -17,8 +17,49 @@ logger = get_logger("voice_helpers")
 from datetime import datetime, timedelta, timezone
 from dateutil import parser as date_parser
 
+def _normalize_chinese_time(text: str) -> str:
+    """
+    Convert Chinese time expressions to English equivalents.
+
+    Examples:
+    - "下午2點" -> "2pm"
+    - "上午9點" -> "9am"
+    - "早上10點" -> "10am"
+    - "晚上8點" -> "8pm"
+    - "2點" -> "2:00"
+    """
+    if not text:
+        return text
+
+    # First, handle the case where there's a time indicator (上午/下午 etc.)
+    # Pattern: time_indicator + digits + 點
+    # Convert to: digits + am/pm
+
+    # Chinese time indicators
+    time_indicators = {
+        '下午': 'pm',
+        '上午': 'am',
+        '早上': 'am',
+        '晚上': 'pm',
+        '夜間': 'pm',
+        '凌晨': 'am',
+    }
+
+    # Pattern to match: time_indicator + optional spaces + digits + 點
+    for chinese, english in time_indicators.items():
+        # Match pattern like "下午2點" or "下午 2點"
+        pattern = rf'{re.escape(chinese)}\s*(\d+)\s*點'
+        replacement = rf'\1{english}'
+        text = re.sub(pattern, replacement, text)
+
+    # Now handle remaining "點" (o'clock) cases without time indicators
+    # Replace "2點" -> "2:00"
+    text = re.sub(r'(\d+)\s*點(?!\d)', r'\1:00', text)
+
+    return text
+
 def parse_natural_datetime(
-    date_str: Optional[str], 
+    date_str: Optional[str],
     time_str: Optional[str],
     timezone_hint: str = "local"
 ) -> Optional[datetime]:
@@ -75,10 +116,21 @@ def parse_natural_datetime(
                 pass
         return future_date.replace(hour=12, minute=0, second=0, microsecond=0)
     
-    # Handle "next [day]" patterns
+    # Handle "next [day]" patterns (English)
     next_day_match = re.search(r'next (monday|tuesday|wednesday|thursday|friday|saturday|sunday)', combined)
-    if next_day_match:
-        day_name = next_day_match.group(1)
+    # Handle Chinese "下週[day]" patterns (next Monday, next Tuesday, etc.)
+    chinese_day_map = {
+        '週一': 'monday', '週二': 'tuesday', '週三': 'wednesday', '週四': 'thursday',
+        '週五': 'friday', '週六': 'saturday', '週日': 'sunday'
+    }
+    chinese_next_day_match = None
+    for chinese_day, english_day in chinese_day_map.items():
+        if re.search(f'下{chinese_day}', combined):
+            chinese_next_day_match = english_day
+            break
+
+    if next_day_match or chinese_next_day_match:
+        day_name = next_day_match.group(1) if next_day_match else chinese_next_day_match
         weekdays = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
         target_weekday = weekdays.index(day_name)
         current_weekday = now.weekday()
@@ -86,16 +138,33 @@ def parse_natural_datetime(
         if days_ahead == 0:
             days_ahead = 7  # Next week's same day
         target_date = now + timedelta(days=days_ahead)
-        
+
         # Try to extract time from remaining text
-        remaining = combined.replace(next_day_match.group(0), "").strip()
+        pattern_to_remove = next_day_match.group(0) if next_day_match else f"下{[k for k, v in chinese_day_map.items() if v == day_name][0]}"
+        remaining = combined.replace(pattern_to_remove, "").strip()
         if remaining:
             try:
-                parsed_time = date_parser.parse(remaining)
-                return target_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
+                # Normalize Chinese time expressions before parsing
+                remaining_normalized = _normalize_chinese_time(remaining)
+                parsed_time = date_parser.parse(remaining_normalized)
+                result = target_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
+                # Validate that the result is in the future
+                if result > now:
+                    return result
+                else:
+                    # Time is in the past on that day, try next week
+                    result += timedelta(days=7)
+                    return result
             except:
                 pass
-        return target_date.replace(hour=12, minute=0, second=0, microsecond=0)
+        result = target_date.replace(hour=12, minute=0, second=0, microsecond=0)
+        # Validate that the result is in the future
+        if result > now:
+            return result
+        else:
+            # Noon is in the past, try next week
+            result += timedelta(days=7)
+            return result
     
     # Handle "this [day]" patterns
     this_day_match = re.search(r'this (monday|tuesday|wednesday|thursday|friday|saturday|sunday)', combined)
@@ -108,22 +177,26 @@ def parse_natural_datetime(
         if days_ahead < 0:
             days_ahead += 7
         target_date = now + timedelta(days=days_ahead)
-        
+
         remaining = combined.replace(this_day_match.group(0), "").strip()
         if remaining:
             try:
-                parsed_time = date_parser.parse(remaining)
+                # Normalize Chinese time expressions before parsing
+                remaining_normalized = _normalize_chinese_time(remaining)
+                parsed_time = date_parser.parse(remaining_normalized)
                 return target_date.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
             except:
                 pass
         return target_date.replace(hour=12, minute=0, second=0, microsecond=0)
-    
+
     # Handle "today"
     if "today" in combined:
         remaining = combined.replace("today", "").strip()
         if remaining:
             try:
-                parsed_time = date_parser.parse(remaining)
+                # Normalize Chinese time expressions before parsing
+                remaining_normalized = _normalize_chinese_time(remaining)
+                parsed_time = date_parser.parse(remaining_normalized)
                 return now.replace(hour=parsed_time.hour, minute=parsed_time.minute, second=0, microsecond=0)
             except:
                 pass

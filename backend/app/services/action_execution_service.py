@@ -95,9 +95,20 @@ class ActionExecutionService:
         service = tool_input.get("service", "General")
         
         appointment_time = parse_natural_datetime(date_str, time_str)
-        
+
         if not appointment_time:
             return {"success": False, "message": "Could not parse the date and time."}
+
+        # CRITICAL: Validate appointment time is in the future
+        from datetime import datetime
+        if appointment_time <= datetime.now():
+            # Format the past time for the error message
+            date_fmt = appointment_time.strftime("%B %d")
+            time_fmt = appointment_time.strftime("%I:%M %p")
+            return {
+                "success": False,
+                "message": f"The requested time ({date_fmt} at {time_fmt}) has already passed. Please choose a future date and time."
+            }
 
         # Validate appointment time is within business operating hours
         from app.models.models import Business

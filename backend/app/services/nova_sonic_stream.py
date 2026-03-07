@@ -484,23 +484,30 @@ class NovaSonicStreamSession:
         if detected_lang and detected_lang != self.language:
             logger.info(f"Switching session language from {self.language} to {detected_lang}")
             self.language = detected_lang
-            
+
             # Update system prompt with new language context
             # This ensures the model follows cultural guidelines for the new language
             try:
-                # We need to rebuild the prompt. Since we don't have all the original context here, 
-                # we'll use a simplified update or just let the model adapt.
-                # For now, we'll append a directive to the current prompt if it's not already there.
                 lang_names = {
                     "en-US": "English (US)", "es-US": "Spanish (US)", "fr-FR": "French",
                     "zh-CN": "Chinese (Mandarin)", "ja-JP": "Japanese", "ko-KR": "Korean"
                 }
                 new_lang_name = lang_names.get(detected_lang, detected_lang)
-                language_directive = f"\n\n**NEW LANGUAGE DIRECTIVE:** The customer is now speaking {new_lang_name}. Please respond entirely in {new_lang_name} from now on, following all appropriate cultural nuances."
-                
-                if language_directive not in self.system_prompt:
-                    self.system_prompt += language_directive
-                    logger.info(f"Updated system prompt with {new_lang_name} directive")
+                # Prepend the language directive at the BEGINNING of the system prompt for prominence
+                language_directive = f"**LANGUAGE DIRECTIVE (ACTIVE):** The customer is speaking {new_lang_name}. You MUST respond entirely in {new_lang_name} for ALL future responses. Do not switch to any other language. Follow all appropriate cultural nuances for {new_lang_name}.\n\n"
+
+                # Remove any previous language directives
+                import re
+                self.system_prompt = re.sub(
+                    r'\*\*LANGUAGE DIRECTIVE.*?\n\n',
+                    '',
+                    self.system_prompt,
+                    flags=re.IGNORECASE | re.DOTALL
+                )
+
+                # Prepend the new language directive at the beginning
+                self.system_prompt = language_directive + self.system_prompt
+                logger.info(f"Updated system prompt with {new_lang_name} directive at the beginning")
             except Exception as e:
                 logger.warning(f"Failed to update system prompt for new language: {e}")
 
@@ -540,9 +547,17 @@ class NovaSonicStreamSession:
                 return
 
         # Add to conversation history and generate response
+        # Add language note to reinforce language requirement
+        lang_names = {
+            "en-US": "English", "es-US": "Spanish", "fr-FR": "French",
+            "zh-CN": "Chinese", "ja-JP": "Japanese", "ko-KR": "Korean"
+        }
+        current_lang = lang_names.get(self.language, self.language)
+        transcript_with_lang_note = f"[Customer is speaking {current_lang}] {transcript}"
+
         self._conversation_history.append({
             "role": "user",
-            "content": [{"text": transcript}],
+            "content": [{"text": transcript_with_lang_note}],
         })
         logger.info(f"[nova_sonic_stream] About to call _generate_assistant_response for transcript: {transcript}")
         await self._generate_assistant_response()
@@ -554,9 +569,17 @@ class NovaSonicStreamSession:
 
     async def send_text_message(self, message: str):
         """Send a text message directly (for text-based conversations)."""
+        # Add language note to reinforce language requirement
+        lang_names = {
+            "en-US": "English", "es-US": "Spanish", "fr-FR": "French",
+            "zh-CN": "Chinese", "ja-JP": "Japanese", "ko-KR": "Korean"
+        }
+        current_lang = lang_names.get(self.language, self.language)
+        message_with_lang_note = f"[Customer is speaking {current_lang}] {message}"
+
         self._conversation_history.append({
             "role": "user",
-            "content": [{"text": message}],
+            "content": [{"text": message_with_lang_note}],
         })
         await self._generate_assistant_response()
 
