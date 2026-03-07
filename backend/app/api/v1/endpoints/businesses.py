@@ -8,7 +8,7 @@ from app.schemas.business import BusinessCreate, BusinessUpdate, Business as Bus
 
 router = APIRouter()
 
-@router.get("/", response_model=List[BusinessSchema])
+@router.get("", response_model=List[BusinessSchema])
 def read_businesses(
     db: Session = Depends(deps.get_db),
     skip: int = Query(0, ge=0),
@@ -24,7 +24,7 @@ def read_businesses(
         businesses = db.query(Business).filter(Business.user_id == current_user.id).offset(skip).limit(limit).all()
     return businesses
 
-@router.post("/", response_model=BusinessSchema)
+@router.post("", response_model=BusinessSchema)
 def create_business(
     *,
     db: Session = Depends(deps.get_db),

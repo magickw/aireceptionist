@@ -28,7 +28,7 @@ def _check_business_permission(current_user: User, business_id: int):
             raise HTTPException(status_code=403, detail="Not enough permissions")
 
 
-@router.post("/", response_model=Dict[str, Any])
+@router.post("", response_model=Dict[str, Any])
 async def create_campaign(
     payload: CampaignCreate,
     db: Session = Depends(deps.get_db),
@@ -64,7 +64,7 @@ async def get_campaign(
     return result
 
 
-@router.get("/", response_model=List[Dict[str, Any]])
+@router.get("", response_model=List[Dict[str, Any]])
 async def list_campaigns(
     business_id: int = Query(...),
     status: Optional[str] = Query(None),

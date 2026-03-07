@@ -99,8 +99,8 @@ def _rms_amplitude(pcm16_bytes: bytes) -> float:
 async def websocket_endpoint(
     websocket: WebSocket,
     business_id: int = Query(..., description="Business ID for the AI context"),
-    call_sid: str = Query(..., description="Twilio Call SID"),
-    from_number: str = Query(..., description="Caller phone number"),
+    call_sid: Optional[str] = Query(None, description="Twilio Call SID"),
+    from_number: Optional[str] = Query(None, description="Caller phone number"),
     campaign_id: Optional[int] = Query(None, description="Campaign ID for outbound calls"),
     campaign_call_id: Optional[int] = Query(None, description="Campaign call ID"),
     briefing: Optional[str] = Query(None, description="Campaign briefing text"),
@@ -109,11 +109,6 @@ async def websocket_endpoint(
     """
     WebSocket endpoint for Twilio Media Streams.
     Handles bidirectional audio streaming with full Nova AI processing.
-
-    Matches the call simulator experience with:
-    - Server-side silence detection for turn management
-    - 4-queue relay pattern (transcripts, audio, text, tools)
-    - Barge-in support (clear Twilio audio when user speaks)
     """
     await websocket.accept()
 
@@ -123,92 +118,12 @@ async def websocket_endpoint(
         await websocket.close(code=4000, reason="Business not found")
         return
 
-    # Build business context for Nova
-    business_context = {
-        "name": business.name,
-        "type": business.type,
-        "phone": business.phone,
-        "address": business.address,
-        "services": business.services or [],
-        "operating_hours": business.operating_hours or {},
-        "menu": business.menu or [],
-        "business_id": business.id,
-        "language": business.settings.get("language", "en-US") if business.settings else "en-US"
-    }
-
-    # Check for custom welcome greeting to personalize AI response
-    from app.services.voice_greeting_service import voice_greeting_service
-    welcome_greeting = voice_greeting_service.get_active_greeting(db, business_id, "welcome")
-    if welcome_greeting and welcome_greeting.get("text"):
-        business_context["welcome_message"] = welcome_greeting["text"]
-
-    # E5: Inject campaign briefing for outbound calls
-    campaign_briefing = ""
-    if briefing:
-        import urllib.parse
-        campaign_briefing = urllib.parse.unquote(briefing)
-        business_context["welcome_message"] = campaign_briefing
-
-    customer_context = {
-        "name": "Unknown",
-        "phone": from_number,
-        "call_count": 0,
-        "last_contact": None,
-        "satisfaction_score": 0,
-        "preferred_services": [],
-        "complaint_count": 0,
-    }
-
-    # Create Nova Sonic streaming session
-    sonic_session = await nova_sonic.create_streaming_session(
-        session_id=call_sid,
-        business_context=business_context,
-        customer_context=customer_context,
-        db=db,
-        language=business_context.get("language", "en-US")
-    )
-
-    if not sonic_session:
-        await websocket.close(code=4000, reason="Failed to create AI session")
-        return
-
-    # E2: Register session and publish call_start event
-    try:
-        from app.services.event_bus import event_bus, session_registry
-        session_registry.register(call_sid, {
-            "business_id": business_id,
-            "customer_phone": from_number,
-            "sonic_session": sonic_session,
-            "source": "twilio",
-            "campaign_id": campaign_id,
-        })
-        import asyncio as _aio
-        _aio.get_event_loop().create_task(event_bus.publish({
-            "type": "call_start",
-            "session_id": call_sid,
-            "business_id": business_id,
-            "customer_phone": from_number,
-            "source": "twilio",
-            "campaign_id": campaign_id,
-        }))
-    except Exception:
-        pass
-
-    conversation_history = []
-
-    # Session dict for tool execution (matches voice.py ws_session pattern)
-    ws_session = {
-        "order_items": [],
-        "created_at": datetime.now(timezone.utc),
-        "business_id": business_id,
-        "customer_name": None,
-        "customer_phone": from_number,
-        "_session_id": call_sid,
-    }
-
     # Twilio stream state
     stream_sid = None
     relay_task = None
+    sonic_session = None
+    ws_session = None
+    conversation_history = []
 
     # Silence detection state
     _in_user_turn = False
@@ -221,13 +136,103 @@ async def websocket_endpoint(
             data = json.loads(message)
 
             if data["event"] == "connected":
-                print(f"[Twilio WS] Connected for call {call_sid} from {from_number}")
+                print(f"[Twilio WS] Connected event received")
 
             elif data["event"] == "start":
                 stream_sid = data["start"]["streamSid"]
-                print(f"[Twilio WS] Stream started: {stream_sid}")
+                
+                # If call_sid/from_number were not in query, get them from the start event
+                if not call_sid:
+                    call_sid = data["start"].get("callSid")
+                if not from_number:
+                    # Twilio sends from in start.customParameters if we added it, 
+                    # otherwise we might not have it here unless we pass it.
+                    # Fallback to a placeholder if absolutely missing.
+                    from_number = data["start"].get("customParameters", {}).get("from") or from_number or "Unknown"
 
-                # Launch 4-queue relay as background task
+                print(f"[Twilio WS] Stream started: {stream_sid} (CallSid: {call_sid})")
+
+                # 1. Build business context for Nova
+                business_context = {
+                    "name": business.name,
+                    "type": business.type,
+                    "phone": business.phone,
+                    "address": business.address,
+                    "services": business.services or [],
+                    "operating_hours": business.operating_hours or {},
+                    "menu": business.menu or [],
+                    "business_id": business.id,
+                    "language": business.settings.get("language", "en-US") if business.settings else "en-US"
+                }
+
+                # Personalize AI response with greeting
+                from app.services.voice_greeting_service import voice_greeting_service
+                welcome_greeting = voice_greeting_service.get_active_greeting(db, business_id, "welcome")
+                if welcome_greeting and welcome_greeting.get("text"):
+                    business_context["welcome_message"] = welcome_greeting["text"]
+
+                # E5: Inject campaign briefing for outbound calls
+                if briefing:
+                    import urllib.parse
+                    campaign_briefing = urllib.parse.unquote(briefing)
+                    business_context["welcome_message"] = campaign_briefing
+
+                customer_context = {
+                    "name": "Unknown",
+                    "phone": from_number,
+                    "call_count": 0,
+                    "last_contact": None,
+                    "satisfaction_score": 0,
+                    "preferred_services": [],
+                    "complaint_count": 0,
+                }
+
+                # 2. Create Nova Sonic streaming session
+                sonic_session = await nova_sonic.create_streaming_session(
+                    session_id=call_sid,
+                    business_context=business_context,
+                    customer_context=customer_context,
+                    db=db,
+                    language=business_context.get("language", "en-US")
+                )
+
+                if not sonic_session:
+                    await websocket.close(code=4000, reason="Failed to create AI session")
+                    return
+
+                # E2: Register session and publish call_start event
+                try:
+                    from app.services.event_bus import event_bus, session_registry
+                    session_registry.register(call_sid, {
+                        "business_id": business_id,
+                        "customer_phone": from_number,
+                        "sonic_session": sonic_session,
+                        "source": "twilio",
+                        "campaign_id": campaign_id,
+                    })
+                    import asyncio as _aio
+                    _aio.get_event_loop().create_task(event_bus.publish({
+                        "type": "call_start",
+                        "session_id": call_sid,
+                        "business_id": business_id,
+                        "customer_phone": from_number,
+                        "source": "twilio",
+                        "campaign_id": campaign_id,
+                    }))
+                except Exception:
+                    pass
+
+                # Session dict for tool execution
+                ws_session = {
+                    "order_items": [],
+                    "created_at": datetime.now(timezone.utc),
+                    "business_id": business_id,
+                    "customer_name": None,
+                    "customer_phone": from_number,
+                    "_session_id": call_sid,
+                }
+
+                # 3. Launch 4-queue relay as background task
                 relay_task = asyncio.create_task(
                     _run_twilio_relay(
                         sonic_session=sonic_session,
@@ -246,7 +251,7 @@ async def websocket_endpoint(
                 print(f"[Twilio WS] AI greeting triggered")
 
             elif data["event"] == "media":
-                if not sonic_session.is_active:
+                if not sonic_session or not sonic_session.is_active:
                     continue
 
                 payload = data["media"]["payload"]
@@ -305,11 +310,11 @@ async def websocket_endpoint(
                 print(f"[Twilio WS] Stream stopped: {stream_sid}")
 
                 # Flush remaining turn if active
-                if _in_user_turn and sonic_session.is_active:
+                if _in_user_turn and sonic_session and sonic_session.is_active:
                     _in_user_turn = False
                     await sonic_session.end_user_turn()
 
-                if sonic_session.is_active:
+                if sonic_session and sonic_session.is_active:
                     await sonic_session.close()
                 break
 
@@ -321,7 +326,7 @@ async def websocket_endpoint(
     except Exception as e:
         print(f"[Twilio WS] Error: {e}")
     finally:
-        if sonic_session.is_active:
+        if sonic_session and sonic_session.is_active:
             await sonic_session.close()
         if relay_task and not relay_task.done():
             relay_task.cancel()

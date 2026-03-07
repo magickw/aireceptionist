@@ -84,6 +84,62 @@ async def startup_event():
                 conn.execute(text("ALTER TABLE users ADD COLUMN locked_until TIMESTAMP"))
                 conn.commit()
 
+            # E5: Ensure campaigns and campaign_calls tables exist
+            result = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'campaigns'
+                )
+            """))
+            if not result.scalar():
+                print("[Startup] Creating campaigns table...")
+                conn.execute(text("""
+                    CREATE TABLE campaigns (
+                        id SERIAL PRIMARY KEY,
+                        business_id INTEGER NOT NULL REFERENCES businesses(id),
+                        name VARCHAR(255) NOT NULL,
+                        campaign_type VARCHAR(50) NOT NULL,
+                        status VARCHAR(20) DEFAULT 'draft',
+                        briefing TEXT,
+                        target_criteria JSON,
+                        schedule JSON,
+                        max_concurrent_calls INTEGER DEFAULT 3,
+                        max_retries INTEGER DEFAULT 2,
+                        total_targets INTEGER DEFAULT 0,
+                        calls_made INTEGER DEFAULT 0,
+                        calls_answered INTEGER DEFAULT 0,
+                        calls_successful INTEGER DEFAULT 0,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        started_at TIMESTAMP,
+                        completed_at TIMESTAMP
+                    )
+                """))
+                conn.execute(text("CREATE INDEX ix_campaigns_business_id ON campaigns(business_id)"))
+                
+                print("[Startup] Creating campaign_calls table...")
+                conn.execute(text("""
+                    CREATE TABLE campaign_calls (
+                        id SERIAL PRIMARY KEY,
+                        campaign_id INTEGER NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
+                        customer_id INTEGER NOT NULL REFERENCES customers(id),
+                        call_session_id VARCHAR(100) REFERENCES call_sessions(id),
+                        status VARCHAR(20) DEFAULT 'pending',
+                        attempt_number INTEGER DEFAULT 1,
+                        outcome VARCHAR(50),
+                        outcome_details TEXT,
+                        call_duration_seconds INTEGER,
+                        scheduled_at TIMESTAMP,
+                        called_at TIMESTAMP,
+                        completed_at TIMESTAMP,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.execute(text("CREATE INDEX ix_campaign_calls_campaign_id ON campaign_calls(campaign_id)"))
+                conn.commit()
+                print("[Startup] Campaigns tables created successfully")
+
             # Clean up stale refresh tokens
             try:
                 result = conn.execute(text("""

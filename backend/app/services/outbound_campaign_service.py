@@ -271,6 +271,7 @@ class OutboundCampaignService:
                 f"?business_id={campaign.business_id}"
                 f"&campaign_id={campaign.id}"
                 f"&campaign_call_id={campaign_call.id}"
+                f"&from_number={urllib.parse.quote(customer.phone)}"
                 f"&briefing={encoded_briefing}"
             )
 
