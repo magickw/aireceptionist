@@ -1534,7 +1534,8 @@ async def voice_websocket(
                 
             elif message_type == "audio_start":
                 # Mark beginning of user voice turn (streaming mode)
-                print(f"[Voice WS] Received audio_start: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}")
+                client_sample_rate = data.get("sample_rate")
+                print(f"[Voice WS] Received audio_start: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}, client_sample_rate={client_sample_rate}")
                 if use_streaming and sonic_session and sonic_session.is_active:
                     await sonic_session.start_user_turn()
                     print(f"[Voice WS] Started user turn")
@@ -1627,7 +1628,6 @@ async def voice_websocket(
                         })
 
             elif message_type == "audio":
-                print(f"[Voice WS] Received audio chunk: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}")
                 if use_streaming and sonic_session and sonic_session.is_active:
                     # STREAMING PATH: forward audio chunk immediately
                     try:

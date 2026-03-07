@@ -358,36 +358,56 @@ class NovaSonicHandler:
 
         # Start handler and partial consumer in parallel
         handler = Handler(stream.output_stream)
-        
+        handler_done = asyncio.Event()
+
         async def consume_partials():
             """Consume partial transcripts from queue and send via callback"""
-            while True:
+            while not handler_done.is_set():
                 try:
-                    item = await asyncio.wait_for(partial_queue.get(), timeout=1.0)
+                    item = await asyncio.wait_for(partial_queue.get(), timeout=0.5)
                     if on_partial and item:
                         await on_partial(item.get("text"), is_partial=item.get("is_partial", False))
                 except asyncio.TimeoutError:
-                    # Check if handler is still processing
-                    break
+                    continue  # Keep polling until handler is done
                 except Exception as e:
                     logger.error(f"Error consuming partial transcript: {e}")
                     break
-        
-        # Run handler and consumer in parallel
-        await asyncio.gather(
-            handler.handle_events(),
+            # Drain any remaining items
+            while not partial_queue.empty():
+                try:
+                    item = partial_queue.get_nowait()
+                    if on_partial and item:
+                        await on_partial(item.get("text"), is_partial=item.get("is_partial", False))
+                except Exception:
+                    break
+
+        async def run_handler():
+            try:
+                await handler.handle_events()
+            except Exception as e:
+                logger.error(f"Transcribe handler error: {e}")
+            finally:
+                handler_done.set()
+
+        # Run handler and consumer in parallel — propagate handler errors
+        results = await asyncio.gather(
+            run_handler(),
             consume_partials(),
             return_exceptions=True
         )
+        # Log any exceptions from the tasks
+        for i, result in enumerate(results):
+            if isinstance(result, Exception):
+                logger.error(f"Transcription task {i} raised exception: {result}")
 
         transcript = " ".join(transcript_parts).strip()
         detected_lang = detected_languages[-1] if detected_languages else None
-        
+
         if transcript:
             logger.info(f"Streaming STT result: {transcript[:100]}... (Detected Lang: {detected_lang})")
         else:
-            logger.warning("Streaming STT returned empty transcript")
-            
+            logger.warning(f"Streaming STT returned empty transcript (audio: {len(audio_data)} bytes, chunks sent: {chunks_sent})")
+
         return transcript, detected_lang
 
     async def _transcribe_batch(self, audio_data: bytes, language_code: str = "en-US") -> tuple[str, Optional[str]]:

@@ -68,6 +68,11 @@ export default function CallSimulator() {
   }, []);
   addMessageRef.current = addMessage;
 
+  // Refs for auto-start recording (phone-like UX)
+  const startRecordingRef = useRef<(() => Promise<void>) | null>(null);
+  const autoStartEnabledRef = useRef(false);
+  const autoStartTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   // Voice streaming hook
   const {
     isRecording,
@@ -80,9 +85,25 @@ export default function CallSimulator() {
   } = useVoiceStreaming({
     wsRef,
     onPlaybackStart: () => setIsSpeaking(true),
-    onPlaybackEnd: () => setIsSpeaking(false),
+    onPlaybackEnd: () => {
+      setIsSpeaking(false);
+      // Auto-start recording after AI finishes speaking (phone-like UX)
+      if (autoStartEnabledRef.current) {
+        // Small delay to let echo cancellation settle
+        autoStartTimerRef.current = setTimeout(() => {
+          if (autoStartEnabledRef.current) {
+            console.log('[CallSim] Auto-starting recording after playback ended');
+            startRecordingRef.current?.();
+          }
+        }, 300);
+      }
+    },
     onError: (msg) => showSnackbar(msg, 'error'),
   });
+
+  // Keep refs in sync with latest values
+  startRecordingRef.current = startRecording;
+  autoStartEnabledRef.current = !!currentCall && inputMode === 'voice' && !userEndedCallRef.current;
 
   // Create HTTP session
   const createHttpSession = async () => {
@@ -367,6 +388,7 @@ export default function CallSimulator() {
   }, [currentCall?.messages, streamingText, sttPreview]);
 
   const startCall = () => {
+    userEndedCallRef.current = false;
     setCurrentCall({ messages: [] });
     setThoughts([]);
     setStreamingText('');
@@ -409,6 +431,11 @@ export default function CallSimulator() {
 
   const endCall = () => {
     userEndedCallRef.current = true;
+    // Cancel any pending auto-start timers
+    if (autoStartTimerRef.current) {
+      clearTimeout(autoStartTimerRef.current);
+      autoStartTimerRef.current = null;
+    }
 
     if (isRecording) stopRecording();
     stopPlayback();
@@ -573,13 +600,13 @@ export default function CallSimulator() {
                       sx={{
                         width: micButtonSize,
                         height: micButtonSize,
-                        bgcolor: isRecording ? 'error.main' : 'primary.main',
+                        bgcolor: isRecording ? 'success.main' : (isProcessing || isSpeaking) ? 'grey.400' : 'primary.main',
                         color: 'white',
-                        '&:hover': { bgcolor: isRecording ? 'error.dark' : 'primary.dark' },
+                        '&:hover': { bgcolor: isRecording ? 'success.dark' : 'primary.dark' },
                         animation: isRecording ? 'pulse 1.5s infinite' : 'none',
                       }}
                     >
-                      {isRecording ? <MicOffIcon /> : <MicIcon />}
+                      {isRecording ? <MicIcon /> : <MicOffIcon />}
                     </IconButton>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexDirection: 'column' }}>
                       {isRecording && (
@@ -608,9 +635,14 @@ export default function CallSimulator() {
                           </Typography>
                         </Box>
                       )}
-                      {!isRecording && (
+                      {!isRecording && (isProcessing || isSpeaking) && (
                         <Typography variant="caption" color="text.secondary">
-                          Tap to speak
+                          AI speaking...
+                        </Typography>
+                      )}
+                      {!isRecording && !isProcessing && !isSpeaking && (
+                        <Typography variant="caption" color="text.secondary">
+                          Mic paused — tap to speak
                         </Typography>
                       )}
                     </Box>

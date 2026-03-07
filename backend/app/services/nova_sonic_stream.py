@@ -367,6 +367,7 @@ class NovaSonicStreamSession:
 
         # Audio buffering (accumulated between start_user_turn / end_user_turn)
         self._audio_buffer = b""
+        self._audio_chunk_count = 0
 
         # Thinking-block filter state (reset per assistant turn)
         self._in_thinking_block = False
@@ -419,6 +420,7 @@ class NovaSonicStreamSession:
     async def start_user_turn(self):
         """Mark beginning of a new user voice turn. Resets audio buffer."""
         self._audio_buffer = b""
+        self._audio_chunk_count = 0
         self._partial_text = ""
         self._in_thinking_block = False
         self.latency.reset()
@@ -432,6 +434,7 @@ class NovaSonicStreamSession:
     async def send_audio_chunk(self, audio_data: bytes):
         """Buffer an audio chunk. STT happens later in end_user_turn()."""
         self._audio_buffer += audio_data
+        self._audio_chunk_count += 1
 
     async def end_user_turn(self):
         """
@@ -439,7 +442,8 @@ class NovaSonicStreamSession:
         model response via converse_stream.
         """
         audio_len = len(self._audio_buffer) if self._audio_buffer else 0
-        logger.info(f"end_user_turn called with {audio_len} bytes of audio")
+        duration_sec = audio_len / (16000 * 2) if audio_len else 0  # 16kHz, 16-bit PCM
+        logger.info(f"end_user_turn called with {audio_len} bytes ({self._audio_chunk_count} chunks, ~{duration_sec:.1f}s) of audio")
 
         if not self._audio_buffer or len(self._audio_buffer) < 1000:
             logger.warning(f"Audio buffer too small ({audio_len} bytes), skipping transcription")

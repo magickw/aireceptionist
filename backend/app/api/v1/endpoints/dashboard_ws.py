@@ -47,7 +47,8 @@ async def dashboard_websocket(
     # Send initial state
     active_sessions = session_registry.get_all_sessions()
     business_sessions = {
-        sid: data for sid, data in active_sessions.items()
+        sid: {k: v for k, v in data.items() if k != "sonic_session"}
+        for sid, data in active_sessions.items()
         if data.get("business_id") == business_id
     }
 

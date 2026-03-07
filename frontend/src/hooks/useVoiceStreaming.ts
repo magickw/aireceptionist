@@ -25,7 +25,6 @@ export function useVoiceStreaming({
   onPlaybackEnd,
   onTranscript,
   onError,
-  isStreamingReady = false,
 }: UseVoiceStreamingOptions): UseVoiceStreamingReturn {
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
@@ -41,11 +40,11 @@ export function useVoiceStreaming({
   // Pause detection refs
   const silenceStartRef = useRef<number | null>(null);
   const recordingStartRef = useRef<number | null>(null);
+  const hasSpeechRef = useRef(false); // Track whether user has spoken during this recording
   const audioBufferRef = useRef<Int16Array[]>([]);
   const SILENCE_THRESHOLD = 0.008; // Lower threshold — only true silence triggers, not soft speech
-  const SILENCE_DURATION = 2500; // 2.5 seconds of continuous silence before auto-stop
-  const MIN_RECORDING_DURATION = 3000; // Minimum 3 seconds before allowing auto-stop
-  const AUTO_STOP_ENABLED = true; // Enabled for natural voice interaction
+  const SILENCE_DURATION = 1500; // 1.5 seconds of continuous silence after speech before auto-stop
+  const MIN_RECORDING_DURATION = 500; // 0.5 seconds minimum before allowing auto-stop
 
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
@@ -80,12 +79,22 @@ export function useVoiceStreaming({
       audioContextRef.current = audioCtx;
       if (audioCtx.state === 'suspended') await audioCtx.resume();
 
+      // Verify actual sample rate — some browsers (Safari) may ignore the requested rate
+      const actualSampleRate = audioCtx.sampleRate;
+      const TARGET_SAMPLE_RATE = 16000;
+      const needsResampling = actualSampleRate !== TARGET_SAMPLE_RATE;
+      const resampleRatio = actualSampleRate / TARGET_SAMPLE_RATE;
+      console.log(`[useVoiceStreaming] AudioContext sampleRate: ${actualSampleRate} (requested: ${TARGET_SAMPLE_RATE}, resampling: ${needsResampling})`);
+      if (needsResampling) {
+        console.warn(`[useVoiceStreaming] Sample rate mismatch! Browser gave ${actualSampleRate}Hz instead of ${TARGET_SAMPLE_RATE}Hz. Will resample audio.`);
+      }
+
       const source = audioCtx.createMediaStreamSource(stream);
-      
-      // Send audio_start to backend
+
+      // Send audio_start to backend with actual sample rate info
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         console.log('[useVoiceStreaming] Sending audio_start');
-        wsRef.current.send(JSON.stringify({ type: 'audio_start' }));
+        wsRef.current.send(JSON.stringify({ type: 'audio_start', sample_rate: actualSampleRate }));
       } else {
         console.log('[useVoiceStreaming] WebSocket not open for audio_start');
       }
@@ -93,40 +102,66 @@ export function useVoiceStreaming({
       // 2. Audio processing for streaming to backend
       const processor = audioCtx.createScriptProcessor(4096, 1, 1);
       processorRef.current = processor;
-      
+      let chunkCount = 0;
+
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
-        // Convert Float32 audio to Int16 for backend
-        const int16Data = new Int16Array(inputData.length);
-        
-        // Calculate audio level for silence detection
+
+        // Calculate audio level for silence detection (use original data)
         let sum = 0;
         for (let i = 0; i < inputData.length; i++) {
-          const sample = inputData[i];
-          int16Data[i] = Math.max(-1, Math.min(1, sample)) * 0x7FFF;
-          sum += Math.abs(sample);
+          sum += Math.abs(inputData[i]);
         }
         const avgLevel = sum / inputData.length;
-        
-        // Silence detection
+
+        // Silence detection — only auto-stop AFTER speech has been detected
         if (avgLevel < SILENCE_THRESHOLD) {
-          if (silenceStartRef.current === null) {
-            silenceStartRef.current = Date.now();
-          } else {
-            const silenceDuration = Date.now() - silenceStartRef.current;
-            const recordingDuration = recordingStartRef.current ? Date.now() - recordingStartRef.current : 0;
-            // Only auto-stop if we've recorded enough AND silence has lasted long enough
-            if (recordingDuration >= MIN_RECORDING_DURATION && silenceDuration > SILENCE_DURATION) {
-              console.log('[useVoiceStreaming] Silence detected, auto-stopping');
-              stopRecording();
-              return;
+          if (hasSpeechRef.current) {
+            // Speech was detected previously, now it's silent — start/continue silence timer
+            if (silenceStartRef.current === null) {
+              silenceStartRef.current = Date.now();
+            } else {
+              const silenceDuration = Date.now() - silenceStartRef.current;
+              const recordingDuration = recordingStartRef.current ? Date.now() - recordingStartRef.current : 0;
+              if (recordingDuration >= MIN_RECORDING_DURATION && silenceDuration > SILENCE_DURATION) {
+                console.log(`[useVoiceStreaming] Silence after speech detected (${silenceDuration}ms), auto-stopping`);
+                stopRecording();
+                return;
+              }
+            }
+          }
+          // If no speech yet, just keep waiting (don't start silence timer)
+        } else {
+          // Sound detected — mark that speech has occurred, reset silence timer
+          hasSpeechRef.current = true;
+          silenceStartRef.current = null;
+        }
+
+        // Resample to 16kHz if the AudioContext is at a different rate
+        let audioSamples: Float32Array;
+        if (needsResampling) {
+          const newLength = Math.round(inputData.length / resampleRatio);
+          audioSamples = new Float32Array(newLength);
+          for (let i = 0; i < newLength; i++) {
+            const srcIndex = i * resampleRatio;
+            const srcFloor = Math.floor(srcIndex);
+            const frac = srcIndex - srcFloor;
+            if (srcFloor + 1 < inputData.length) {
+              audioSamples[i] = inputData[srcFloor] * (1 - frac) + inputData[srcFloor + 1] * frac;
+            } else {
+              audioSamples[i] = inputData[srcFloor] || 0;
             }
           }
         } else {
-          // Reset silence timer when sound is detected
-          silenceStartRef.current = null;
+          audioSamples = inputData;
         }
-        
+
+        // Convert Float32 audio to Int16 for backend (always at 16kHz after resampling)
+        const int16Data = new Int16Array(audioSamples.length);
+        for (let i = 0; i < audioSamples.length; i++) {
+          int16Data[i] = Math.max(-1, Math.min(1, audioSamples[i])) * 0x7FFF;
+        }
+
         // Send to WebSocket
         if (wsRef.current?.readyState === WebSocket.OPEN) {
           // Convert Int16Array to base64 without spread operator
@@ -136,10 +171,15 @@ export function useVoiceStreaming({
             binary += String.fromCharCode(uint8View[i]);
           }
           const base64 = btoa(binary);
-          wsRef.current.send(JSON.stringify({ 
-            type: 'audio', 
-            content: base64 
+          wsRef.current.send(JSON.stringify({
+            type: 'audio',
+            content: base64
           }));
+
+          chunkCount++;
+          if (chunkCount <= 3) {
+            console.log(`[useVoiceStreaming] Audio chunk #${chunkCount}: ${int16Data.length} samples, ${uint8View.length} bytes, avgLevel=${avgLevel.toFixed(4)}`);
+          }
         }
       };
 
@@ -167,6 +207,7 @@ export function useVoiceStreaming({
 
       setIsRecording(true);
       recordingStartRef.current = Date.now();
+      hasSpeechRef.current = false; // Reset speech detection for new recording
     } catch (err: any) {
       console.error('[useVoiceStreaming] Microphone access denied:', err);
       if (err?.name === 'NotAllowedError') {
