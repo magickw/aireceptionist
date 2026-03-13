@@ -247,24 +247,26 @@ class NovaSonicHandler:
         """
         Transcribe audio to text.
 
-        Tries Amazon Transcribe Streaming first (no S3 needed), then
-        falls back to the batch S3→Transcribe pipeline.
+        When STREAMING_STT_ENABLED is True (default), tries Amazon Transcribe 
+        Streaming first (no S3 needed), then falls back to the batch S3→Transcribe pipeline.
+        When disabled, goes straight to batch transcription.
         """
         if not audio_data or len(audio_data) < 1000:
             logger.warning("Audio data too small for transcription")
             return "", None
 
-        # Try streaming SDK first (no S3 required)
-        try:
-            logger.info(f"Attempting streaming transcription in {language_code}...")
-            result, detected_lang = await self._transcribe_streaming(audio_data, on_partial=on_partial, language_code=language_code)
-            if result:
-                return result, detected_lang
-            logger.warning("Streaming transcription returned empty result")
-        except ImportError:
-            logger.info("amazon-transcribe SDK not installed, falling back to batch pipeline")
-        except Exception as e:
-            logger.warning(f"Streaming transcription failed ({e}), trying batch pipeline")
+        # Try streaming SDK first if enabled (no S3 required)
+        if settings.STREAMING_STT_ENABLED:
+            try:
+                logger.info(f"Attempting streaming transcription in {language_code}...")
+                result, detected_lang = await self._transcribe_streaming(audio_data, on_partial=on_partial, language_code=language_code)
+                if result:
+                    return result, detected_lang
+                logger.warning("Streaming transcription returned empty result")
+            except ImportError:
+                logger.info("amazon-transcribe SDK not installed, falling back to batch pipeline")
+            except Exception as e:
+                logger.warning(f"Streaming transcription failed ({e}), trying batch pipeline")
 
         # Fallback: S3 → Transcribe batch pipeline
         logger.info(f"Attempting batch transcription in {language_code}...")

@@ -183,6 +183,17 @@ export default function IntegrationsPage() {
         route: '/integrations/pms',
         color: '#0277bd',
       },
+      {
+        id: 'calendly',
+        name: 'Calendly',
+        description: 'Sync appointments and manage bookings with Calendly integration.',
+        icon: <CalendarMonth />,
+        status: 'loading',
+        statusLabel: '',
+        actionLabel: 'Connect',
+        route: '/calendly',
+        color: '#006BFF',
+      },
     ];
 
     setIntegrations(defaultIntegrations);
@@ -195,6 +206,7 @@ export default function IntegrationsPage() {
       api.get('/knowledge-base/documents'),
       api.get('/webhooks'),
       api.get('/integrations'), // Generic integrations endpoint
+      api.get('/calendly/connect/calendly'), // Calendly status check
     ]);
 
     const updated = defaultIntegrations.map((integration, index) => {
@@ -305,6 +317,22 @@ export default function IntegrationsPage() {
             if (pms) {
               copy.status = pms.status === 'active' ? 'connected' : 'error';
               copy.statusLabel = pms.status === 'active' ? 'Connected' : 'Error';
+            } else {
+              copy.status = 'not_configured';
+              copy.statusLabel = 'Not Configured';
+            }
+          }
+          break;
+        }
+        case 'calendly': {
+          // Check Calendly status from calendar endpoint (results[2])
+          const calendarResult = results[2];
+          if (calendarResult.status === 'fulfilled') {
+            const integrations = calendarResult.value.data?.integrations || [];
+            const calendly = integrations.find((i: any) => i.provider === 'calendly');
+            if (calendly) {
+              copy.status = calendly.status === 'active' ? 'connected' : 'error';
+              copy.statusLabel = calendly.status === 'active' ? 'Connected' : 'Expired';
             } else {
               copy.status = 'not_configured';
               copy.statusLabel = 'Not Configured';

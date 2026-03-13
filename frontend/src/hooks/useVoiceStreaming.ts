@@ -1,5 +1,6 @@
 'use client';
 import { useRef, useState, useCallback, useEffect } from 'react';
+import { WS_MESSAGE_TYPES, detectBrowserCompatibility, BrowserCompatibility } from '@/types/voice';
 
 interface UseVoiceStreamingOptions {
   wsRef: React.RefObject<WebSocket | null>;
@@ -17,6 +18,7 @@ interface UseVoiceStreamingReturn {
   playAudioChunk: (base64Audio: string, sampleRate?: number) => void;
   stopPlayback: () => void;
   micLevel: number;
+  browserCompatibility: BrowserCompatibility | null;
 }
 
 export function useVoiceStreaming({
@@ -29,6 +31,19 @@ export function useVoiceStreaming({
   const [isRecording, setIsRecording] = useState(false);
   const [isPlaying, setIsPlaying] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
+  const [browserCompatibility, setBrowserCompatibility] = useState<BrowserCompatibility | null>(null);
+
+  // Check browser compatibility on mount
+  useEffect(() => {
+    const compatibility = detectBrowserCompatibility();
+    setBrowserCompatibility(compatibility);
+    
+    if (!compatibility.supported) {
+      onError?.('Your browser does not support voice features. Please use Chrome, Firefox, Edge, or Safari.');
+    } else if (compatibility.warnings.length > 0) {
+      console.warn('[useVoiceStreaming] Browser compatibility warnings:', compatibility.warnings);
+    }
+  }, [onError]);
 
   // Refs for mic capture
   const mediaStreamRef = useRef<MediaStream | null>(null);
@@ -94,7 +109,7 @@ export function useVoiceStreaming({
       // Send audio_start to backend with actual sample rate info
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         console.log('[useVoiceStreaming] Sending audio_start');
-        wsRef.current.send(JSON.stringify({ type: 'audio_start', sample_rate: actualSampleRate }));
+        wsRef.current.send(JSON.stringify({ type: WS_MESSAGE_TYPES.AUDIO_START, sample_rate: actualSampleRate }));
       } else {
         console.log('[useVoiceStreaming] WebSocket not open for audio_start');
       }
@@ -172,7 +187,7 @@ export function useVoiceStreaming({
           }
           const base64 = btoa(binary);
           wsRef.current.send(JSON.stringify({
-            type: 'audio',
+            type: WS_MESSAGE_TYPES.AUDIO,
             content: base64
           }));
 
@@ -227,7 +242,7 @@ export function useVoiceStreaming({
     // Send audio_stop to backend
     if (wsRef.current?.readyState === WebSocket.OPEN) {
       console.log('[useVoiceStreaming] Sending audio_stop');
-      wsRef.current.send(JSON.stringify({ type: 'audio_stop' }));
+      wsRef.current.send(JSON.stringify({ type: WS_MESSAGE_TYPES.AUDIO_STOP }));
     } else {
       console.log('[useVoiceStreaming] WebSocket not open, cannot send audio_stop');
     }
@@ -366,5 +381,6 @@ export function useVoiceStreaming({
     playAudioChunk,
     stopPlayback,
     micLevel,
+    browserCompatibility,
   };
 }

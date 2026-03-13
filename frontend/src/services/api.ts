@@ -284,4 +284,17 @@ export const menuApi = {
     api.get('/menu/categories/list', { params: { business_id: businessId } }),
 };
 
+// Calendly API
+export const calendlyApi = {
+  connect: () => api.get('/calendly/connect/calendly'),
+  getEventTypes: (integrationId: number) => api.get(`/calendly/${integrationId}/event-types`),
+  getEvents: (integrationId: number, startTime?: string, endTime?: string) =>
+    api.get(`/calendly/${integrationId}/events`, { params: { start_time: startTime, end_time: endTime } }),
+  createWebhook: (integrationId: number, data: { url: string; events: string[] }) =>
+    api.post(`/calendly/${integrationId}/webhooks`, data),
+  deleteWebhook: (integrationId: number, subscriptionId: string) =>
+    api.delete(`/calendly/${integrationId}/webhooks/${subscriptionId}`),
+  getStatus: (integrationId: number) => api.get(`/calendly/${integrationId}/status`),
+};
+
 export default api;
