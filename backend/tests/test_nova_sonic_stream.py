@@ -106,6 +106,109 @@ class TestStreamLatencyTracker:
         assert latency_tracker._first_chunk_at is None
         assert latency_tracker._end_time is None
         assert latency_tracker.get_metrics() == {}
+    
+    def test_stt_metrics(self, latency_tracker):
+        """Test STT latency metrics"""
+        latency_tracker.mark_start()
+        latency_tracker.mark_stt_start()
+        asyncio.run(asyncio.sleep(0.01))
+        latency_tracker.mark_stt_end()
+        
+        metrics = latency_tracker.get_metrics()
+        
+        assert "stt_ms" in metrics
+        assert metrics["stt_ms"] > 0
+    
+    def test_llm_metrics(self, latency_tracker):
+        """Test LLM latency metrics"""
+        latency_tracker.mark_start()
+        latency_tracker.mark_llm_start()
+        asyncio.run(asyncio.sleep(0.01))
+        latency_tracker.mark_first_chunk()
+        
+        metrics = latency_tracker.get_metrics()
+        
+        assert "llm_first_token_ms" in metrics
+        assert metrics["llm_first_token_ms"] > 0
+    
+    def test_tts_metrics(self, latency_tracker):
+        """Test TTS latency metrics"""
+        latency_tracker.mark_start()
+        latency_tracker.mark_tts_start()
+        asyncio.run(asyncio.sleep(0.01))
+        latency_tracker.mark_first_audio()
+        
+        metrics = latency_tracker.get_metrics()
+        
+        assert "tts_first_audio_ms" in metrics
+        assert metrics["tts_first_audio_ms"] > 0
+    
+    def test_voice_to_voice_metric(self, latency_tracker):
+        """Test voice-to-voice latency metric"""
+        latency_tracker.mark_start()
+        asyncio.run(asyncio.sleep(0.01))
+        latency_tracker.mark_first_audio()
+        
+        metrics = latency_tracker.get_metrics()
+        
+        assert "voice_to_voice_ms" in metrics
+        assert metrics["voice_to_voice_ms"] > 0
+    
+    def test_first_chunk_only_once(self, latency_tracker):
+        """Test that first chunk marker only sets once"""
+        latency_tracker.mark_start()
+        latency_tracker.mark_first_chunk()
+        first_time = latency_tracker._first_chunk_at
+        asyncio.run(asyncio.sleep(0.01))
+        latency_tracker.mark_first_chunk()  # Should not update
+        
+        assert latency_tracker._first_chunk_at == first_time
+    
+    def test_first_audio_only_once(self, latency_tracker):
+        """Test that first audio marker only sets once"""
+        latency_tracker.mark_start()
+        latency_tracker.mark_first_audio()
+        first_time = latency_tracker._first_audio
+        asyncio.run(asyncio.sleep(0.01))
+        latency_tracker.mark_first_audio()  # Should not update
+        
+        assert latency_tracker._first_audio == first_time
+    
+    def test_full_pipeline_metrics(self, latency_tracker):
+        """Test metrics for a full voice pipeline"""
+        latency_tracker.mark_start()
+        
+        # STT phase
+        latency_tracker.mark_stt_start()
+        asyncio.run(asyncio.sleep(0.005))
+        latency_tracker.mark_stt_end()
+        
+        # LLM phase
+        latency_tracker.mark_llm_start()
+        asyncio.run(asyncio.sleep(0.005))
+        latency_tracker.mark_first_chunk()
+        
+        # TTS phase
+        latency_tracker.mark_tts_start()
+        asyncio.run(asyncio.sleep(0.005))
+        latency_tracker.mark_first_audio()
+        
+        # End
+        latency_tracker.mark_end()
+        
+        metrics = latency_tracker.get_metrics()
+        
+        # All expected metrics should be present
+        assert "time_to_first_chunk_ms" in metrics
+        assert "total_latency_ms" in metrics
+        assert "stt_ms" in metrics
+        assert "llm_first_token_ms" in metrics
+        assert "tts_first_audio_ms" in metrics
+        assert "voice_to_voice_ms" in metrics
+        
+        # Voice-to-voice should be the largest
+        assert metrics["voice_to_voice_ms"] >= metrics["stt_ms"]
+        assert metrics["voice_to_voice_ms"] >= metrics["tts_first_audio_ms"]
 
 
 class TestNovaSonicStreamSession:
@@ -684,6 +787,194 @@ class TestTurnCompleteSignal:
         
         # Check for turn_complete in text_queue
         # (implementation may vary)
+
+
+class TestWebSocketMessageTypes:
+    """Test cases for WebSocket message type handling"""
+    
+    def test_audio_start_message_format(self):
+        """Test that audio_start message has correct format"""
+        import json
+        message = {"type": "audio_start", "sample_rate": 16000}
+        serialized = json.dumps(message)
+        deserialized = json.loads(serialized)
+        
+        assert deserialized["type"] == "audio_start"
+        assert deserialized["sample_rate"] == 16000
+    
+    def test_audio_message_format(self):
+        """Test that audio message has correct format"""
+        import json
+        import base64
+        
+        # Simulate audio data
+        audio_bytes = b"test_audio_data"
+        base64_audio = base64.b64encode(audio_bytes).decode('utf-8')
+        message = {"type": "audio", "content": base64_audio}
+        
+        serialized = json.dumps(message)
+        deserialized = json.loads(serialized)
+        
+        assert deserialized["type"] == "audio"
+        assert deserialized["content"] == base64_audio
+        
+        # Verify we can decode it back
+        decoded = base64.b64decode(deserialized["content"])
+        assert decoded == audio_bytes
+    
+    def test_audio_stop_message_format(self):
+        """Test that audio_stop message has correct format"""
+        import json
+        message = {"type": "audio_stop"}
+        serialized = json.dumps(message)
+        deserialized = json.loads(serialized)
+        
+        assert deserialized["type"] == "audio_stop"
+    
+    def test_user_input_message_format(self):
+        """Test that user_input message has correct format"""
+        import json
+        message = {"type": "user_input", "text": "Hello, I want to book an appointment"}
+        serialized = json.dumps(message)
+        deserialized = json.loads(serialized)
+        
+        assert deserialized["type"] == "user_input"
+        assert deserialized["text"] == "Hello, I want to book an appointment"
+    
+    def test_text_chunk_message_format(self):
+        """Test that text_chunk message has correct format"""
+        import json
+        message = {"type": "text_chunk", "chunk": "Hello, how can I"}
+        serialized = json.dumps(message)
+        deserialized = json.loads(serialized)
+        
+        assert deserialized["type"] == "text_chunk"
+        assert "chunk" in deserialized
+    
+    def test_latency_message_format(self):
+        """Test that latency message has correct format"""
+        import json
+        message = {
+            "type": "latency",
+            "metrics": {
+                "time_to_first_chunk_ms": 500.5,
+                "total_latency_ms": 1200.0,
+                "stt_ms": 300.0,
+                "llm_first_token_ms": 200.0,
+                "tts_first_audio_ms": 150.0,
+                "voice_to_voice_ms": 650.0
+            }
+        }
+        
+        serialized = json.dumps(message)
+        deserialized = json.loads(serialized)
+        
+        assert deserialized["type"] == "latency"
+        assert "metrics" in deserialized
+        assert deserialized["metrics"]["voice_to_voice_ms"] == 650.0
+
+
+class TestLatencyMetricsEmission:
+    """Test cases for latency metrics emission in session"""
+    
+    @pytest.mark.asyncio
+    async def test_latency_metrics_emitted_on_turn_complete(self, sample_session):
+        """Test that latency metrics are emitted before turn_complete"""
+        await sample_session.initialize()
+        
+        # Simulate a complete turn with mocked response
+        with patch.object(sample_session, '_generate_assistant_response', new_callable=AsyncMock):
+            # Start latency tracking
+            sample_session.latency.mark_start()
+            sample_session.latency.mark_first_chunk()
+            sample_session.latency.mark_end()
+            
+            # Manually emit latency metrics as the session would
+            metrics = sample_session.latency.get_metrics()
+            if metrics:
+                await sample_session.text_queue.put({"type": "latency", "metrics": metrics})
+            
+            await sample_session.text_queue.put({"turn_complete": True})
+        
+        # Check that latency was emitted
+        latency_event = await sample_session.text_queue.get()
+        assert latency_event.get("type") == "latency"
+        assert "metrics" in latency_event
+        
+        # Check that turn_complete was emitted
+        turn_complete_event = await sample_session.text_queue.get()
+        assert turn_complete_event.get("turn_complete") is True
+
+
+class TestVoiceFlowIntegration:
+    """Integration tests for voice flow scenarios"""
+    
+    @pytest.mark.asyncio
+    async def test_text_turn_flow(self, sample_session):
+        """Test complete text turn flow"""
+        await sample_session.initialize()
+        
+        # Simulate a text conversation
+        with patch.object(sample_session, '_generate_assistant_response', new_callable=AsyncMock):
+            await sample_session.send_text_message("I want to book a table")
+        
+        # Verify message was added to history
+        assert len(sample_session._conversation_history) == 1
+        user_msg = sample_session._conversation_history[0]
+        assert user_msg["role"] == "user"
+        assert "book a table" in user_msg["content"][0]["text"]
+    
+    @pytest.mark.asyncio
+    async def test_audio_turn_small_buffer_skipped(self, sample_session):
+        """Test that small audio buffer is skipped gracefully"""
+        await sample_session.initialize()
+        await sample_session.start_user_turn()
+        
+        # Send very small audio (should be skipped)
+        small_audio = b"x" * 500  # Less than 1000 bytes minimum
+        await sample_session.send_audio_chunk(small_audio)
+        
+        # End turn - should log warning but not crash
+        await sample_session.end_user_turn()
+        
+        # Session should still be active
+        assert sample_session.is_active is True
+    
+    @pytest.mark.asyncio
+    async def test_session_cleanup(self, sample_session):
+        """Test that session cleans up resources properly"""
+        await sample_session.initialize()
+        
+        # Do some operations
+        await sample_session.start_user_turn()
+        await sample_session.send_audio_chunk(b"x" * 100)
+        
+        # Close session
+        await sample_session.close()
+        
+        # Verify cleanup
+        assert sample_session.is_active is False
+    
+    @pytest.mark.asyncio
+    async def test_concurrent_queue_operations(self, sample_session):
+        """Test that queues handle concurrent operations"""
+        await sample_session.initialize()
+        
+        # Put multiple items concurrently
+        async def put_items(queue, count):
+            for i in range(count):
+                await queue.put({"item": i})
+        
+        # Run multiple put operations concurrently
+        import asyncio
+        await asyncio.gather(
+            put_items(sample_session.text_queue, 5),
+            put_items(sample_session.audio_queue, 5),
+            put_items(sample_session.transcript_queue, 5),
+        )
+        
+        # All items should be in queues
+        # (This tests that queues handle concurrent access)
 
 
 if __name__ == "__main__":

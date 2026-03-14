@@ -812,6 +812,12 @@ class NovaSonicStreamSession:
             if stop_reason == "tool_use":
                 return
 
+            # --- Emit latency metrics to client ---
+            latency_metrics = self.latency.get_metrics()
+            if latency_metrics:
+                await self.text_queue.put({"type": "latency", "metrics": latency_metrics})
+                logger.info(f"Latency metrics: {latency_metrics}")
+
             # --- Turn complete ---
             await self.text_queue.put({"turn_complete": True})
 

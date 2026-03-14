@@ -43,6 +43,12 @@ class Settings(BaseSettings):
     MICROSOFT_CLIENT_SECRET: Optional[str] = None
     MICROSOFT_REDIRECT_URI: str = "https://receptium.onrender.com/api/calendar/microsoft/callback"
 
+    # Calendly Configuration
+    CALENDLY_CLIENT_ID: Optional[str] = None
+    CALENDLY_CLIENT_SECRET: Optional[str] = None
+    CALENDLY_REDIRECT_URI: str = "https://receptium.onrender.com/api/calendly/callback"
+    CALENDLY_WEBHOOK_SECRET: Optional[str] = None
+
     # Firebase Configuration
     FIREBASE_CREDENTIALS: Optional[str] = None
 

@@ -80,5 +80,40 @@ class EncryptionService:
                 return data
         return data
 
+    def encrypt_access_token(self, token: str) -> dict:
+        """
+        Encrypt an access token string.
+        Alias for encrypt_json for backward compatibility with calendly_service.
+        """
+        if token is None:
+            return None
+        return self.encrypt_json(token)
+
+    def decrypt_access_token(self, encrypted_token: dict) -> str:
+        """
+        Decrypt an encrypted access token.
+        Alias for decrypt_json for backward compatibility with calendly_service.
+        """
+        if encrypted_token is None:
+            return None
+        if isinstance(encrypted_token, str):
+            # Already decrypted or plaintext
+            return encrypted_token
+        return self.decrypt_json(encrypted_token)
+
+    def encrypt(self, value: str) -> dict:
+        """
+        Encrypt a string value.
+        Generic encrypt method for any string credential.
+        """
+        return self.encrypt_access_token(value)
+
+    def decrypt(self, encrypted_value: dict) -> str:
+        """
+        Decrypt an encrypted value.
+        Generic decrypt method for any encrypted credential.
+        """
+        return self.decrypt_access_token(encrypted_value)
+
 
 encryption_service = EncryptionService()

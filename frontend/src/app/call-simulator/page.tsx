@@ -82,6 +82,7 @@ export default function CallSimulator() {
     playAudioChunk,
     stopPlayback,
     micLevel,
+    browserCompatibility,
   } = useVoiceStreaming({
     wsRef,
     onPlaybackStart: () => setIsSpeaking(true),
@@ -100,6 +101,18 @@ export default function CallSimulator() {
     },
     onError: (msg) => showSnackbar(msg, 'error'),
   });
+
+  // Check browser compatibility when switching to voice mode
+  useEffect(() => {
+    if (inputMode === 'voice' && browserCompatibility) {
+      if (!browserCompatibility.supported) {
+        showSnackbar('Voice features are not supported in this browser. Please use Chrome, Firefox, Edge, or Safari.', 'error');
+        setInputMode('text');
+      } else if (browserCompatibility.warnings.length > 0) {
+        showSnackbar(browserCompatibility.warnings[0], 'warning');
+      }
+    }
+  }, [inputMode, browserCompatibility, showSnackbar]);
 
   // Keep refs in sync with latest values
   startRecordingRef.current = startRecording;
@@ -325,7 +338,7 @@ export default function CallSimulator() {
           setInputMode('text');
           console.warn('[CallSim] Streaming failed:', data.message);
           showSnackbarRef.current('Voice streaming failed. Switched to text mode.', 'warning');
-        } else if (data.type === 'latency_metrics') {
+        } else if (data.type === 'latency' || data.type === 'latency_metrics') {
           setLatencyMetrics(data.metrics);
           console.log('[CallSim] Latency:', data.metrics);
         } else if (data.type === 'call_ended') {
@@ -499,13 +512,13 @@ export default function CallSimulator() {
               }}
             />
           )}
-          {latencyMetrics && latencyMetrics.time_to_first_byte_ms !== undefined && (
-            <Tooltip title={`Transcript: ${latencyMetrics.time_to_transcript_ms?.toFixed(0) || '?'}ms | First byte: ${latencyMetrics.time_to_first_byte_ms?.toFixed(0) || '?'}ms | Total: ${latencyMetrics.total_turn_ms?.toFixed(0) || '?'}ms`}>
+          {latencyMetrics && latencyMetrics.time_to_first_chunk_ms !== undefined && (
+            <Tooltip title={`STT: ${latencyMetrics.stt_ms?.toFixed(0) || '?'}ms | LLM: ${latencyMetrics.llm_first_token_ms?.toFixed(0) || '?'}ms | TTS: ${latencyMetrics.tts_first_audio_ms?.toFixed(0) || '?'}ms | Voice-to-Voice: ${latencyMetrics.voice_to_voice_ms?.toFixed(0) || '?'}ms`}>
               <Chip
-                label={`${latencyMetrics.time_to_first_byte_ms?.toFixed(0)}ms`}
+                label={`${latencyMetrics.voice_to_voice_ms?.toFixed(0) || latencyMetrics.time_to_first_chunk_ms?.toFixed(0) || '?'}ms`}
                 size="small"
                 variant="outlined"
-                color={latencyMetrics.time_to_first_byte_ms < 1000 ? 'success' : 'warning'}
+                color={(latencyMetrics.voice_to_voice_ms || latencyMetrics.time_to_first_chunk_ms) < 2000 ? 'success' : 'warning'}
               />
             </Tooltip>
           )}
