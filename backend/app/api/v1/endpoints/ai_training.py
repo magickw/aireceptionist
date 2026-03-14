@@ -228,6 +228,20 @@ async def list_snapshots(
     return await ai_training_service.list_snapshots(db, business_id)
 
 
+@router.post("/snapshots/{snapshot_id}/rollback")
+async def rollback_snapshot(
+    snapshot_id: int,
+    db: Session = Depends(deps.get_db),
+    current_user: User = Depends(deps.get_current_active_user),
+):
+    """
+    Rollback training data to a specific snapshot.
+    This will replace all current training scenarios with those from the snapshot.
+    """
+    business_id = await deps.get_current_business_id(current_user, db)
+    return await ai_training_service.rollback_snapshot(db, business_id, snapshot_id)
+
+
 @router.get("/benchmarks")
 async def get_benchmarks(
     db: Session = Depends(deps.get_db),

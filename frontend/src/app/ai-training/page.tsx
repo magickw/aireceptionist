@@ -15,7 +15,9 @@ import QuizIcon from '@mui/icons-material/Quiz';
 import HistoryIcon from '@mui/icons-material/History';
 import PsychologyIcon from '@mui/icons-material/Psychology';
 import AssessmentIcon from '@mui/icons-material/Assessment';
+import RestoreIcon from '@mui/icons-material/Restore';
 import api from '@/services/api';
+import { useAuth } from '@/context/AuthContext';
 
 interface TrainingScenario {
   id?: number;
@@ -40,6 +42,8 @@ const CATEGORIES = [
 ];
 
 export default function AITrainingPage() {
+  const { isAuthenticated } = useAuth();
+  const [businessId, setBusinessId] = useState<number | null>(null);
   const [scenarios, setScenarios] = useState<TrainingScenario[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -57,6 +61,7 @@ export default function AITrainingPage() {
   const [benchmarks, setBenchmarks] = useState<any[]>([]);
   const [isSnapshotLoading, setIsSnapshotLoading] = useState(false);
   const [benchmarkLoading, setBenchmarkLoading] = useState(false);
+  const [rollbackLoading, setRollbackLoading] = useState<number | null>(null);
 
   const emptyScenario: TrainingScenario = {
     title: '',
@@ -70,20 +75,49 @@ export default function AITrainingPage() {
   const [formData, setFormData] = useState<TrainingScenario>(emptyScenario);
 
   useEffect(() => {
-    fetchScenarios();
-    fetchStats();
-    fetchSnapshots();
-    fetchBenchmarks();
-  }, []);
+    if (isAuthenticated) {
+      fetchBusinessAndData();
+    }
+  }, [isAuthenticated]);
 
-  const fetchScenarios = async () => {
+  const fetchBusinessAndData = async () => {
     try {
-      const res = await api.get('/ai-training/', { params: { business_id: 1 } });
+      const businessResponse = await api.get('/businesses');
+      if (businessResponse.data.length > 0) {
+        const bizId = businessResponse.data[0].id;
+        setBusinessId(bizId);
+        // Now fetch training data with the business ID
+        await fetchScenarios(bizId);
+        await fetchStats(bizId);
+        await fetchSnapshots();
+        await fetchBenchmarks(bizId);
+      }
+    } catch (error) {
+      console.error('Failed to fetch business data', error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchScenarios = async (bizId?: number) => {
+    const id = bizId || businessId;
+    if (!id) return;
+    try {
+      const res = await api.get('/ai-training/', { params: { business_id: id } });
       setScenarios(res.data);
     } catch (error) {
       console.error('Failed to fetch scenarios', error);
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const fetchStats = async (bizId?: number) => {
+    const id = bizId || businessId;
+    if (!id) return;
+    try {
+      const res = await api.get('/ai-training/stats', { params: { business_id: id } });
+      setStats(res.data);
+    } catch (error) {
+      console.error('Failed to fetch stats', error);
     }
   };
 
@@ -96,30 +130,24 @@ export default function AITrainingPage() {
     }
   };
 
-  const fetchBenchmarks = async () => {
+  const fetchBenchmarks = async (bizId?: number) => {
+    const id = bizId || businessId;
+    if (!id) return;
     try {
-      const res = await api.get('/ai-training/benchmarks');
+      const res = await api.get('/ai-training/benchmarks', { params: { business_id: id } });
       setBenchmarks(res.data);
     } catch (error) {
       console.error('Failed to fetch benchmarks', error);
     }
   };
 
-  const fetchStats = async () => {
-    try {
-      const res = await api.get('/ai-training/statistics', { params: { business_id: 1 } });
-      setStats(res.data);
-    } catch (error) {
-      console.error('Failed to fetch stats', error);
-    }
-  };
-
   const handleCreateSnapshot = async () => {
+    if (!businessId) return;
     const name = prompt('Enter a name for this snapshot:');
     if (!name) return;
     setIsSnapshotLoading(true);
     try {
-      await api.post(`/ai-training/snapshots?name=${encodeURIComponent(name)}`);
+      await api.post(`/ai-training/snapshots?name=${encodeURIComponent(name)}&business_id=${businessId}`);
       fetchSnapshots();
       alert('Snapshot created successfully!');
     } catch (error) {
@@ -129,10 +157,26 @@ export default function AITrainingPage() {
     }
   };
 
+  const handleRollbackSnapshot = async (snapshotId: number) => {
+    if (!businessId || !confirm('Are you sure you want to rollback to this snapshot? Current training data will be replaced.')) return;
+    setRollbackLoading(snapshotId);
+    try {
+      await api.post(`/ai-training/snapshots/${snapshotId}/rollback?business_id=${businessId}`);
+      await fetchScenarios();
+      alert('Rollback completed successfully!');
+    } catch (error) {
+      console.error('Failed to rollback snapshot', error);
+      alert('Failed to rollback snapshot');
+    } finally {
+      setRollbackLoading(null);
+    }
+  };
+
   const handleRunBenchmark = async () => {
+    if (!businessId) return;
     setBenchmarkLoading(true);
     try {
-      await api.post('/ai-training/test-all');
+      await api.post('/ai-training/test-all', null, { params: { business_id: businessId } });
       fetchBenchmarks();
       fetchStats();
       alert('Benchmark run complete!');
@@ -160,12 +204,13 @@ export default function AITrainingPage() {
   };
 
   const handleSave = async () => {
+    if (!businessId) return;
     setSaving(true);
     try {
       if (editingScenario?.id) {
-        await api.put(`/ai-training/${editingScenario.id}`, { ...formData, business_id: 1 });
+        await api.put(`/ai-training/${editingScenario.id}`, { ...formData, business_id: businessId });
       } else {
-        await api.post('/ai-training', { ...formData, business_id: 1 });
+        await api.post('/ai-training', { ...formData, business_id: businessId });
       }
       
       setDialogOpen(false);
@@ -188,9 +233,9 @@ export default function AITrainingPage() {
   };
 
   const handleDelete = async (id: number) => {
-    if (!confirm('Delete this training scenario?')) return;
+    if (!businessId || !confirm('Delete this training scenario?')) return;
     try {
-      await api.delete(`/ai-training/${id}`, { params: { business_id: 1 } });
+      await api.delete(`/ai-training/${id}`, { params: { business_id: businessId } });
       fetchScenarios();
       fetchStats();
     } catch (error) {
@@ -199,13 +244,13 @@ export default function AITrainingPage() {
   };
 
   const handleTest = async () => {
-    if (!testInput.trim()) return;
+    if (!businessId || !testInput.trim()) return;
     setTesting(true);
     setTestResult(null);
     try {
       const res = await api.post('/ai-training/test-input', { 
         input: testInput,
-        business_id: 1 
+        business_id: businessId 
       });
       setTestResult(res.data);
     } catch (error: any) {
@@ -222,6 +267,12 @@ export default function AITrainingPage() {
   };
 
   if (loading) return <Container sx={{ p: 4 }}><LinearProgress /></Container>;
+
+  if (!businessId) return (
+    <Container sx={{ p: 4 }}>
+      <Alert severity="warning">Please log in and select a business to access AI Training.</Alert>
+    </Container>
+  );
 
   return (
     <Container maxWidth="lg" sx={{ mt: 4, mb: 4 }}>
@@ -471,6 +522,18 @@ export default function AITrainingPage() {
                       <Typography variant="subtitle2" color="success.main">
                         Score: {Math.round(snap.avg_success_rate)}%
                       </Typography>
+                    </Box>
+                    <Box sx={{ mt: 1, display: 'flex', justifyContent: 'flex-end' }}>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        startIcon={rollbackLoading === snap.id ? <LinearProgress sx={{ width: 16 }} /> : <RestoreIcon />}
+                        onClick={() => handleRollbackSnapshot(snap.id)}
+                        disabled={rollbackLoading !== null}
+                        color="warning"
+                      >
+                        Rollback
+                      </Button>
                     </Box>
                   </CardContent>
                 </Card>

@@ -65,6 +65,15 @@ class Settings(BaseSettings):
     NOVA_SONIC_VOICE_ID: str = "matthew"
     NOVA_SONIC_OUTPUT_SAMPLE_RATE: int = 24000
 
+    # AWS Bedrock Model Configuration (configurable for A/B testing, model upgrades)
+    BEDROCK_REASONING_MODEL: str = "amazon.nova-lite-v1:0"  # For general reasoning and responses
+    BEDROCK_VOICE_MODEL: str = "amazon.nova-sonic-v1:0"     # For real-time voice conversations
+    BEDROCK_AUTOMATION_MODEL: str = "amazon.nova-act-v1:0"  # For browser automation
+    BEDROCK_EMBEDDING_MODEL: str = "amazon.titan-embed-text-v1"  # For vector embeddings
+    
+    # Model fallback chain (comma-separated list of model IDs)
+    BEDROCK_REASONING_FALLBACK_MODELS: str = ""  # e.g., "anthropic.claude-3-sonnet,anthropic.claude-3-haiku"
+
     # E4: Voice Latency Optimization
     STREAMING_STT_ENABLED: bool = True  # Streaming STT via Amazon Transcribe (no S3 needed)
     INCREMENTAL_TTS_ENABLED: bool = True  # Sentence-level TTS for lower latency

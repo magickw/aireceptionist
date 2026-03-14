@@ -289,6 +289,61 @@ class AITrainingService:
             TrainingSnapshot.business_id == business_id
         ).order_by(TrainingSnapshot.version.desc()).all()
 
+    async def rollback_snapshot(
+        self,
+        db: Session,
+        business_id: int,
+        snapshot_id: int
+    ) -> Dict[str, Any]:
+        """
+        Rollback training data to a specific snapshot.
+        Replaces all current scenarios with those from the snapshot.
+        """
+        # Get the snapshot
+        snapshot = db.query(TrainingSnapshot).filter(
+            TrainingSnapshot.id == snapshot_id,
+            TrainingSnapshot.business_id == business_id
+        ).first()
+        
+        if not snapshot:
+            raise ValueError(f"Snapshot {snapshot_id} not found for business {business_id}")
+        
+        # Delete all current scenarios for this business
+        deleted_count = db.query(AITrainingScenario).filter(
+            AITrainingScenario.business_id == business_id
+        ).delete()
+        
+        # Restore scenarios from snapshot
+        scenario_data = snapshot.scenario_data or []
+        restored_count = 0
+        
+        for scenario_json in scenario_data:
+            scenario = AITrainingScenario(
+                business_id=business_id,
+                title=scenario_json.get("title", ""),
+                user_input=scenario_json.get("user_input", ""),
+                expected_response=scenario_json.get("expected_response", ""),
+                description=scenario_json.get("description"),
+                category=scenario_json.get("category", "general_inquiry"),
+                is_active=scenario_json.get("is_active", True),
+                success_rate=scenario_json.get("success_rate"),
+                last_tested=datetime.fromisoformat(scenario_json["last_tested"]) if scenario_json.get("last_tested") else None
+            )
+            db.add(scenario)
+            restored_count += 1
+        
+        db.commit()
+        
+        logger.info(f"Rolled back business {business_id} to snapshot {snapshot_id}: deleted {deleted_count}, restored {restored_count}")
+        
+        return {
+            "success": True,
+            "snapshot_id": snapshot_id,
+            "snapshot_name": snapshot.name,
+            "scenarios_deleted": deleted_count,
+            "scenarios_restored": restored_count
+        }
+
     async def get_benchmarks(
         self,
         db: Session,

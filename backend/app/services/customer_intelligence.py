@@ -72,14 +72,24 @@ class CustomerIntelligenceService:
             db: Database session
         """
         try:
+            from app.models.models import CustomerHistoryEmbedding
+            
             # Get all call sessions for this customer
             call_sessions = db.query(CallSession).filter(
                 CallSession.business_id == business_id,
                 CallSession.customer_phone == customer_phone
             ).order_by(desc(CallSession.started_at)).all()
             
+            indexed_count = 0
             # Generate embeddings for each transcript/message
             for session in call_sessions:
+                # Check if we already have an embedding for this session
+                existing = db.query(CustomerHistoryEmbedding).filter(
+                    CustomerHistoryEmbedding.call_session_id == session.id
+                ).first()
+                if existing:
+                    continue  # Skip already indexed sessions
+                
                 messages = db.query(ConversationMessage).filter(
                     ConversationMessage.call_session_id == session.id
                 ).all()
@@ -93,16 +103,24 @@ class CustomerIntelligenceService:
                     # Generate embedding
                     embedding = await self.generate_embedding(conversation_text)
                     
-                    # Store embedding (in production, use vector database like Pinecone/Weaviate)
-                    # For now, we'll store in a simple dict structure
+                    # Store embedding in database
                     if embedding:
-                        # This would be stored in a vector database
-                        pass
+                        history_embedding = CustomerHistoryEmbedding(
+                            business_id=business_id,
+                            customer_phone=customer_phone,
+                            call_session_id=session.id,
+                            conversation_text=conversation_text[:5000],  # Limit text size
+                            embedding=embedding
+                        )
+                        db.add(history_embedding)
+                        indexed_count += 1
             
-            return {"success": True, "indexed": len(call_sessions)}
+            db.commit()
+            return {"success": True, "indexed": indexed_count}
             
         except Exception as e:
             print(f"Error indexing customer history: {e}")
+            db.rollback()
             return {"success": False, "error": str(e)}
     
     async def semantic_search_customer_history(
@@ -114,7 +132,7 @@ class CustomerIntelligenceService:
         top_k: int = 5
     ) -> List[Dict[str, Any]]:
         """
-        Semantic search across customer history
+        Semantic search across customer history using vector similarity
         
         Args:
             query: Search query
@@ -127,14 +145,70 @@ class CustomerIntelligenceService:
             List of matching interactions with relevance scores
         """
         try:
+            from app.models.models import CustomerHistoryEmbedding
+            from sqlalchemy import text
+            
             # Generate query embedding
             query_embedding = await self.generate_embedding(query)
             
             if not query_embedding:
                 return []
             
-            # In production, use vector database for similarity search
-            # For demo, we'll do keyword-based search with scoring
+            # Use pgvector for similarity search
+            # Convert embedding list to string format for pgvector
+            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+            
+            # Query using cosine distance (<=> operator)
+            query_sql = text("""
+                SELECT 
+                    id, customer_phone, call_session_id, conversation_text, created_at,
+                    1 - (embedding <=> :embedding::vector) as similarity
+                FROM customer_history_embeddings
+                WHERE business_id = :business_id
+                AND customer_phone = :customer_phone
+                ORDER BY embedding <=> :embedding::vector
+                LIMIT :limit
+            """)
+            
+            results = db.execute(
+                query_sql,
+                {
+                    "embedding": embedding_str,
+                    "business_id": business_id,
+                    "customer_phone": customer_phone,
+                    "limit": top_k
+                }
+            ).fetchall()
+            
+            # Format results
+            formatted_results = []
+            for row in results:
+                formatted_results.append({
+                    "id": row.id,
+                    "session_id": row.call_session_id,
+                    "date": row.created_at,
+                    "relevance_score": float(row.similarity) if row.similarity else 0,
+                    "preview": row.conversation_text[:200] + "..." if len(row.conversation_text) > 200 else row.conversation_text,
+                    "transcript": row.conversation_text
+                })
+            
+            return formatted_results
+            
+        except Exception as e:
+            print(f"Error in semantic search: {e}")
+            # Fallback to keyword search if vector search fails
+            return await self._keyword_search_fallback(query, customer_phone, business_id, db, top_k)
+    
+    async def _keyword_search_fallback(
+        self, 
+        query: str, 
+        customer_phone: str, 
+        business_id: int, 
+        db: Session,
+        top_k: int = 5
+    ) -> List[Dict[str, Any]]:
+        """Fallback keyword-based search when vector search is unavailable"""
+        try:
             call_sessions = db.query(CallSession).filter(
                 CallSession.business_id == business_id,
                 CallSession.customer_phone == customer_phone

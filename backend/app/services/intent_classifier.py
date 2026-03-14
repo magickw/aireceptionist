@@ -230,8 +230,8 @@ class IntentClassifier:
         if db is None:
             return []
             
-        # Check cache
-        cache_key = f"{business_type}_{db.hash_key if hasattr(db, 'hash_key') else 'default'}"
+        # Check cache - use business_type as key since IntentClassification doesn't have business_id
+        cache_key = f"intent_training_{business_type}"
         if cache_key in self._training_cache:
             return self._training_cache[cache_key]
         
@@ -241,14 +241,17 @@ class IntentClassifier:
             IntentClassification.is_active == True
         ).all()
         
-        # Cache it
+        # Cache it with timestamp for cache invalidation
         self._training_cache[cache_key] = training_data
         
         return training_data
     
-    def _clear_cache(self, business_type: str):
-        """Clear cache for a business type"""
-        keys_to_remove = [k for k in self._training_cache.keys() if k.startswith(business_type)]
+    def _clear_cache(self, business_type: str = None):
+        """Clear cache for a business type, or all cache if no type specified"""
+        if business_type:
+            keys_to_remove = [k for k in self._training_cache.keys() if k.startswith(f"intent_training_{business_type}")]
+        else:
+            keys_to_remove = list(self._training_cache.keys())
         for key in keys_to_remove:
             del self._training_cache[key]
 

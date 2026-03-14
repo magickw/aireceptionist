@@ -773,3 +773,19 @@ class TeamMember(Base):
     
     business = relationship("Business", backref="team_members")
     user = relationship("User", backref="team_profile")
+
+
+class CustomerHistoryEmbedding(Base):
+    """Embeddings for customer call history - enables semantic search"""
+    __tablename__ = "customer_history_embeddings"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    customer_phone = Column(String(20), nullable=False, index=True)
+    call_session_id = Column(Integer, ForeignKey("call_sessions.id"))
+    conversation_text = Column(Text, nullable=False)  # The text that was embedded
+    embedding = Column(Vector(1536))  # Titan embedding dimensions
+    created_at = Column(DateTime, server_default=func.now())
+    
+    business = relationship("Business", backref="customer_embeddings")
+    call_session = relationship("CallSession", backref="embedding")
