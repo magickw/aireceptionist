@@ -314,20 +314,18 @@ class NovaSonicHandler:
                     for alt in result.alternatives:
                         if alt.transcript:
                             if result.is_partial:
-                                # Put partial transcript in queue
+                                # Put partial transcript in queue for live preview
                                 logger.debug(f"STT partial result: {alt.transcript}")
                                 try:
                                     partial_queue.put_nowait({"text": alt.transcript, "is_partial": True})
                                 except Exception as cb_err:
                                     logger.error(f"Error queuing partial transcript: {cb_err}")
                             else:
-                                # Collect final results
+                                # Collect final results - don't send individual segments to client
+                                # to avoid duplicate messages. The combined transcript will be sent
+                                # after all transcription is complete.
                                 transcript_parts.append(alt.transcript)
                                 logger.debug(f"STT final result: {alt.transcript}")
-                                try:
-                                    partial_queue.put_nowait({"text": alt.transcript, "is_partial": False})
-                                except Exception as cb_err:
-                                    logger.error(f"Error queuing final transcript: {cb_err}")
 
         client = TranscribeStreamingClient(region=settings.AWS_REGION)
 

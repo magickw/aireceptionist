@@ -515,10 +515,12 @@ class NovaSonicStreamSession:
             except Exception as e:
                 logger.warning(f"Failed to update system prompt for new language: {e}")
 
-        # Emit transcript to client
-        logger.info(f"Sending transcript to client: {transcript}")
+        # Emit final combined transcript to client
+        # Note: Individual final segments from Amazon Transcribe are NOT sent to avoid
+        # duplicate messages. Only the combined transcript is sent once after STT completes.
+        logger.info(f"Sending final transcript to client: {transcript}")
         try:
-            self.transcript_queue.put_nowait({"text": transcript})
+            self.transcript_queue.put_nowait({"text": transcript, "is_partial": False})
         except asyncio.QueueFull:
             logger.warning("transcript_queue full, dropping final transcript")
 
