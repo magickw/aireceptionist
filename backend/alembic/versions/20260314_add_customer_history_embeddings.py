@@ -7,7 +7,7 @@ Create Date: 2026-03-14
 """
 from alembic import op
 import sqlalchemy as sa
-from sqlalchemy.dialects.postgresql import VECTOR
+from pgvector.sqlalchemy import Vector
 
 # revision identifiers, used by Alembic.
 revision = '20260314_embeddings'
@@ -23,9 +23,9 @@ def upgrade():
         sa.Column('id', sa.Integer(), primary_key=True, index=True),
         sa.Column('business_id', sa.Integer(), sa.ForeignKey('businesses.id'), nullable=False),
         sa.Column('customer_phone', sa.String(20), nullable=False, index=True),
-        sa.Column('call_session_id', sa.Integer(), sa.ForeignKey('call_sessions.id')),
+        sa.Column('call_session_id', sa.String(100), sa.ForeignKey('call_sessions.id')),
         sa.Column('conversation_text', sa.Text(), nullable=False),
-        sa.Column('embedding', VECTOR(1536)),  # Titan embedding dimensions
+        sa.Column('embedding', Vector(1536)),  # Titan embedding dimensions
         sa.Column('created_at', sa.DateTime(), server_default=sa.func.now()),
     )
     

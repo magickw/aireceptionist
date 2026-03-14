@@ -1,7 +1,7 @@
 """Add SMS messages table
 
 Revision ID: 20260314_add_sms_messages
-Revises: 20260305_add_campaigns
+Revises: 20260305_camp
 Create Date: 2026-03-14
 
 """
@@ -11,7 +11,7 @@ from sqlalchemy.dialects import postgresql
 
 # revision identifiers, used by Alembic.
 revision = '20260314_add_sms_messages'
-down_revision = '20260305_add_campaigns'
+down_revision = '20260305_camp'
 branch_labels = None
 depends_on = None
 

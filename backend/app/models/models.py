@@ -782,7 +782,7 @@ class CustomerHistoryEmbedding(Base):
     id = Column(Integer, primary_key=True, index=True)
     business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
     customer_phone = Column(String(20), nullable=False, index=True)
-    call_session_id = Column(Integer, ForeignKey("call_sessions.id"))
+    call_session_id = Column(String(100), ForeignKey("call_sessions.id"))
     conversation_text = Column(Text, nullable=False)  # The text that was embedded
     embedding = Column(Vector(1536))  # Titan embedding dimensions
     created_at = Column(DateTime, server_default=func.now())
