@@ -7,25 +7,38 @@ Handles:
 - Automated follow-ups based on events
 """
 
-import os
+import re
 from typing import List, Dict, Any, Optional
 from datetime import datetime
 from sqlalchemy.orm import Session
 from sqlalchemy import desc
 
 from app.models.models import SMSTemplate, Appointment, CallSession
+from app.core.config import settings
+
+
+def validate_e164_phone_number(phone: str) -> tuple[bool, str]:
+    """
+    Validate phone number is in E.164 format.
+    Returns (is_valid, error_message).
+    """
+    if not phone:
+        return False, "Phone number is required"
+    
+    # E.164 format: +[country code][number], max 15 digits
+    e164_pattern = r'^\+[1-9]\d{1,14}$'
+    if not re.match(e164_pattern, phone):
+        return False, f"Phone number must be in E.164 format (e.g., +12345678900), got: {phone}"
+    
+    return True, ""
 
 
 class SMSService:
     """Service for sending SMS notifications via Twilio"""
     
     def __init__(self):
-        # Twilio configuration (should be in settings)
-        from app.core.config import settings
-        self.twilio_account_sid = os.getenv("TWILIO_ACCOUNT_SID")
-        self.twilio_auth_token = os.getenv("TWILIO_AUTH_TOKEN")
-        self.twilio_phone_number = os.getenv("TWILIO_PHONE_NUMBER")
-        self.enabled = bool(self.twilio_account_sid and self.twilio_auth_token)
+        # Twilio configuration from centralized settings
+        self.enabled = bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_PHONE_NUMBER)
     
     async def send_sms(
         self,
@@ -45,17 +58,22 @@ class SMSService:
             Dict with Twilio message SID and status
         """
         if not self.enabled:
-            return {"success": False, "error": "Twilio not configured"}
+            return {"success": False, "error": "Twilio not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER environment variables."}
+        
+        # Validate phone number format
+        is_valid, error_msg = validate_e164_phone_number(to_number)
+        if not is_valid:
+            return {"success": False, "error": error_msg}
         
         try:
             from twilio.rest import Client
             from twilio.base.exceptions import TwilioRestException
             
-            client = Client(self.twilio_account_sid, self.twilio_auth_token)
+            client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
             
             msg_params = {
                 "body": message,
-                "from_": self.twilio_phone_number,
+                "from_": settings.TWILIO_PHONE_NUMBER,
                 "to": to_number
             }
             
@@ -70,6 +88,11 @@ class SMSService:
                 "status": twilio_message.status
             }
             
+        except ImportError:
+            return {
+                "success": False,
+                "error": "Twilio library not installed. Run: pip install twilio"
+            }
         except Exception as e:
             return {
                 "success": False,

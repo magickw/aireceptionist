@@ -12,26 +12,51 @@ import asyncio
 import math
 from datetime import datetime, timezone
 from typing import Dict, Any, Optional
-import os
+import re
 import boto3
 
 from app.api import deps
 from app.models.models import User, Business, CallSession
 from app.services.nova_sonic import nova_sonic
 from app.services.voice_helpers import mulaw_to_pcm16, pcm16_to_mulaw
-from app.core.config import settings as app_settings
+from app.core.config import settings
+from app.core.logging import get_logger
+
+logger = get_logger("twilio")
 
 router = APIRouter()
-
-# Twilio configuration
-TWILIO_ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
-TWILIO_AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
-TWILIO_PHONE_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 
 # Silence detection constants (matching browser useVoiceStreaming.ts)
 SILENCE_THRESHOLD_INT16 = 500    # RMS below this = silence
 SILENCE_DURATION_MS = 1200       # ms of silence before end_user_turn
 MIN_RECORDING_DURATION_MS = 800  # minimum ms before silence detection engages
+
+
+def validate_e164_phone_number(phone: str) -> tuple[bool, str]:
+    """
+    Validate phone number is in E.164 format.
+    Returns (is_valid, error_message).
+    """
+    if not phone:
+        return False, "Phone number is required"
+    
+    # E.164 format: +[country code][number], max 15 digits
+    e164_pattern = r'^\+[1-9]\d{1,14}$'
+    if not re.match(e164_pattern, phone):
+        return False, f"Phone number must be in E.164 format (e.g., +12345678900), got: {phone}"
+    
+    return True, ""
+
+
+def get_base_url(request: Request = None) -> str:
+    """Get the base URL for webhooks and WebSocket connections."""
+    if settings.APP_BASE_URL:
+        return settings.APP_BASE_URL.rstrip("/")
+    if request:
+        host = request.headers.get("host", "localhost")
+        scheme = "https" if request.url.scheme == "https" or "x-forwarded-proto" in request.headers else "http"
+        return f"{scheme}://{host}"
+    return "https://receptium.onrender.com"
 
 
 @router.post("/incoming-call")
@@ -470,8 +495,12 @@ async def initiate_outbound_call(
     """
     Initiate an outbound call using Twilio.
     """
-    if not TWILIO_ACCOUNT_SID or not TWILIO_AUTH_TOKEN:
-        return {"error": "Twilio not configured"}
+    # Validate Twilio configuration
+    if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
+        return {"error": "Twilio not configured. Set TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN environment variables."}
+    
+    if not settings.TWILIO_PHONE_NUMBER:
+        return {"error": "Twilio phone number not configured. Set TWILIO_PHONE_NUMBER environment variable."}
     
     body = await request.json()
     to_number = body.get("to_number")
@@ -479,6 +508,11 @@ async def initiate_outbound_call(
     
     if not to_number:
         return {"error": "to_number is required"}
+    
+    # Validate phone number format
+    is_valid, error_msg = validate_e164_phone_number(to_number)
+    if not is_valid:
+        return {"error": error_msg}
     
     try:
         # Get business
@@ -489,11 +523,11 @@ async def initiate_outbound_call(
         # Initialize Twilio client
         from twilio.rest import Client
         
-        client = Client(TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN)
+        client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
         
         # Create TwiML URL that connects to our WebSocket
-        host = request.headers.get("host", "receptium.onrender.com")
-        ws_url = f"wss://{host}/api/twilio/ws?business_id={business_id}&call_sid={{CallSid}}&from_number={to_number}"
+        base_url = get_base_url(request)
+        ws_url = f"{base_url.replace('https://', 'wss://').replace('http://', 'ws://')}/api/twilio/ws?business_id={business_id}&call_sid={{CallSid}}&from_number={to_number}"
         
         # Make the call with TwiML that connects to WebSocket
         twiml = f"""<?xml version="1.0" encoding="UTF-8"?>
@@ -506,7 +540,7 @@ async def initiate_outbound_call(
         
         call = client.calls.create(
             to=to_number,
-            from_=TWILIO_PHONE_NUMBER or "+15005550000",
+            from_=settings.TWILIO_PHONE_NUMBER,
             twiml=twiml,
             record=True
         )
@@ -516,11 +550,11 @@ async def initiate_outbound_call(
             "call_sid": call.sid,
             "status": call.status,
             "to": to_number,
-            "from": call.from_
+            "from": settings.TWILIO_PHONE_NUMBER
         }
         
     except ImportError:
-        return {"error": "Twilio library not installed"}
+        return {"error": "Twilio library not installed. Run: pip install twilio"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -530,12 +564,12 @@ async def twilio_status():
     """
     Check Twilio configuration status.
     """
-    configured = bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN and TWILIO_PHONE_NUMBER)
+    configured = bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN and settings.TWILIO_PHONE_NUMBER)
     
     return {
         "configured": configured,
-        "phone_number": TWILIO_PHONE_NUMBER if configured else None,
-        "has_credentials": bool(TWILIO_ACCOUNT_SID and TWILIO_AUTH_TOKEN),
+        "phone_number": settings.TWILIO_PHONE_NUMBER if configured else None,
+        "has_credentials": bool(settings.TWILIO_ACCOUNT_SID and settings.TWILIO_AUTH_TOKEN),
     }
 
 
@@ -592,3 +626,137 @@ async def outbound_status_callback(
 
     db.commit()
     return {"status": "updated", "campaign_call_id": campaign_call.id}
+
+
+# ======================================================================
+# Incoming SMS Webhook
+# ======================================================================
+
+@router.post("/sms-webhook")
+async def incoming_sms_webhook(
+    request: Request,
+    db: Session = Depends(deps.get_db),
+):
+    """
+    Handle incoming SMS messages from Twilio.
+    
+    Twilio sends form data with:
+    - MessageSid: Unique identifier for the message
+    - From: Phone number of the sender (E.164 format)
+    - To: Phone number that received the message (E.164 format)
+    - Body: The text content of the message
+    - NumMedia: Number of media attachments (for MMS)
+    
+    Returns TwiML response (optional auto-reply).
+    """
+    form_data = await request.form()
+    
+    message_sid = form_data.get("MessageSid")
+    from_number = form_data.get("From")
+    to_number = form_data.get("To")
+    body = form_data.get("Body", "")
+    num_media = int(form_data.get("NumMedia", 0))
+    
+    logger.info(f"[Twilio SMS] Received SMS from {from_number} to {to_number}: {body[:100]}...")
+    
+    # Find business by destination phone number
+    business = db.query(Business).filter(Business.phone == to_number).first()
+    
+    if not business:
+        logger.warning(f"[Twilio SMS] No business found for phone number: {to_number}")
+        # Still return empty TwiML to acknowledge receipt
+        return PlainTextResponse(
+            content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+            media_type="application/xml"
+        )
+    
+    # Find or create customer by phone number
+    from app.models.models import Customer
+    customer = db.query(Customer).filter(
+        Customer.business_id == business.id,
+        Customer.phone == from_number
+    ).first()
+    
+    if not customer:
+        # Create new customer
+        customer = Customer(
+            business_id=business.id,
+            phone=from_number,
+            name=f"SMS Contact ({from_number})",
+        )
+        db.add(customer)
+        db.flush()
+        logger.info(f"[Twilio SMS] Created new customer: {customer.id}")
+    
+    # Store the incoming message
+    from app.models.models import SMSMessage
+    sms_message = SMSMessage(
+        business_id=business.id,
+        customer_id=customer.id,
+        direction="inbound",
+        from_number=from_number,
+        to_number=to_number,
+        body=body,
+        twilio_sid=message_sid,
+        status="received",
+    )
+    db.add(sms_message)
+    db.commit()
+    
+    logger.info(f"[Twilio SMS] Stored inbound SMS {message_sid} from customer {customer.id}")
+    
+    # Check if auto-reply is enabled for this business
+    auto_reply = getattr(business, 'sms_auto_reply', None)
+    if auto_reply and auto_reply.get('enabled'):
+        reply_message = auto_reply.get('message', "Thanks for your message! We'll get back to you soon.")
+        twiml_response = f'<?xml version="1.0" encoding="UTF-8"?><Response><Message>{reply_message}</Message></Response>'
+        return PlainTextResponse(content=twiml_response, media_type="application/xml")
+    
+    # Return empty TwiML (no auto-reply)
+    return PlainTextResponse(
+        content='<?xml version="1.0" encoding="UTF-8"?><Response></Response>',
+        media_type="application/xml"
+    )
+
+
+@router.post("/sms-status")
+async def sms_status_callback(
+    request: Request,
+    db: Session = Depends(deps.get_db),
+):
+    """
+    Handle SMS delivery status callbacks from Twilio.
+    
+    Twilio sends form data with:
+    - MessageSid: Unique identifier for the message
+    - MessageStatus: queued, sent, delivered, undelivered, failed
+    - ErrorCode: Error code if failed
+    - ErrorMessage: Error description if failed
+    """
+    form_data = await request.form()
+    
+    message_sid = form_data.get("MessageSid")
+    message_status = form_data.get("MessageStatus")
+    error_code = form_data.get("ErrorCode")
+    error_message = form_data.get("ErrorMessage")
+    
+    logger.info(f"[Twilio SMS] Status callback: {message_sid} -> {message_status}")
+    
+    if error_code:
+        logger.warning(f"[Twilio SMS] Error {error_code}: {error_message}")
+    
+    # Update SMS message status if we have it stored
+    from app.models.models import SMSMessage
+    sms_message = db.query(SMSMessage).filter(
+        SMSMessage.twilio_sid == message_sid
+    ).first()
+    
+    if sms_message:
+        sms_message.status = message_status
+        if error_code:
+            sms_message.error_code = error_code
+            sms_message.error_message = error_message
+        db.commit()
+        return {"status": "updated", "message_sid": message_sid}
+    
+    return {"status": "not_found", "message_sid": message_sid}

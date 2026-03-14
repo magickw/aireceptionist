@@ -476,6 +476,30 @@ class SMSTemplate(Base):
     business = relationship("Business")
 
 
+class SMSMessage(Base):
+    """SMS messages (inbound and outbound)"""
+    __tablename__ = "sms_messages"
+
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    customer_id = Column(Integer, ForeignKey("customers.id"), nullable=True)
+    direction = Column(String(10), nullable=False)  # 'inbound' or 'outbound'
+    from_number = Column(String(20), nullable=False)
+    to_number = Column(String(20), nullable=False)
+    body = Column(Text, nullable=False)
+    media_urls = Column(JSON, nullable=True)  # List of media URLs for MMS
+    twilio_sid = Column(String(50), index=True)  # Twilio MessageSid
+    status = Column(String(20), default="queued")  # queued, sent, delivered, failed, received
+    error_code = Column(String(10), nullable=True)
+    error_message = Column(Text, nullable=True)
+    created_at = Column(DateTime, server_default=func.now())
+    sent_at = Column(DateTime, nullable=True)
+    delivered_at = Column(DateTime, nullable=True)
+
+    business = relationship("Business")
+    customer = relationship("Customer")
+
+
 class BusinessTemplate(Base):
     """Database-driven business type templates for AI agent configuration"""
     __tablename__ = "business_templates"

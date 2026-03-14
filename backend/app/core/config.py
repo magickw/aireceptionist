@@ -4,6 +4,9 @@ from typing import Optional
 class Settings(BaseSettings):
     PROJECT_NAME: str = "AI Receptionist Pro"
     API_V1_STR: str = "/api"
+    
+    # Application base URL (used for webhooks, callbacks, etc.)
+    APP_BASE_URL: Optional[str] = None
 
     DATABASE_URL: str
 
@@ -15,6 +18,7 @@ class Settings(BaseSettings):
     TWILIO_ACCOUNT_SID: Optional[str] = None
     TWILIO_AUTH_TOKEN: Optional[str] = None
     TWILIO_PHONE_NUMBER: Optional[str] = None
+    TWILIO_RATE_LIMIT_PER_SECOND: int = 10  # Max Twilio API calls per second
 
     # AWS Configuration
     AWS_ACCESS_KEY_ID: Optional[str] = None

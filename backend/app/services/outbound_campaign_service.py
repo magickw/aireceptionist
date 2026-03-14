@@ -14,11 +14,55 @@ from app.core.config import settings
 from app.core.logging import get_logger
 import asyncio
 import urllib.parse
+import time as time_module
 
 logger = get_logger("outbound_campaign")
 
-# Default host used when building WebSocket/callback URLs for Twilio.
-_DEFAULT_HOST = "receptium.onrender.com"
+# Rate limiting state for Twilio API calls
+_last_twilio_call_time = 0.0
+_twilio_call_count = 0
+
+
+def _get_base_url() -> str:
+    """Get the base URL for webhooks and WebSocket connections."""
+    if settings.APP_BASE_URL:
+        return settings.APP_BASE_URL.rstrip("/")
+    # Fallback for development
+    return "https://receptium.onrender.com"
+
+
+async def _rate_limited_twilio_call(call_func, *args, **kwargs):
+    """Execute a Twilio API call with rate limiting."""
+    global _last_twilio_call_time, _twilio_call_count
+    
+    min_interval = 1.0 / settings.TWILIO_RATE_LIMIT_PER_SECOND
+    current_time = time_module.time()
+    elapsed = current_time - _last_twilio_call_time
+    
+    if elapsed < min_interval:
+        await asyncio.sleep(min_interval - elapsed)
+    
+    _last_twilio_call_time = time_module.time()
+    _twilio_call_count += 1
+    
+    return call_func(*args, **kwargs)
+
+
+def validate_e164_phone_number(phone: str) -> tuple[bool, str]:
+    """
+    Validate phone number is in E.164 format.
+    Returns (is_valid, error_message).
+    """
+    import re
+    if not phone:
+        return False, "Phone number is required"
+    
+    # E.164 format: +[country code][number], max 15 digits
+    e164_pattern = r'^\+[1-9]\d{1,14}$'
+    if not re.match(e164_pattern, phone):
+        return False, f"Phone number must be in E.164 format (e.g., +12345678900), got: {phone}"
+    
+    return True, ""
 
 
 class OutboundCampaignService:
@@ -259,15 +303,33 @@ class OutboundCampaignService:
             )
             return
 
+        # Validate phone number format
+        is_valid, error_msg = validate_e164_phone_number(customer.phone)
+        if not is_valid:
+            campaign_call.status = "failed"
+            campaign_call.outcome = "invalid_phone"
+            campaign_call.outcome_details = error_msg
+            self.db.commit()
+            logger.warning(
+                f"CampaignCall {campaign_call.id}: invalid phone number -- {error_msg}"
+            )
+            return
+
         try:
             from twilio.rest import Client
 
+            # Validate Twilio configuration
+            if not settings.TWILIO_ACCOUNT_SID or not settings.TWILIO_AUTH_TOKEN:
+                raise ValueError("Twilio credentials not configured")
+            if not settings.TWILIO_PHONE_NUMBER:
+                raise ValueError("Twilio phone number not configured")
+
             client = Client(settings.TWILIO_ACCOUNT_SID, settings.TWILIO_AUTH_TOKEN)
 
-            host = _DEFAULT_HOST
+            base_url = _get_base_url()
             encoded_briefing = urllib.parse.quote(campaign.briefing or "", safe="")
             ws_url = (
-                f"wss://{host}/api/twilio/ws"
+                f"{base_url.replace('https://', 'wss://').replace('http://', 'ws://')}/api/twilio/ws"
                 f"?business_id={campaign.business_id}"
                 f"&campaign_id={campaign.id}"
                 f"&campaign_call_id={campaign_call.id}"
@@ -275,7 +337,9 @@ class OutboundCampaignService:
                 f"&briefing={encoded_briefing}"
             )
 
+            # TwiML with proper XML declaration
             twiml = (
+                f'<?xml version="1.0" encoding="UTF-8"?>'
                 f'<Response><Connect><Stream url="{ws_url}"/></Connect></Response>'
             )
 
@@ -283,11 +347,13 @@ class OutboundCampaignService:
             campaign_call.called_at = datetime.now(timezone.utc)
             self.db.commit()
 
-            call = client.calls.create(
+            # Use rate-limited call
+            call = await _rate_limited_twilio_call(
+                client.calls.create,
                 to=customer.phone,
                 from_=settings.TWILIO_PHONE_NUMBER,
                 twiml=twiml,
-                status_callback=f"https://{host}/api/twilio/outbound-status",
+                status_callback=f"{base_url}/api/twilio/outbound-status",
                 status_callback_event=["completed"],
             )
 
@@ -303,11 +369,20 @@ class OutboundCampaignService:
         except ImportError:
             campaign_call.status = "failed"
             campaign_call.outcome = "error"
-            campaign_call.outcome_details = "Twilio library not installed"
+            campaign_call.outcome_details = "Twilio library not installed. Run: pip install twilio"
             self.db.commit()
             logger.error(
                 f"CampaignCall {campaign_call.id}: Twilio library not available"
             )
+
+        except ValueError as exc:
+            logger.error(
+                f"CampaignCall {campaign_call.id}: configuration error -- {exc}"
+            )
+            campaign_call.status = "failed"
+            campaign_call.outcome = "config_error"
+            campaign_call.outcome_details = str(exc)[:500]
+            self.db.commit()
 
         except Exception as exc:
             logger.error(
