@@ -364,6 +364,8 @@ class NovaSonicStreamSession:
         self._response_task: Optional[asyncio.Task] = None
         self.latency = StreamLatencyTracker()
         self._conversation_history: List[Dict[str, Any]] = []
+        self._consecutive_empty_transcripts = 0  # Track consecutive empty transcripts
+        self._last_fallback_time = 0  # Timestamp of last fallback message
 
         # Audio buffering (accumulated between start_user_turn / end_user_turn)
         self._audio_buffer = b""
@@ -451,6 +453,25 @@ class NovaSonicStreamSession:
 
         audio_data = self._audio_buffer
         self._audio_buffer = b""
+        self._audio_chunk_count = 0
+
+        # Calculate audio energy to reject low-quality/noise input
+        import array
+        import math
+        samples = array.array('h')
+        samples.frombytes(audio_data)
+        if samples:
+            sum_sq = sum(s * s for s in samples)
+            rms = math.sqrt(sum_sq / len(samples))
+            logger.info(f"Audio RMS energy: {rms:.1f}")
+            
+            # If audio energy is too low, likely just noise - skip transcription
+            MIN_AUDIO_ENERGY = 300  # RMS threshold for valid speech
+            if rms < MIN_AUDIO_ENERGY:
+                logger.warning(f"Audio energy too low ({rms:.1f} < {MIN_AUDIO_ENERGY}), likely noise - skipping")
+                # Don't send fallback for noise - just silently return
+                # This prevents repeated "I'm having trouble understanding" messages
+                return
 
         # Start filler task while processing
         import random
@@ -476,13 +497,34 @@ class NovaSonicStreamSession:
         if not transcript:
             if self._filler_task:
                 self._filler_task.cancel()
-            logger.warning("Empty transcript, sending fallback response")
-            # Provide helpful fallback message suggesting text input
-            await self.text_queue.put({
-                "chunk": "I'm having trouble understanding your voice right now. Could you please type your request or try speaking again more clearly?",
-            })
-            await self.text_queue.put({"turn_complete": True})
+            
+            # Track consecutive empty transcripts to prevent spamming fallback messages
+            self._consecutive_empty_transcripts += 1
+            current_time = time.time()
+            time_since_last_fallback = current_time - self._last_fallback_time
+            
+            # Only send fallback if:
+            # 1. It's been more than 5 seconds since last fallback, OR
+            # 2. This is the first empty transcript (not consecutive)
+            # This prevents repeated "I'm having trouble understanding" messages
+            MAX_CONSECUTIVE_EMPTY = 1  # Only allow 1 consecutive fallback
+            MIN_FALLBACK_INTERVAL = 5.0  # Minimum seconds between fallbacks
+            
+            if (self._consecutive_empty_transcripts <= MAX_CONSECUTIVE_EMPTY 
+                    or time_since_last_fallback >= MIN_FALLBACK_INTERVAL):
+                logger.warning("Empty transcript, sending fallback response")
+                self._last_fallback_time = current_time
+                await self.text_queue.put({
+                    "chunk": "I'm having trouble understanding your voice right now. Could you please type your request or try speaking again more clearly?",
+                })
+                await self.text_queue.put({"turn_complete": True})
+            else:
+                # Skip sending fallback - just silently return
+                logger.warning(f"Empty transcript (consecutive #{self._consecutive_empty_transcripts}), skipping fallback to avoid spam")
             return
+
+        # Reset consecutive empty counter on successful transcript
+        self._consecutive_empty_transcripts = 0
 
         # Update language if detected_lang is different from current language
         if detected_lang and detected_lang != self.language:

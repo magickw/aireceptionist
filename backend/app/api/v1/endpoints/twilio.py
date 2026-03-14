@@ -26,10 +26,11 @@ logger = get_logger("twilio")
 
 router = APIRouter()
 
-# Silence detection constants (matching browser useVoiceStreaming.ts)
-SILENCE_THRESHOLD_INT16 = 500    # RMS below this = silence
-SILENCE_DURATION_MS = 1200       # ms of silence before end_user_turn
-MIN_RECORDING_DURATION_MS = 800  # minimum ms before silence detection engages
+# Silence detection constants - tuned for robustness against ambient noise
+SILENCE_THRESHOLD_INT16 = 1500   # RMS below this = silence (increased from 500 for noise rejection)
+SILENCE_DURATION_MS = 1500       # ms of silence before end_user_turn (increased from 1200)
+MIN_RECORDING_DURATION_MS = 1200 # minimum ms before silence detection engages (increased from 800)
+MIN_SPEECH_DURATION_MS = 500     # minimum ms of actual speech before considering turn valid
 
 
 def validate_e164_phone_number(phone: str) -> tuple[bool, str]:
@@ -154,6 +155,8 @@ async def websocket_endpoint(
     _in_user_turn = False
     _silence_start = None   # loop-time when silence began
     _turn_start = None      # loop-time when current turn began
+    _speech_frames = 0      # count of non-silent frames in current turn
+    _speech_duration_ms = 0 # accumulated speech duration in current turn
 
     try:
         while True:
@@ -286,14 +289,21 @@ async def websocket_endpoint(
                     rms = _rms_amplitude(pcm16_audio)
                     now = asyncio.get_event_loop().time()
 
+                    # Each media chunk is ~20ms at 8kHz mulaw (160 samples)
+                    FRAME_DURATION_MS = 20
+
                     if rms >= SILENCE_THRESHOLD_INT16:
-                        # Non-silent frame
+                        # Non-silent frame (speech detected)
                         _silence_start = None
+                        _speech_frames += 1
+                        _speech_duration_ms += FRAME_DURATION_MS
 
                         if not _in_user_turn:
                             # User started speaking — begin new turn + barge-in
                             _in_user_turn = True
                             _turn_start = now
+                            _speech_frames = 1
+                            _speech_duration_ms = FRAME_DURATION_MS
                             await sonic_session.start_user_turn()
 
                             # Barge-in: clear any in-flight TTS audio
@@ -304,7 +314,7 @@ async def websocket_endpoint(
                                 })
                             except Exception:
                                 pass
-                            print(f"[Twilio WS] User turn started (barge-in)")
+                            print(f"[Twilio WS] User turn started (barge-in, rms={rms:.0f})")
 
                         await sonic_session.send_audio_chunk(pcm16_audio)
 
@@ -319,14 +329,18 @@ async def websocket_endpoint(
                             elapsed_silence = (now - _silence_start) * 1000  # ms
                             elapsed_turn = (now - _turn_start) * 1000 if _turn_start else 0
 
+                            # Only end turn if we have enough speech AND enough silence
                             if (elapsed_silence >= SILENCE_DURATION_MS
-                                    and elapsed_turn >= MIN_RECORDING_DURATION_MS):
+                                    and elapsed_turn >= MIN_RECORDING_DURATION_MS
+                                    and _speech_duration_ms >= MIN_SPEECH_DURATION_MS):
                                 # Enough silence after enough speech — end the turn
                                 _in_user_turn = False
                                 _silence_start = None
                                 _turn_start = None
+                                print(f"[Twilio WS] User turn ended (silence detected, speech={_speech_duration_ms}ms, turn={elapsed_turn:.0f}ms)")
+                                _speech_frames = 0
+                                _speech_duration_ms = 0
                                 await sonic_session.end_user_turn()
-                                print(f"[Twilio WS] User turn ended (silence detected)")
 
                 except Exception as e:
                     print(f"[Twilio WS] Error processing audio: {e}")
