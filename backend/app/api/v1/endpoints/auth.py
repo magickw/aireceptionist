@@ -171,11 +171,28 @@ def login_access_token(
 @router.get("/me", response_model=UserSchema)
 async def read_users_me(
     current_user: User = Depends(deps.get_current_active_user),
+    db: Session = Depends(deps.get_db),
 ) -> Any:
     """
     Get current user.
     """
-    return current_user
+    # Get user's primary business (first business they own)
+    from app.models.models import Business
+    primary_business = db.query(Business).filter(
+        Business.user_id == current_user.id
+    ).first()
+    
+    # Return user with business_id
+    user_data = {
+        "id": current_user.id,
+        "email": current_user.email,
+        "name": current_user.name,
+        "role": current_user.role,
+        "status": current_user.status,
+        "created_at": current_user.created_at,
+        "business_id": primary_business.id if primary_business else None,
+    }
+    return user_data
 
 @router.post("/refresh", response_model=Token)
 @limiter.limit("10/minute")

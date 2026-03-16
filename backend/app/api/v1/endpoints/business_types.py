@@ -30,10 +30,10 @@ def get_business_types() -> List[Dict[str, Any]]:
         template = BusinessTypeTemplate.get_template(type_key)
         types.append({
             "type": type_key,
-            "name": template["name"],
-            "icon": template["icon"],
-            "common_intents": template["common_intents"],
-            "required_info": template["required_info"]
+            "name": template.get("name", type_key.title()),
+            "icon": template.get("icon", "business"),
+            "common_intents": template.get("common_intents", []),
+            "required_info": BusinessTypeTemplate.get_required_info(type_key),
         })
     return types
 
@@ -46,10 +46,10 @@ def get_business_type_details(business_type: str) -> Dict[str, Any]:
     template = BusinessTypeTemplate.get_template(business_type)
     return {
         "type": business_type,
-        "name": template["name"],
-        "icon": template["icon"],
-        "common_intents": template["common_intents"],
-        "required_info": template["required_info"],
-        "system_prompt_addition": template["system_prompt_addition"],
-        "example_responses": template["example_responses"]
+        "name": template.get("name", business_type.title()),
+        "icon": template.get("icon", "business"),
+        "common_intents": template.get("common_intents", []),
+        "required_info": BusinessTypeTemplate.get_required_info(business_type),
+        "system_prompt_addition": template.get("system_prompt_addition", ""),
+        "example_responses": template.get("example_responses", {})
     }

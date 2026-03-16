@@ -10,6 +10,7 @@ interface User {
   name: string;
   role: string;
   status: string;
+  business_id?: number;
 }
 
 interface AuthContextType {

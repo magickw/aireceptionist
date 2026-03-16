@@ -40,7 +40,7 @@ class UserInDBBase(UserBase):
         from_attributes = True
 
 class User(UserInDBBase):
-    pass
+    business_id: Optional[int] = None
 
 class UserLogin(BaseModel):
     email: EmailStr
