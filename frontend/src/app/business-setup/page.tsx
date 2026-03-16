@@ -33,17 +33,13 @@ interface PricingItem {
   inventory: number;
 }
 
-const BUSINESS_TYPES = [
-  { value: 'general', label: 'General Business' },
-  { value: 'restaurant', label: 'Restaurant' },
-  { value: 'hotel', label: 'Hotel' },
-  { value: 'dental', label: 'Dental Clinic' },
-  { value: 'medical', label: 'Medical Clinic' },
-  { value: 'law_firm', label: 'Law Firm' },
-  { value: 'salon', label: 'Salon / Spa' },
-  { value: 'retail', label: 'Retail Store' },
-  { value: 'auto_repair', label: 'Auto Repair' },
-];
+interface BusinessType {
+  type: string;
+  name: string;
+  icon?: string;
+  common_intents?: string[];
+  required_info?: string[];
+}
 
 const UNITS = [
   { value: 'per item', label: 'Per Item' },
@@ -103,7 +99,7 @@ export default function BusinessSetupPage() {
   const [pricingDialogOpen, setPricingDialogOpen] = useState(false);
   const [editingPricingItem, setEditingPricingItem] = useState<PricingItem | null>(null);
   const [pricingSaving, setPricingSaving] = useState(false);
-  
+
   const emptyPricingItem: PricingItem = {
     name: '',
     description: '',
@@ -114,12 +110,16 @@ export default function BusinessSetupPage() {
     is_active: true,
     inventory: 1,
   };
-  
+
   const [pricingFormData, setPricingFormData] = useState<PricingItem>(emptyPricingItem);
 
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [newService, setNewService] = useState('');
+
+  // Business types state
+  const [businessTypes, setBusinessTypes] = useState<BusinessType[]>([]);
+  const [businessTypesLoading, setBusinessTypesLoading] = useState(true);
 
   useEffect(() => {
     const fetchProfile = async () => {
@@ -132,16 +132,31 @@ export default function BusinessSetupPage() {
             operating_hours: data.operating_hours || profile.operating_hours,
             settings: data.settings || { services: [] }
           });
-          
+
           // Also fetch pricing items for this business
           fetchPricingItems(data.id);
         }
-      } catch (error) { 
-        console.error('Failed to fetch profile', error); 
+      } catch (error) {
+        console.error('Failed to fetch profile', error);
       }
       finally { setLoading(false); }
     };
     fetchProfile();
+  }, []);
+
+  // Fetch business types from API
+  useEffect(() => {
+    const fetchBusinessTypes = async () => {
+      try {
+        const res = await api.get('/businesses/types');
+        setBusinessTypes(res.data);
+      } catch (error) {
+        console.error('Failed to fetch business types', error);
+      } finally {
+        setBusinessTypesLoading(false);
+      }
+    };
+    fetchBusinessTypes();
   }, []);
 
   const fetchPricingItems = async (businessId: number) => {
@@ -284,17 +299,22 @@ export default function BusinessSetupPage() {
             </Grid>
             <Grid item xs={12} sm={6}>
               <FormControl fullWidth margin="normal">
-                            <InputLabel>Business Type</InputLabel>
-                            <Select
-                              value={profile.type}
-                              label="Business Type"
-                              onChange={(e) => setProfile(p => ({...p, type: e.target.value}))}
-                            >
-                              {BUSINESS_TYPES.map((bt) => (
-                                <MenuItem key={bt.value} value={bt.value}>{bt.label}</MenuItem>
-                              ))}
-                            </Select>
-                          </FormControl>
+                <InputLabel>Business Type</InputLabel>
+                <Select
+                  value={profile.type}
+                  label="Business Type"
+                  onChange={(e) => setProfile(p => ({...p, type: e.target.value}))}
+                  disabled={businessTypesLoading}
+                >
+                  {businessTypesLoading ? (
+                    <MenuItem disabled>Loading business types...</MenuItem>
+                  ) : (
+                    businessTypes.map((bt) => (
+                      <MenuItem key={bt.type} value={bt.type}>{bt.name}</MenuItem>
+                    ))
+                  )}
+                </Select>
+              </FormControl>
             </Grid>
             <Grid item xs={12} sm={6}>
               <TextField fullWidth margin="normal" label="Phone Number" value={profile.phone} onChange={(e) => setProfile(p => ({...p, phone: e.target.value}))} />

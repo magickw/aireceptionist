@@ -297,4 +297,9 @@ export const calendlyApi = {
   getStatus: (integrationId: number) => api.get(`/calendly/${integrationId}/status`),
 };
 
+// Business Types API
+export const businessApi = {
+  getTypes: () => api.get('/businesses/types'),
+};
+
 export default api;
