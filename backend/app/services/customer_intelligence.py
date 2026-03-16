@@ -7,6 +7,8 @@ This service provides:
 - VIP identification
 - Sentiment analysis
 - Pattern recognition
+
+Integrates with Customer 360 for richer customer profiles
 """
 
 import boto3
@@ -18,7 +20,10 @@ from sqlalchemy.orm import Session
 from sqlalchemy import desc, func
 
 from app.core.config import settings
-from app.models.models import CallSession, ConversationMessage, Appointment, User
+from app.models.models import CallSession, ConversationMessage, Appointment, User, Customer
+
+# Import Customer 360 service for integrated data
+from app.services.customer_360_service import customer_360_service
 
 
 class CustomerIntelligenceService:
