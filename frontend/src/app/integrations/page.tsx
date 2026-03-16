@@ -199,106 +199,116 @@ export default function IntegrationsPage() {
     setIntegrations(defaultIntegrations);
 
     const results = await Promise.allSettled([
-      api.get('/sms/status'),
-      api.get('/email/status'),
-      api.get('/calendar'),
-      api.get('/payments/status'),
-      api.get('/knowledge-base/documents'),
-      api.get('/webhooks'),
-      api.get('/integrations'), // Generic integrations endpoint
-      api.get('/calendly/connect/calendly'), // Calendly status check
+      api.get('/sms/status'),           // 0 - twilio
+      api.get('/email/status'),         // 1 - email
+      api.get('/calendar'),             // 2 - calendar (also used for calendly)
+      api.get('/payments/status'),      // 3 - stripe
+      api.get('/knowledge-base/documents'), // 4 - knowledge
+      api.get('/webhooks'),             // 5 - webhooks
+      api.get('/integrations'),         // 6 - POS and PMS (generic)
     ]);
 
-    const updated = defaultIntegrations.map((integration, index) => {
-      const result = results[index];
+    const updated = defaultIntegrations.map((integration) => {
       const copy = { ...integration };
-
-      if (result.status === 'rejected') {
-        // Special case for the generic integrations endpoint (index 6)
-        if (index === 6) {
-           // If /integrations fails, mark POS and PMS as not configured
-           return copy;
-        }
-        
-        // 404 or network error likely means not configured
-        const err = result.reason;
-        if (err?.response?.status === 404 || err?.response?.status === 400) {
-          copy.status = 'not_configured';
-          copy.statusLabel = 'Not Configured';
-        } else {
-          copy.status = 'error';
-          copy.statusLabel = 'Error';
-        }
-        copy.actionLabel = getActionLabel(copy.status, integration.actionLabel);
-        return copy;
-      }
-
-      const data = result.value.data;
-
-      // Handle the generic integrations results for POS and PMS
-      if (index === 6 && Array.isArray(data)) {
-        // This handles both POS and PMS since they are in the same list
-        // Note: The mapping below needs to be smart enough to find the right integration
-        return copy; 
-      }
 
       switch (integration.id) {
         case 'twilio': {
-          const configured =
-            data?.configured === true ||
-            data?.twilio_configured === true ||
-            data?.status === 'configured';
-          copy.status = configured ? 'connected' : 'not_configured';
-          copy.statusLabel = configured ? 'Configured' : 'Not Configured';
+          const result = results[0];
+          if (result?.status === 'fulfilled') {
+            const data = result.value.data;
+            const configured =
+              data?.configured === true ||
+              data?.twilio_configured === true ||
+              data?.status === 'configured';
+            copy.status = configured ? 'connected' : 'not_configured';
+            copy.statusLabel = configured ? 'Configured' : 'Not Configured';
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'Not Configured';
+          }
           break;
         }
         case 'email': {
-          const configured =
-            data?.configured === true ||
-            data?.smtp_configured === true ||
-            data?.status === 'configured';
-          copy.status = configured ? 'connected' : 'not_configured';
-          copy.statusLabel = configured ? 'Configured' : 'Not Configured';
+          const result = results[1];
+          if (result?.status === 'fulfilled') {
+            const data = result.value.data;
+            const configured =
+              data?.configured === true ||
+              data?.smtp_configured === true ||
+              data?.status === 'configured';
+            copy.status = configured ? 'connected' : 'not_configured';
+            copy.statusLabel = configured ? 'Configured' : 'Not Configured';
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'Not Configured';
+          }
           break;
         }
         case 'calendar': {
-          const calendars = data?.integrations || data?.calendars || data || [];
-          const count = Array.isArray(calendars) ? calendars.length : 0;
-          copy.status = count > 0 ? 'connected' : 'not_configured';
-          copy.statusLabel =
-            count > 0 ? `${count} calendar${count !== 1 ? 's' : ''} connected` : 'Not Connected';
+          const result = results[2];
+          if (result?.status === 'fulfilled') {
+            const data = result.value.data;
+            const calendars = data?.integrations || data?.calendars || data || [];
+            const count = Array.isArray(calendars) ? calendars.length : 0;
+            copy.status = count > 0 ? 'connected' : 'not_configured';
+            copy.statusLabel =
+              count > 0 ? `${count} calendar${count !== 1 ? 's' : ''} connected` : 'Not Connected';
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'Not Connected';
+          }
           break;
         }
         case 'stripe': {
-          const configured =
-            data?.configured === true ||
-            data?.stripe_configured === true ||
-            data?.status === 'configured';
-          copy.status = configured ? 'connected' : 'not_configured';
-          copy.statusLabel = configured ? 'Configured' : 'Not Configured';
+          const result = results[3];
+          if (result?.status === 'fulfilled') {
+            const data = result.value.data;
+            const configured =
+              data?.configured === true ||
+              data?.stripe_configured === true ||
+              data?.status === 'configured';
+            copy.status = configured ? 'connected' : 'not_configured';
+            copy.statusLabel = configured ? 'Configured' : 'Not Configured';
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'Not Configured';
+          }
           break;
         }
         case 'knowledge': {
-          const docs = data?.documents || data || [];
-          const count = Array.isArray(docs) ? docs.length : 0;
-          copy.status = count > 0 ? 'connected' : 'not_configured';
-          copy.statusLabel =
-            count > 0 ? `${count} document${count !== 1 ? 's' : ''} uploaded` : 'No Documents';
+          const result = results[4];
+          if (result?.status === 'fulfilled') {
+            const data = result.value.data;
+            const docs = data?.documents || data || [];
+            const count = Array.isArray(docs) ? docs.length : 0;
+            copy.status = count > 0 ? 'connected' : 'not_configured';
+            copy.statusLabel =
+              count > 0 ? `${count} document${count !== 1 ? 's' : ''} uploaded` : 'No Documents';
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'No Documents';
+          }
           break;
         }
         case 'webhooks': {
-          const hooks = data?.webhooks || data || [];
-          const count = Array.isArray(hooks) ? hooks.length : 0;
-          copy.status = count > 0 ? 'connected' : 'not_configured';
-          copy.statusLabel =
-            count > 0 ? `${count} webhook${count !== 1 ? 's' : ''} active` : 'No Webhooks';
+          const result = results[5];
+          if (result?.status === 'fulfilled') {
+            const data = result.value.data;
+            const hooks = data?.webhooks || data || [];
+            const count = Array.isArray(hooks) ? hooks.length : 0;
+            copy.status = count > 0 ? 'connected' : 'not_configured';
+            copy.statusLabel =
+              count > 0 ? `${count} webhook${count !== 1 ? 's' : ''} active` : 'No Webhooks';
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'No Webhooks';
+          }
           break;
         }
         case 'pos': {
-          // Find POS integration in the generic integrations list (results[6])
-          const genericResult = results[6];
-          if (genericResult.status === 'fulfilled' && Array.isArray(genericResult.value.data)) {
-            const pos = genericResult.value.data.find((i: any) => i.integration_type.includes('pos'));
+          const result = results[6];
+          if (result?.status === 'fulfilled' && Array.isArray(result.value.data)) {
+            const pos = result.value.data.find((i: any) => i.integration_type?.includes('pos'));
             if (pos) {
               copy.status = pos.status === 'active' ? 'connected' : 'error';
               copy.statusLabel = pos.status === 'active' ? 'Connected' : 'Error';
@@ -306,14 +316,35 @@ export default function IntegrationsPage() {
               copy.status = 'not_configured';
               copy.statusLabel = 'Not Configured';
             }
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'Not Configured';
+          }
+          break;
+        }
+        case 'crm': {
+          const result = results[6];
+          if (result?.status === 'fulfilled' && Array.isArray(result.value.data)) {
+            const crm = result.value.data.find((i: any) => 
+              i.integration_type?.includes('hubspot') || i.integration_type?.includes('crm')
+            );
+            if (crm) {
+              copy.status = crm.status === 'active' ? 'connected' : 'error';
+              copy.statusLabel = crm.status === 'active' ? 'Connected' : 'Error';
+            } else {
+              copy.status = 'not_configured';
+              copy.statusLabel = 'Not Configured';
+            }
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'Not Configured';
           }
           break;
         }
         case 'pms': {
-          // Find PMS integration in the generic integrations list (results[6])
-          const genericResult = results[6];
-          if (genericResult.status === 'fulfilled' && Array.isArray(genericResult.value.data)) {
-            const pms = genericResult.value.data.find((i: any) => i.integration_type.includes('pms'));
+          const result = results[6];
+          if (result?.status === 'fulfilled' && Array.isArray(result.value.data)) {
+            const pms = result.value.data.find((i: any) => i.integration_type?.includes('pms'));
             if (pms) {
               copy.status = pms.status === 'active' ? 'connected' : 'error';
               copy.statusLabel = pms.status === 'active' ? 'Connected' : 'Error';
@@ -321,14 +352,17 @@ export default function IntegrationsPage() {
               copy.status = 'not_configured';
               copy.statusLabel = 'Not Configured';
             }
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'Not Configured';
           }
           break;
         }
         case 'calendly': {
           // Check Calendly status from calendar endpoint (results[2])
-          const calendarResult = results[2];
-          if (calendarResult.status === 'fulfilled') {
-            const integrations = calendarResult.value.data?.integrations || [];
+          const result = results[2];
+          if (result?.status === 'fulfilled') {
+            const integrations = result.value.data?.integrations || [];
             const calendly = integrations.find((i: any) => i.provider === 'calendly');
             if (calendly) {
               copy.status = calendly.status === 'active' ? 'connected' : 'error';
@@ -337,6 +371,9 @@ export default function IntegrationsPage() {
               copy.status = 'not_configured';
               copy.statusLabel = 'Not Configured';
             }
+          } else {
+            copy.status = 'not_configured';
+            copy.statusLabel = 'Not Configured';
           }
           break;
         }
