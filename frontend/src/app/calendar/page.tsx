@@ -128,7 +128,7 @@ export default function CalendarPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get(`/calendar/builtin/appointments?business_id=${businessId}`);
+      const response = await api.get(`/calendar-builtin/appointments?business_id=${businessId}`);
       const filteredAppointments = response.data.filter((app: BuiltInAppointment) =>
         dayjs(app.appointment_time).isSame(selectedDate, 'day')
       );
@@ -146,7 +146,7 @@ export default function CalendarPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get(`/calendar/builtin/availability?business_id=${businessId}&date_str=${selectedDate.format('YYYY-MM-DD')}`);
+      const response = await api.get(`/calendar-builtin/availability?business_id=${businessId}&date_str=${selectedDate.format('YYYY-MM-DD')}`);
       setAvailableSlots(response.data);
     } catch (err: any) {
       console.error('Failed to fetch available slots:', err);
@@ -291,9 +291,9 @@ export default function CalendarPage() {
       };
 
       if (currentBuiltInAppointment) {
-        await api.put(`/calendar/builtin/appointments/${currentBuiltInAppointment.id}`, payload);
+        await api.put(`/calendar-builtin/appointments/${currentBuiltInAppointment.id}`, payload);
       } else {
-        await api.post('/calendar/builtin/appointments', payload);
+        await api.post('/calendar-builtin/appointments', payload);
       }
       handleCloseAddEditBuiltInDialog();
       fetchBuiltInAppointments();
@@ -311,7 +311,7 @@ export default function CalendarPage() {
     setLoading(true);
     setError(null);
     try {
-      await api.delete(`/calendar/builtin/appointments/${id}`);
+      await api.delete(`/calendar-builtin/appointments/${id}`);
       fetchBuiltInAppointments();
       fetchAvailableSlots();
     } catch (err: any) {

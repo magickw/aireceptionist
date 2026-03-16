@@ -228,7 +228,7 @@ app.include_router(customer_intelligence.router, prefix=f"{settings.API_V1_STR}/
 app.include_router(knowledge_base.router, prefix=f"{settings.API_V1_STR}/knowledge-base", tags=["knowledge-base"])
 app.include_router(call_summaries.router, prefix=f"{settings.API_V1_STR}/call-summaries", tags=["call-summaries"])
 app.include_router(webhooks.router, prefix=f"{settings.API_V1_STR}/webhooks", tags=["webhooks"])
-app.include_router(builtin_calendar.router, prefix=f"{settings.API_V1_STR}/calendar/builtin", tags=["builtin-calendar"])
+app.include_router(builtin_calendar.router, prefix=f"{settings.API_V1_STR}/calendar-builtin", tags=["builtin-calendar"])
 app.include_router(calendar.router, prefix=f"{settings.API_V1_STR}/calendar", tags=["calendar"])
 app.include_router(sms.router, prefix=f"{settings.API_V1_STR}/sms", tags=["sms"])
 app.include_router(forecasting.router, prefix=f"{settings.API_V1_STR}/forecasting", tags=["forecasting"])
