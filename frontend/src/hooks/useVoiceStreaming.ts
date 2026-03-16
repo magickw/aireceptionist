@@ -57,9 +57,9 @@ export function useVoiceStreaming({
   const recordingStartRef = useRef<number | null>(null);
   const hasSpeechRef = useRef(false); // Track whether user has spoken during this recording
   const audioBufferRef = useRef<Int16Array[]>([]);
-  const SILENCE_THRESHOLD = 0.008; // Lower threshold — only true silence triggers, not soft speech
-  const SILENCE_DURATION = 1500; // 1.5 seconds of continuous silence after speech before auto-stop
-  const MIN_RECORDING_DURATION = 500; // 0.5 seconds minimum before allowing auto-stop
+  const SILENCE_THRESHOLD = 0.006; // Lower threshold — only true silence triggers, not soft speech or breathing
+  const SILENCE_DURATION = 2500; // 2.5 seconds of continuous silence after speech before auto-stop (allows for natural pauses)
+  const MIN_RECORDING_DURATION = 800; // 0.8 seconds minimum before allowing auto-stop (requires more speech before stopping)
 
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
@@ -122,19 +122,30 @@ export function useVoiceStreaming({
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
 
-        // Calculate audio level for silence detection (use original data)
+        // Calculate audio level for silence detection using a sliding window
+        // Check the last ~100ms of audio (at 16kHz = 1600 samples) to detect silence
+        const windowSize = Math.min(inputData.length, 1600); // 100ms window at 16kHz
+        const startIndex = Math.max(0, inputData.length - windowSize);
         let sum = 0;
-        for (let i = 0; i < inputData.length; i++) {
+        for (let i = startIndex; i < inputData.length; i++) {
           sum += Math.abs(inputData[i]);
         }
-        const avgLevel = sum / inputData.length;
+        const avgLevel = sum / windowSize;
+
+        // Debug logging for silence detection (every 10 chunks)
+        if (chunkCount % 10 === 0 && chunkCount > 0) {
+          const silenceDuration = silenceStartRef.current ? Date.now() - silenceStartRef.current : 0;
+          console.log(`[useVoiceStreaming] Chunk #${chunkCount}: avgLevel=${avgLevel.toFixed(5)}, threshold=${SILENCE_THRESHOLD.toFixed(5)}, hasSpeech=${hasSpeechRef.current}, silenceDuration=${silenceDuration}ms`);
+        }
 
         // Silence detection — only auto-stop AFTER speech has been detected
+        // Use a sliding window approach: silence must be sustained over multiple chunks
         if (avgLevel < SILENCE_THRESHOLD) {
           if (hasSpeechRef.current) {
             // Speech was detected previously, now it's silent — start/continue silence timer
             if (silenceStartRef.current === null) {
               silenceStartRef.current = Date.now();
+              console.log(`[useVoiceStreaming] Silence started at ${silenceStartRef.current}`);
             } else {
               const silenceDuration = Date.now() - silenceStartRef.current;
               const recordingDuration = recordingStartRef.current ? Date.now() - recordingStartRef.current : 0;
@@ -148,8 +159,11 @@ export function useVoiceStreaming({
           // If no speech yet, just keep waiting (don't start silence timer)
         } else {
           // Sound detected — mark that speech has occurred, reset silence timer
-          hasSpeechRef.current = true;
-          silenceStartRef.current = null;
+          // Only reset if the audio level is significantly above the threshold (not just marginal)
+          if (avgLevel > SILENCE_THRESHOLD * 1.5) {
+            hasSpeechRef.current = true;
+            silenceStartRef.current = null;
+          }
         }
 
         // Resample to 16kHz if the AudioContext is at a different rate

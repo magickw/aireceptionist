@@ -80,38 +80,49 @@ async def approve_override(
     
     # Create or update approval request - query for any request (not just pending)
     # to prevent duplicate insertions when endpoint is called multiple times
-    approval = db.query(ApprovalRequest).filter(
-        ApprovalRequest.call_session_id == call_session_id,
-        ApprovalRequest.request_type == request_type
-    ).first()
-    
-    if not approval:
-        approval = ApprovalRequest(
-            business_id=business_id,
-            call_session_id=call_session_id,
-            request_type=request_type,
-            status="approved",
-            action_taken="APPROVED_OVERRIDE",
-            reason="Manager override",
-            original_response=original_response,
-            final_response=original_response,
-            context=context,
-            reviewed_by=current_user.id,
-            reviewed_at=datetime.now(timezone.utc),
-            request_metadata={"manager_notes": notes}
+    try:
+        approval = db.query(ApprovalRequest).filter(
+            ApprovalRequest.call_session_id == call_session_id,
+            ApprovalRequest.request_type == request_type
+        ).with_for_update().first()  # Lock the row to prevent race conditions
+        
+        if not approval:
+            approval = ApprovalRequest(
+                business_id=business_id,
+                call_session_id=call_session_id,
+                request_type=request_type,
+                status="approved",
+                action_taken="APPROVED_OVERRIDE",
+                reason="Manager override",
+                original_response=original_response,
+                final_response=original_response,
+                context=context,
+                reviewed_by=current_user.id,
+                reviewed_at=datetime.now(timezone.utc),
+                request_metadata={"manager_notes": notes}
+            )
+            db.add(approval)
+        else:
+            approval.status = "approved"
+            approval.action_taken = "APPROVED_OVERRIDE"
+            approval.final_response = original_response
+            approval.reviewed_by = current_user.id
+            approval.reviewed_at = datetime.now(timezone.utc)
+            approval.request_metadata = {"manager_notes": notes}
+        
+        db.commit()
+        db.refresh(approval)
+        return approval
+        
+    except Exception as e:
+        db.rollback()
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(f"Error in approve_override: {str(e)}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Failed to process approval: {str(e)}"
         )
-        db.add(approval)
-    else:
-        approval.status = "approved"
-        approval.action_taken = "APPROVED_OVERRIDE"
-        approval.final_response = original_response
-        approval.reviewed_by = current_user.id
-        approval.reviewed_at = datetime.now(timezone.utc)
-        approval.request_metadata = {"manager_notes": notes}
-    
-    db.commit()
-    db.refresh(approval)
-    return approval
 
 
 @router.post("/reject")

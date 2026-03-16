@@ -1,15 +1,105 @@
 """
 Menu API endpoints for managing business menus (restaurants, retail, etc.)
 """
-from typing import List, Optional
+from typing import List, Optional, Set, Dict
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
 
 from app.api import deps
-from app.models.models import User, MenuItem
+from app.models.models import User, MenuItem, Business
 
 router = APIRouter()
+
+# Define allowed menu categories for each business type
+# This prevents inappropriate menu items (e.g., food in dental clinics)
+BUSINESS_TYPE_CATEGORIES: Dict[str, Set[str]] = {
+    "restaurant": {
+        "Appetizers", "Main Course", "Desserts", "Drinks", "Beverages",
+        "Side Dishes", "Soups", "Salads", "Seafood", "Poultry", "Meat",
+        "Vegetarian", "Vegan", "Gluten-Free", "Kids Menu", "Specials"
+    },
+    "medical": {
+        "Consultations", "Checkups", "Vaccinations", "Lab Tests", "X-rays",
+        "Procedures", "Treatments", "Therapy", "Screenings", "Follow-up",
+        "Emergency", "Specialist", "Diagnostics", "Immunizations"
+    },
+    "dental": {
+        "Checkups", "Cleanings", "Fillings", "Extractions", "Root Canals",
+        "Crowns", "Bridges", "Dentures", "Implants", "Orthodontics",
+        "Cosmetic", "Whitening", "X-rays", "Consultations", "Emergency",
+        "Pediatric", "Periodontal", "Oral Surgery"
+    },
+    "hotel": {
+        "Standard Room", "Deluxe Room", "Suite", "Executive Suite",
+        "Breakfast", "Lunch", "Dinner", "Room Service", "Amenities",
+        "Spa", "Gym", "Pool", "Parking", "WiFi", "Concierge"
+    },
+    "salon": {
+        "Haircut", "Styling", "Coloring", "Highlights", "Balayage",
+        "Manicure", "Pedicure", "Facial", "Massage", "Waxing",
+        "Makeup", "Bridal", "Hair Treatment", "Scalp Treatment"
+    },
+    "spa": {
+        "Massage", "Facial", "Body Treatment", "Sauna", "Steam Room",
+        "Hydrotherapy", "Aromatherapy", "Hot Stone", "Reflexology",
+        "Wellness Package", "Couple's Package", "Detox"
+    },
+    "fitness": {
+        "Personal Training", "Group Classes", "Yoga", "Pilates",
+        "CrossFit", "Spin", "Membership", "Day Pass", "Training Plan",
+        "Nutrition Consultation", "Physical Therapy"
+    },
+    "retail": {
+        "Clothing", "Electronics", "Books", "Home Goods", "Accessories",
+        "Shoes", "Jewelry", "Toys", "Sports Equipment", "Beauty Products"
+    },
+    "law_firm": {
+        "Consultation", "Document Review", "Legal Representation",
+        "Contract Drafting", "Litigation", "Mediation", "Arbitration",
+        "Legal Research", "Notary Services", "Specialized Services"
+    },
+    "real_estate": {
+        "Apartments", "Houses", "Condos", "Commercial Properties",
+        "Land", "Property Management", "Rental", "Leasing",
+        "Property Valuation", "Home Inspection"
+    },
+    "hvac": {
+        "Installation", "Repair", "Maintenance", "Inspection",
+        "Duct Cleaning", "Air Quality Testing", "Emergency Service",
+        "System Upgrade", "Thermostat Installation", "Consultation"
+    },
+    "accounting": {
+        "Tax Preparation", "Bookkeeping", "Audit", "Financial Planning",
+        "Payroll Services", "Consultation", "Business Advisory",
+        "Financial Statements", "Tax Planning", "Compliance"
+    }
+}
+
+def validate_menu_category_for_business_type(business_type: str, category: Optional[str]) -> bool:
+    """
+    Validate that the menu category is appropriate for the business type.
+    
+    Args:
+        business_type: The type of business (e.g., 'restaurant', 'dental')
+        category: The menu item category
+    
+    Returns:
+        True if valid, False otherwise
+    """
+    if not category:
+        # No category specified, allow it
+        return True
+    
+    # Get allowed categories for this business type
+    allowed_categories = BUSINESS_TYPE_CATEGORIES.get(business_type.lower())
+    
+    if not allowed_categories:
+        # No restrictions defined for this business type, allow any category
+        return True
+    
+    # Check if the category is in the allowed set (case-insensitive)
+    return category.strip() in allowed_categories
 
 
 # Pydantic schemas
@@ -79,6 +169,20 @@ def create_menu_item(
     current_user: User = Depends(deps.get_current_active_user),
 ) -> MenuItem:
     """Create a new menu item"""
+    # Get the business to check its type
+    business = db.query(Business).filter(Business.id == business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    # Validate that the category is appropriate for the business type
+    if not validate_menu_category_for_business_type(business.type, menu_item.category):
+        allowed_cats = BUSINESS_TYPE_CATEGORIES.get(business.type.lower(), set())
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid menu category '{menu_item.category}' for business type '{business.type}'. "
+                   f"Allowed categories: {', '.join(sorted(allowed_cats)) if allowed_cats else 'Any category'}"
+        )
+    
     db_item = MenuItem(
         **menu_item.model_dump(),
         business_id=business_id
@@ -124,6 +228,21 @@ def update_menu_item(
     
     if not db_item:
         raise HTTPException(status_code=404, detail="Menu item not found")
+    
+    # Get the business to check its type
+    business = db.query(Business).filter(Business.id == business_id).first()
+    if not business:
+        raise HTTPException(status_code=404, detail="Business not found")
+    
+    # Validate the category if it's being updated
+    if menu_item.category is not None:
+        if not validate_menu_category_for_business_type(business.type, menu_item.category):
+            allowed_cats = BUSINESS_TYPE_CATEGORIES.get(business.type.lower(), set())
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid menu category '{menu_item.category}' for business type '{business.type}'. "
+                       f"Allowed categories: {', '.join(sorted(allowed_cats)) if allowed_cats else 'Any category'}"
+            )
     
     for field, value in menu_item.model_dump(exclude_unset=True).items():
         setattr(db_item, field, value)
