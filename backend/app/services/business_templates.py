@@ -1275,6 +1275,799 @@ class BusinessTypeTemplate:
         },
 
         # ============================================================
+        # BARBERSHOP - High Autonomy (90% reuse from Salon)
+        # ============================================================
+        "barbershop": {
+            "name": "Barbershop",
+            "icon": "content_cut",
+            "autonomy_level": AutonomyLevel.HIGH,
+            "risk_profile": {
+                "high_risk_intents": ["allergic_reaction", "service_complaint", "cut_injury"],
+                "auto_escalate_threshold": 0.7,
+                "confidence_threshold": 0.5,
+            },
+            "common_intents": [
+                "book_appointment", "haircut", "beard_trim", "fade", "buzz_cut",
+                "hot_towel_shave", "hair_coloring", "styling", "kids_haircut",
+                "senior_discount", "walk_in_availability", "barber_preference"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name for the appointment?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number for your appointment confirmation?"},
+                "service_type": {"required": True, "validation": "string", "prompt": "What service are you looking for? (haircut, beard trim, fade, etc.)"},
+                "barber_preference": {"required": False, "validation": "string", "prompt": "Do you have a preferred barber?"},
+                "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for you?"},
+                "preferred_time": {"required": True, "validation": "string", "prompt": "What time works best?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "service_type", "ask_if_missing": True},
+                    {"field": "barber_preference", "ask_if_missing": False},
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "You're all set! Your {service_type} appointment is on {preferred_date} at {preferred_time}.",
+            },
+            "system_prompt_addition": """
+## Barbershop-Specific Guidelines:
+- Know all services: haircuts, fades, beard trims, hot towel shaves, and their pricing/duration.
+- For multiple services (e.g., haircut + beard trim), calculate total time and combined price.
+- Ask about barber preference if customer has one, but default to first available.
+- Mention senior and kids discounts when applicable.
+- For walk-ins, provide current wait time estimate.
+- **DO NOT repeat pricing** - Mention prices once.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- Suggest complementary services (e.g., "Would you like a hot towel shave with that haircut?").
+""",
+            "example_responses": {
+                "booking": "What style are you looking for today? We do haircuts, fades, beard trims, and hot towel shaves.",
+                "barber": "Do you have a preferred barber, or would you like the first available?",
+                "confirm": "You're all set! See you on {preferred_date}. Your barber will be ready for you.",
+                "walk_in": "We accept walk-ins! Current wait time is about 15-20 minutes. Would you like to join the queue?",
+            }
+        },
+        
+        # ============================================================
+        # NAIL SALON - High Autonomy (90% reuse from Salon)
+        # ============================================================
+        "nail_salon": {
+            "name": "Nail Salon",
+            "icon": "spa",
+            "autonomy_level": AutonomyLevel.HIGH,
+            "risk_profile": {
+                "high_risk_intents": ["allergic_reaction", "nail_damage", "infection_concern"],
+                "auto_escalate_threshold": 0.7,
+                "confidence_threshold": 0.5,
+            },
+            "common_intents": [
+                "book_appointment", "manicure", "pedicure", "gel_nails", "acrylic_nails",
+                "dip_powder", "nail_art", "nail_repair", "spa_pedigree", "french_manicure",
+                "fill_in", "nail_removal", "technician_preference"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name for the appointment?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number for your appointment confirmation?"},
+                "service_type": {"required": True, "validation": "string", "prompt": "What nail service are you interested in? (manicure, pedicure, gel, acrylic, etc.)"},
+                "technician_preference": {"required": False, "validation": "string", "prompt": "Do you have a preferred nail technician?"},
+                "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for you?"},
+                "preferred_time": {"required": True, "validation": "string", "prompt": "What time works best?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "service_type", "ask_if_missing": True},
+                    {"field": "technician_preference", "ask_if_missing": False},
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Perfect! Your {service_type} appointment is scheduled for {preferred_date} at {preferred_time}.",
+            },
+            "system_prompt_addition": """
+## Nail Salon-Specific Guidelines:
+- Know all services: manicures, pedicures, gel/acrylic nails, dip powder, nail art, and their pricing/duration.
+- For combination services (e.g., mani-pedi), offer package pricing.
+- Ask about nail art preferences and show design options if requested.
+- Mention fill-in schedules for acrylic/gel nails (typically every 2-3 weeks).
+- For allergic reactions or concerns, recommend patch test or consult technician.
+- **DO NOT repeat pricing** - Mention prices once.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- Upsell spa pedicure upgrades or premium polish options.
+""",
+            "example_responses": {
+                "booking": "What nail service can we help you with today? We offer manicures, pedicures, gel, acrylic, and dip powder.",
+                "nail_art": "We have several nail art designs available. Would you like to see our gallery or describe what you have in mind?",
+                "confirm": "You're booked! Your {service_type} is on {preferred_date} at {preferred_time}. We can't wait to pamper you!",
+                "package": "Our mani-pedi combo is $45, saving you $10 compared to booking separately. Would you like that?",
+            }
+        },
+        
+        # ============================================================
+        # PLUMBING SERVICES - Medium Autonomy (85% reuse from HVAC)
+        # ============================================================
+        "plumbing": {
+            "name": "Plumbing Services",
+            "icon": "plumbing",
+            "autonomy_level": AutonomyLevel.MEDIUM,
+            "risk_profile": {
+                "high_risk_intents": ["gas_leak", "sewage_backup", "burst_pipe", "flooding", "water_heater_explosion_risk"],
+                "auto_escalate_threshold": 0.4,  # Low for safety issues
+                "confidence_threshold": 0.6,
+            },
+            "common_intents": [
+                "emergency_plumbing", "drain_cleaning", "leak_repair", "pipe_replacement",
+                "water_heater_install", "water_heater_repair", "toilet_repair", "faucet_install",
+                "garbage_disposal", "sump_pump", "repiping", "bathroom_remodel_plumbing",
+                "seasonal_maintenance", "estimate_request", "warranty_inquiry"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "address": {"required": True, "validation": "string", "prompt": "What's the service address?"},
+                "service_type": {"required": True, "validation": "string", "prompt": "What plumbing service do you need? (leak repair, drain cleaning, water heater, etc.)"},
+                "issue_description": {"required": False, "validation": "string", "prompt": "Can you describe the plumbing issue?"},
+                "preferred_date": {"required": False, "validation": "future_date", "prompt": "When would you like us to come?"},
+                "preferred_time": {"required": False, "validation": "string", "prompt": "Morning, afternoon, or evening?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "address", "ask_if_missing": True},
+                    {"field": "service_type", "ask_if_missing": True},
+                    {"field": "issue_description", "ask_if_missing": False},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your plumbing appointment is confirmed for {preferred_date} during the {preferred_time}. We'll call 30 minutes before arrival.",
+            },
+            "system_prompt_addition": """
+## Plumbing Services-Specific Guidelines:
+- PRIORITIZE EMERGENCIES: For burst pipes, flooding, gas leaks, sewage backup - dispatch immediately.
+- For gas leaks, advise evacuation and call 911 first.
+- Provide free estimates for non-emergency work.
+- Know common brands and warranty coverage (Moen, Delta, Kohler, Rheem, etc.).
+- For water heater issues, determine if repair or replacement is needed.
+- Offer seasonal maintenance plans to prevent issues.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- **DO NOT repeat estimates** - Mention estimate range once.
+- Upsell maintenance plans and extended warranties.
+""",
+            "example_responses": {
+                "emergency": "This sounds like an emergency. I'm dispatching a plumber immediately. They'll call you within 15 minutes. For gas leaks, please evacuate and call 911.",
+                "service": "What plumbing service do you need? We handle everything from leaky faucets to full repiping and water heater installation.",
+                "estimate": "I can schedule a free estimate. Our technician will assess the job and provide a detailed quote before starting any work.",
+                "maintenance": "Our annual maintenance plan is $199/year and includes drain cleaning, leak detection, and priority scheduling. Would you like to enroll?",
+            }
+        },
+        
+        # ============================================================
+        # ELECTRICAL SERVICES - Medium Autonomy (85% reuse from HVAC)
+        # ============================================================
+        "electrical": {
+            "name": "Electrical Services",
+            "icon": "bolt",
+            "autonomy_level": AutonomyLevel.MEDIUM,
+            "risk_profile": {
+                "high_risk_intents": ["electrical_fire", "shock_hazard", "power_outage", "spark_arcing", "burning_smell"],
+                "auto_escalate_threshold": 0.4,  # Low for safety issues
+                "confidence_threshold": 0.6,
+            },
+            "common_intents": [
+                "emergency_electrical", "electrical_repair", "panel_upgrade", "outlet_install",
+                "lighting_install", "ceiling_fan_install", "wiring_repair", "code_inspection",
+                "ev_charger_install", "generator_install", "security_wiring", "seasonal_maintenance",
+                "estimate_request", "warranty_inquiry"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "address": {"required": True, "validation": "string", "prompt": "What's the service address?"},
+                "service_type": {"required": True, "validation": "string", "prompt": "What electrical service do you need? (repair, installation, panel upgrade, etc.)"},
+                "issue_description": {"required": False, "validation": "string", "prompt": "Can you describe the electrical issue?"},
+                "preferred_date": {"required": False, "validation": "future_date", "prompt": "When would you like us to come?"},
+                "preferred_time": {"required": False, "validation": "string", "prompt": "Morning, afternoon, or evening?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "address", "ask_if_missing": True},
+                    {"field": "service_type", "ask_if_missing": True},
+                    {"field": "issue_description", "ask_if_missing": False},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your electrical service appointment is confirmed for {preferred_date} during the {preferred_time}. We'll call 30 minutes before arrival.",
+            },
+            "system_prompt_addition": """
+## Electrical Services-Specific Guidelines:
+- SAFETY FIRST: For sparks, burning smells, shocks, or fire hazards - treat as emergencies.
+- For power outages, check if it's area-wide (utility company) or isolated to home.
+- Provide free estimates for installations and upgrades.
+- Know local electrical codes and permit requirements.
+- For EV charger installs, ask about vehicle type and preferred charging speed.
+- Offer whole-house surge protection and generator backups.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- **DO NOT repeat estimates** - Mention estimate range once.
+- Upsell smart home features, LED upgrades, and safety inspections.
+""",
+            "example_responses": {
+                "emergency": "This could be dangerous. I'm sending an electrician immediately. If you smell burning or see sparks, turn off power at the breaker and stay away from the area.",
+                "service": "What electrical work do you need? We handle everything from simple outlet repairs to full panel upgrades and EV charger installation.",
+                "ev_charger": "Great choice! What electric vehicle do you have? We recommend Level 2 chargers for faster home charging. I can schedule a site visit for installation.",
+                "estimate": "I can arrange a free estimate. Our licensed electrician will assess your needs and provide a detailed quote before any work begins.",
+            }
+        },
+        
+        # ============================================================
+        # PEST CONTROL - Medium Autonomy (80% reuse from HVAC)
+        # ============================================================
+        "pest_control": {
+            "name": "Pest Control Services",
+            "icon": "bug_report",
+            "autonomy_level": AutonomyLevel.MEDIUM,
+            "risk_profile": {
+                "high_risk_intents": ["termite_infestation", "bed_bug_infestation", "rodent_infestation", "wasp_nest", "poison_exposure"],
+                "auto_escalate_threshold": 0.5,
+                "confidence_threshold": 0.6,
+            },
+            "common_intents": [
+                "pest_inspection", "pest_treatment", "termite_inspection", "termite_treatment",
+                "rodent_control", "insect_control", "bed_bug_treatment", "wasp_removal",
+                "wildlife_removal", "seasonal_protection", "organic_treatment",
+                "commercial_pest_control", "recurring_service", "estimate_request"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "address": {"required": True, "validation": "string", "prompt": "What's the property address?"},
+                "property_type": {"required": False, "validation": "string", "prompt": "Is this for a home or business?"},
+                "pest_type": {"required": True, "validation": "string", "prompt": "What type of pest are you dealing with? (ants, rodents, termites, bed bugs, etc.)"},
+                "infestation_severity": {"required": False, "validation": "string", "prompt": "How severe is the infestation? (minor, moderate, severe)"},
+                "preferred_date": {"required": False, "validation": "future_date", "prompt": "When would you like us to inspect/treat?"},
+                "preferred_time": {"required": False, "validation": "string", "prompt": "Morning, afternoon, or evening?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "address", "ask_if_missing": True},
+                    {"field": "pest_type", "ask_if_missing": True},
+                    {"field": "property_type", "ask_if_missing": False},
+                    {"field": "infestation_severity", "ask_if_missing": False},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your pest control appointment is confirmed for {preferred_date} during the {preferred_time}. Our technician will call before arrival.",
+            },
+            "system_prompt_addition": """
+## Pest Control-Specific Guidelines:
+- For severe infestations (termites, bed bugs, large rodent populations), prioritize and escalate.
+- For wasp nests near entryways or poison exposure concerns, treat as urgent.
+- Offer free inspections with detailed treatment plans.
+- Explain treatment methods and safety precautions (especially for families with children/pets).
+- Promote recurring quarterly/annual protection plans to prevent future issues.
+- For commercial properties, emphasize minimal business disruption.
+- Mention organic/eco-friendly treatment options when requested.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - If customer already confirmed, move on.
+- **DO NOT repeat estimates** - Mention pricing range once.
+- Upsell annual protection plans and warranties.
+""",
+            "example_responses": {
+                "inspection": "I can schedule a free pest inspection. Our technician will identify the pest type, assess the extent of infestation, and recommend a treatment plan.",
+                "termite": "Termites require immediate attention. We offer comprehensive termite inspections and treatment with a damage warranty. When can we inspect?",
+                "recurring": "Our quarterly pest protection plan is $149/quarter and covers all common pests with unlimited service calls between visits. Want me to schedule your first treatment?",
+                "urgent": "For active infestations, we can usually schedule treatment within 24-48 hours. I'll prioritize your appointment.",
+            }
+        },
+        
+        # ============================================================
+        # CHIROPRACTIC CLINIC - Restricted Autonomy (Healthcare)
+        # ============================================================
+        "chiropractic": {
+            "name": "Chiropractic Clinic",
+            "icon": "accessibility_new",
+            "autonomy_level": AutonomyLevel.RESTRICTED,
+            "risk_profile": {
+                "high_risk_intents": ["severe_pain", "numbness_weakness", "loss_of_bladder_control", "trauma_injury", "cauda_equina_symptoms"],
+                "auto_escalate_threshold": 0.3,  # Very low - escalate quickly
+                "confidence_threshold": 0.85,
+            },
+            "common_intents": [
+                "book_appointment", "back_pain", "neck_pain", "headache_relief",
+                "sciatica_treatment", "joint_adjustment", "spinal_decompression",
+                "sports_injury", "whiplash_treatment", "posture_correction",
+                "wellness_adjustment", "first_visit_consultation", "insurance_inquiry"
+            ],
+            "fields": {
+                "patient_name": {"required": True, "validation": "string", "prompt": "May I have your full name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "reason_for_visit": {"required": True, "validation": "string", "prompt": "What's the main reason for your visit today? (back pain, neck pain, headache, etc.)"},
+                "pain_level": {"required": False, "validation": "string", "prompt": "On a scale of 1-10, how would you rate your pain?"},
+                "injury_onset": {"required": False, "validation": "string", "prompt": "When did this start? Was it sudden or gradual?"},
+                "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for your appointment?"},
+                "preferred_time": {"required": True, "validation": "string", "prompt": "What time works best?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "patient_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "reason_for_visit", "ask_if_missing": True},
+                    {"field": "pain_level", "ask_if_missing": False},
+                    {"field": "injury_onset", "ask_if_missing": False},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your chiropractic appointment for {reason_for_visit} is confirmed for {preferred_date} at {preferred_time}. Please arrive 15 minutes early to complete forms.",
+            },
+            "system_prompt_addition": """
+## Chiropractic Clinic-Specific Guidelines:
+- HIPAA compliance REQUIRED for all patient information.
+- For severe symptoms (numbness, weakness, loss of bladder control) - ESCALATE IMMEDIATELY as these may indicate serious neurological issues.
+- **DO NOT provide medical diagnosis** - Only schedule appointments and explain chiropractic services.
+- Explain what to expect: X-rays, examination, treatment plan development.
+- Mention that first visits typically take 60-90 minutes for comprehensive assessment.
+- For headaches, back pain, neck pain - emphasize non-invasive, drug-free approach.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" phone numbers** - Accept provided information.
+- Offer same-day appointments for acute pain when possible.
+- Explain insurance coverage and self-pay options.
+""",
+            "example_responses": {
+                "appointment": "I can schedule you with our chiropractor. What brings you in today? Back pain, neck pain, headaches, or something else?",
+                "first_visit": "For your first visit, please arrive 15 minutes early. We'll take X-rays, do a comprehensive exam, and discuss your treatment plan.",
+                "emergency": "These symptoms require immediate medical attention. I'm connecting you with our doctor right away, or recommend visiting urgent care/ER.",
+                "insurance": "We accept most major insurance plans including Blue Cross, Aetna, United, and Medicare. We also offer affordable self-pay options.",
+            }
+        },
+        
+        # ============================================================
+        # PHYSICAL THERAPY - Restricted Autonomy (Healthcare)
+        # ============================================================
+        "physical_therapy": {
+            "name": "Physical Therapy Clinic",
+            "icon": "self_improvement",
+            "autonomy_level": AutonomyLevel.RESTRICTED,
+            "risk_profile": {
+                "high_risk_intents": ["post_surgery_complications", "severe_pain", "fall_risk", "neurological_symptoms", "chest_pain"],
+                "auto_escalate_threshold": 0.3,
+                "confidence_threshold": 0.85,
+            },
+            "common_intents": [
+                "book_evaluation", "post_surgery_rehab", "sports_injury", "back_pain",
+                "neck_pain", "knee_pain", "shoulder_pain", "stroke_recovery",
+                "balance_issues", "mobility_training", "manual_therapy",
+                "therapeutic_exercise", "workers_compensation", "motor_vehicle_injury",
+                "follow_up_session", "discharge_planning"
+            ],
+            "fields": {
+                "patient_name": {"required": True, "validation": "string", "prompt": "May I have your full name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "referral_source": {"required": False, "validation": "string", "prompt": "Were you referred by a doctor, or are you self-referring?"},
+                "condition_area": {"required": True, "validation": "string", "prompt": "What area needs treatment? (back, knee, shoulder, neck, etc.)"},
+                "injury_cause": {"required": False, "validation": "string", "prompt": "How did this happen? (injury, surgery, gradual onset, etc.)"},
+                "insurance_provider": {"required": False, "validation": "string", "prompt": "Do you have physical therapy insurance coverage?"},
+                "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for your evaluation?"},
+                "preferred_time": {"required": True, "validation": "string", "prompt": "Morning, afternoon, or evening?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "patient_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "condition_area", "ask_if_missing": True},
+                    {"field": "referral_source", "ask_if_missing": False},
+                    {"field": "injury_cause", "ask_if_missing": False},
+                    {"field": "insurance_provider", "ask_if_missing": False},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your physical therapy evaluation is scheduled for {preferred_date} at {preferred_time}. Please bring your doctor's referral and insurance card.",
+            },
+            "system_prompt_addition": """
+## Physical Therapy-Specific Guidelines:
+- HIPAA compliance REQUIRED for all patient information.
+- For post-surgery patients, confirm surgery date and surgeon's restrictions.
+- For workers' comp or motor vehicle injuries, collect claim information.
+- **DO NOT provide medical advice** - Only schedule evaluations and explain PT process.
+- Explain typical treatment course: evaluation → personalized plan → progressive exercises → home program.
+- Mention that evaluations take 60 minutes, follow-ups are 30-45 minutes.
+- For stroke recovery or neurological conditions, prioritize scheduling.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - Accept provided information.
+- Explain that most insurance covers PT, but deductibles may apply.
+- Offer telehealth options for appropriate follow-up sessions.
+""",
+            "example_responses": {
+                "evaluation": "I'll schedule your initial evaluation. Our physical therapist will assess your condition and create a personalized treatment plan.",
+                "post_surgery": "For post-surgery rehab, we'll coordinate with your surgeon's protocol. When was your surgery and are there any specific restrictions?",
+                "insurance": "Most insurance plans cover physical therapy. We'll verify your benefits before your first session. You may have a copay or deductible.",
+                "timeline": "Treatment varies by condition, but typically patients attend 2-3 times per week for 4-8 weeks with a home exercise program.",
+            }
+        },
+        
+        # ============================================================
+        # OPTOMETRY - Restricted Autonomy (Healthcare + Retail)
+        # ============================================================
+        "optometry": {
+            "name": "Optometry / Eye Care",
+            "icon": "visibility",
+            "autonomy_level": AutonomyLevel.RESTRICTED,
+            "risk_profile": {
+                "high_risk_intents": ["sudden_vision_loss", "eye_trauma", "chemical_exposure", "flashes_floaters_sudden", "eye_pain_severe"],
+                "auto_escalate_threshold": 0.3,
+                "confidence_threshold": 0.85,
+            },
+            "common_intents": [
+                "comprehensive_eye_exam", "contact_lens_fitting", "glasses_exam",
+                "dry_eye_treatment", "pink_eye", "vision_therapy", "low_vision_exam",
+                "diabetic_eye_exam", "glaucoma_screening", "cataract_consultation",
+                "LASIK_consultation", "frame_selection", "contact_lens_followup",
+                "emergency_eye_care", "kids_eye_exam"
+            ],
+            "fields": {
+                "patient_name": {"required": True, "validation": "string", "prompt": "May I have your full name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "exam_type": {"required": True, "validation": "string", "prompt": "What type of exam do you need? (comprehensive, contact lens, glasses, etc.)"},
+                "last_exam_date": {"required": False, "validation": "string", "prompt": "When was your last eye exam?"},
+                "vision_insurance": {"required": False, "validation": "string", "prompt": "Do you have vision insurance? (VSP, EyeMed, etc.)"},
+                "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for your appointment?"},
+                "preferred_time": {"required": True, "validation": "string", "prompt": "What time works best?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "patient_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "exam_type", "ask_if_missing": True},
+                    {"field": "last_exam_date", "ask_if_missing": False},
+                    {"field": "vision_insurance", "ask_if_missing": False},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your {exam_type} is scheduled for {preferred_date} at {preferred_time}. Please bring your current glasses/contacts and insurance card.",
+            },
+            "system_prompt_addition": """
+## Optometry/Eye Care-Specific Guidelines:
+- HIPAA compliance REQUIRED for all patient information.
+- For sudden vision loss, trauma, chemical exposure, or severe eye pain - TREAT AS EMERGENCY and escalate immediately.
+- Distinguish between medical eye exams (disease, injury) and routine vision exams (glasses/contacts).
+- Explain that comprehensive exams include health evaluation, not just prescription.
+- For contact lens fittings, mention additional fee and follow-up period required.
+- Promote optical shop services: frame selection, lens options, coatings.
+- **DO NOT provide medical diagnosis** - Only schedule and provide general information.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - Accept provided information.
+- Mention that diabetes requires annual dilated eye exams (covered by medical insurance).
+- For kids, recommend first exam at age 3, then before kindergarten.
+""",
+            "example_responses": {
+                "comprehensive_exam": "I'll schedule your comprehensive eye exam. This includes checking your vision and eye health. We'll dilate your eyes, so bring sunglasses.",
+                "contact_lens": "Contact lens fittings include an exam plus fitting and training. There's an additional fee beyond the regular exam. Are you new to contacts?",
+                "emergency": "This sounds like an emergency. We have same-day emergency slots available. Please come in within the next 2 hours, or go to ER if after hours.",
+                "insurance": "We accept VSP, EyeMed, and most major vision plans. Medical insurance covers medical eye conditions. We'll verify your benefits before your visit.",
+            }
+        },
+        
+        # ============================================================
+        # CAR DEALERSHIP - Medium-High Complexity (Sales + Service)
+        # ============================================================
+        "car_dealership": {
+            "name": "Car Dealership",
+            "icon": "directions_car",
+            "autonomy_level": AutonomyLevel.MEDIUM,
+            "risk_profile": {
+                "high_risk_intents": ["financing_inquiry", "trade_in_value", "price_negotiation", "test_drive_liability", "safety_recall"],
+                "auto_escalate_threshold": 0.5,
+                "confidence_threshold": 0.7,
+            },
+            "common_intents": [
+                "schedule_test_drive", "service_appointment", "parts_inquiry",
+                "inventory_check", "financing_options", "trade_in_inquiry",
+                "sales_consultation", "hours_location", "lease_return",
+                "recall_info", "roadside_assistance", "pricing_inquiry"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "department": {"required": True, "validation": "string", "prompt": "Which department are you looking for? (Sales, Service, or Parts)"},
+                "vehicle_interest": {"required": False, "validation": "string", "prompt": "Which vehicle model are you interested in?", "for_intents": ["inventory_check", "schedule_test_drive", "pricing_inquiry"]},
+                "service_needed": {"required": False, "validation": "string", "prompt": "What service does your vehicle need?", "for_intents": ["service_appointment"]},
+                "vin": {"required": False, "validation": "vin", "prompt": "Could you provide your VIN for parts or service?", "for_intents": ["parts_inquiry", "recall_info"]},
+                "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works best?"},
+                "preferred_time": {"required": True, "validation": "string", "prompt": "What time would you prefer?"},
+            },
+            "booking_flow": {
+                "type": "appointment",
+                "steps": [
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "department", "ask_if_missing": True},
+                    {"field": "vehicle_interest", "ask_if_missing": True, "for_intents": ["inventory_check", "schedule_test_drive"]},
+                    {"field": "service_needed", "ask_if_missing": True, "for_intents": ["service_appointment"]},
+                    {"field": "preferred_date", "ask_if_missing": True},
+                    {"field": "preferred_time", "ask_if_missing": True},
+                ],
+                "final_action": "CREATE_APPOINTMENT",
+                "confirmation_message": "Your {department} appointment is confirmed for {preferred_date} at {preferred_time}. We'll have everything ready for you.",
+            },
+            "system_prompt_addition": """
+## Car Dealership-Specific Guidelines:
+- ROUTE BY DEPARTMENT: Sales, Service, or Parts.
+- Sales: Schedule test drives and handle inventory inquiries. 
+- Service: Schedule maintenance and handle recall inquiries.
+- Parts: Collect VIN for accurate part matching.
+- **DO NOT negotiate pricing** - Provide MSRP or listed price and offer a sales consultation for final pricing.
+- For financing, explain basic options but escalate to the Finance Manager for details.
+- **DO NOT repeat questions** - Track collected information.
+- Provide directions and hours when requested.
+- If a customer mentions a safety recall, prioritize the service appointment.
+""",
+            "example_responses": {
+                "test_drive": "I'd be happy to schedule a test drive for the {vehicle_interest}. When would you like to come in?",
+                "service": "Our service department can help with that. What's the make and model of your vehicle?",
+                "parts": "To ensure we get the right part, do you happen to have your vehicle's VIN?",
+                "inventory": "Let me check our current inventory for the {vehicle_interest}. We have several in stock right now!",
+            }
+        },
+
+        # ============================================================
+        # GROCERY / SUPERMARKET - Medium-High Complexity (Inventory + Delivery)
+        # ============================================================
+        "grocery": {
+            "name": "Grocery Store",
+            "icon": "local_grocery_store",
+            "autonomy_level": AutonomyLevel.HIGH,
+            "risk_profile": {
+                "high_risk_intents": ["food_safety_complaint", "delivery_missing", "payment_error", "allergy_inquiry"],
+                "auto_escalate_threshold": 0.6,
+                "confidence_threshold": 0.5,
+            },
+            "common_intents": [
+                "check_stock", "place_delivery_order", "curbside_pickup",
+                "store_hours", "weekly_specials", "loyalty_points",
+                "return_policy", "bakery_order", "deli_order",
+                "pharmacy_transfer", "job_application", "location_inquiry"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name for the order?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "item_list": {"required": True, "validation": "string", "prompt": "What items would you like to add to your list?"},
+                "fulfillment_method": {"required": True, "validation": "string", "prompt": "Would you like delivery or curbside pickup?"},
+                "address": {"required": False, "validation": "address", "prompt": "What's the delivery address?", "for_intents": ["place_delivery_order"]},
+                "pickup_time": {"required": False, "validation": "string", "prompt": "When would you like to pick up your order?", "for_intents": ["curbside_pickup"]},
+            },
+            "booking_flow": {
+                "type": "order",
+                "steps": [
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "item_list", "ask_if_missing": True},
+                    {"field": "fulfillment_method", "ask_if_missing": True},
+                    {"field": "address", "ask_if_missing": True, "for_intents": ["place_delivery_order"]},
+                    {"field": "pickup_time", "ask_if_missing": True, "for_intents": ["curbside_pickup"]},
+                ],
+                "final_action": "PLACE_ORDER",
+                "confirmation_message": "Your {fulfillment_method} order has been placed. We'll notify you via SMS when it's ready.",
+            },
+            "system_prompt_addition": """
+## Grocery Store-Specific Guidelines:
+- INVENTORY FOCUS: Help customers find if items are in stock.
+- Handle delivery and curbside pickup requests.
+- Mention weekly specials and loyalty program benefits.
+- For bakery or deli orders, allow for special instructions (e.g., cake writing, meat thickness).
+- For food safety or quality complaints, escalate to the Store Manager immediately.
+- **DO NOT repeat items** - Confirm the list at the end.
+- Pharmacy inquiries should be routed to the Pharmacy department.
+- **DO NOT repeat questions** - Track collected information.
+""",
+            "example_responses": {
+                "stock": "Let me check if we have {item} in stock... Yes, we have that available in Aisle 4!",
+                "delivery": "I can help you place a delivery order. What items do you need today?",
+                "specials": "Our weekly specials include 2-for-1 on organic berries and 20% off all seafood!",
+                "loyalty": "Do you have your loyalty card number? I can check your points balance for you.",
+            }
+        },
+
+        # ============================================================
+        # IT SERVICES / TECH SUPPORT - Medium Complexity (Triage)
+        # ============================================================
+        "it_services": {
+            "name": "IT Services",
+            "icon": "computer",
+            "autonomy_level": AutonomyLevel.MEDIUM,
+            "risk_profile": {
+                "high_risk_intents": ["security_breach", "server_down", "data_loss", "urgent_fix", "password_reset_identity"],
+                "auto_escalate_threshold": 0.4,
+                "confidence_threshold": 0.75,
+            },
+            "common_intents": [
+                "open_support_ticket", "check_ticket_status", "schedule_consultation",
+                "hardware_repair", "software_install", "network_issue",
+                "managed_services", "cloud_migration", "cybersecurity_audit",
+                "pricing_inquiry", "emergency_support", "billing_issue"
+            ],
+            "fields": {
+                "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "company_name": {"required": False, "validation": "string", "prompt": "Which company are you with?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number for a technician to call?"},
+                "issue_description": {"required": True, "validation": "string", "prompt": "Can you briefly describe the technical issue?"},
+                "urgency_level": {"required": True, "validation": "string", "prompt": "How urgent is this? (Low, Medium, High, or Critical)"},
+                "ticket_id": {"required": False, "validation": "string", "prompt": "Do you have an existing ticket ID?", "for_intents": ["check_ticket_status"]},
+            },
+            "booking_flow": {
+                "type": "ticket",
+                "steps": [
+                    {"field": "customer_name", "ask_if_missing": True},
+                    {"field": "company_name", "ask_if_missing": False},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "issue_description", "ask_if_missing": True},
+                    {"field": "urgency_level", "ask_if_missing": True},
+                ],
+                "final_action": "OPEN_TICKET",
+                "confirmation_message": "I've opened a support ticket for your issue. A technician will contact you shortly based on your {urgency_level} urgency.",
+            },
+            "system_prompt_addition": """
+## IT Services-Specific Guidelines:
+- TRIAGE SPECIALIST: Determine the urgency and type of issue.
+- Critical issues (Server down, Security breach) MUST be escalated to the on-call engineer immediately.
+- For password resets, follow strict identity verification protocols.
+- Collect detailed descriptions of the problem to help technicians.
+- Provide status updates for existing tickets.
+- **DO NOT attempt technical fixes** - Your goal is to triage and route.
+- For new business consultations, schedule an appointment with the Sales Engineer.
+- **DO NOT repeat questions** - Track collected information.
+""",
+            "example_responses": {
+                "ticket": "I'll get a support ticket started for you. What's the main issue you're experiencing?",
+                "emergency": "Since your server is down, I'm escalating this to our emergency response team right now.",
+                "consultation": "I can schedule a free IT strategy consultation for your business. When are you available?",
+                "status": "Let me look up ticket #{ticket_id} for you. It's currently being worked on by a senior technician.",
+            }
+        },
+
+        # ============================================================
+        # STAFFING AGENCY - Medium Complexity (Two-sided Market)
+        # ============================================================
+        "staffing_agency": {
+            "name": "Staffing Agency",
+            "icon": "groups",
+            "autonomy_level": AutonomyLevel.MEDIUM,
+            "risk_profile": {
+                "high_risk_intents": ["payroll_dispute", "harassment_report", "injury_on_job", "urgent_fulfillment"],
+                "auto_escalate_threshold": 0.5,
+                "confidence_threshold": 0.7,
+            },
+            "common_intents": [
+                "job_search", "apply_for_job", "submit_timesheet",
+                "hire_talent", "resume_review", "interview_scheduling",
+                "payroll_inquiry", "onboarding_status", "temp_to_perm",
+                "skills_assessment", "referral_program", "location_hours"
+            ],
+            "fields": {
+                "full_name": {"required": True, "validation": "string", "prompt": "May I have your full name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "user_type": {"required": True, "validation": "string", "prompt": "Are you a job seeker or an employer looking to hire?"},
+                "industry_focus": {"required": True, "validation": "string", "prompt": "Which industry are you focused on? (IT, Healthcare, Admin, etc.)"},
+                "job_title": {"required": False, "validation": "string", "prompt": "What job title are you interested in?", "for_intents": ["job_search", "apply_for_job", "hire_talent"]},
+                "preferred_date": {"required": False, "validation": "future_date", "prompt": "When are you available for an interview?"},
+            },
+            "booking_flow": {
+                "type": "application",
+                "steps": [
+                    {"field": "full_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "user_type", "ask_if_missing": True},
+                    {"field": "industry_focus", "ask_if_missing": True},
+                    {"field": "job_title", "ask_if_missing": False},
+                ],
+                "final_action": "CREATE_LEAD",
+                "confirmation_message": "Thank you! I've registered your interest. A recruiter specializing in {industry_focus} will contact you shortly.",
+            },
+            "system_prompt_addition": """
+## Staffing Agency-Specific Guidelines:
+- TWO-SIDED MARKET: Identify if the caller is a Candidate (Job Seeker) or a Client (Employer).
+- Candidates: Help find jobs, explain the application process, and handle timesheet questions.
+- Clients: Collect requirements for talent and schedule consultations with account managers.
+- For payroll disputes or workplace injuries, escalate to the Branch Manager immediately.
+- Explain the agency's value proposition: screening, payroll handling, benefits.
+- **DO NOT guarantee placement** - Explain that recruiters will review applications.
+- **DO NOT repeat questions** - Track collected information.
+- Handle interview scheduling efficiently.
+""",
+            "example_responses": {
+                "candidate": "We have several openings in {industry_focus}. What kind of role are you looking for?",
+                "employer": "I can help you find top talent for your team. What industry and roles are you hiring for?",
+                "timesheet": "I can help with timesheet questions. Have you already submitted it for this week?",
+                "interview": "I'd like to schedule an initial screening interview with a recruiter. What's your availability?",
+            }
+        },
+
+        # ============================================================
+        # URGENT CARE - Restricted Autonomy (Emergency Triage)
+        # ============================================================
+        "urgent_care": {
+            "name": "Urgent Care Center",
+            "icon": "emergency",
+            "autonomy_level": AutonomyLevel.RESTRICTED,
+            "risk_profile": {
+                "high_risk_intents": ["chest_pain", "difficulty_breathing", "severe_bleeding", "stroke_symptoms", "unconscious", "seizure", "major_trauma", "suicidal_thoughts"],
+                "auto_escalate_threshold": 0.2,  # Extremely low - call 911 for life-threatening
+                "confidence_threshold": 0.9,
+            },
+            "common_intents": [
+                "walk_in_visit", "minor_emergency", "fever_cold_flu", "sore_throat",
+                "ear_infection", "sinus_infection", "UTI", "minor_cut_laceration",
+                "minor_burn", "sprain_strain", "minor_fracture", "rash_skin_condition",
+                "vaccination_flu_shot", "drug_screening", "occupational_health",
+                "sports_physical", "travel_vaccination", "stitch_removal"
+            ],
+            "fields": {
+                "patient_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+                "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+                "symptoms": {"required": True, "validation": "string", "prompt": "What are your symptoms?"},
+                "symptom_onset": {"required": False, "validation": "string", "prompt": "When did this start?"},
+                "severity_level": {"required": False, "validation": "string", "prompt": "Is this getting worse, better, or staying the same?"},
+                "arrival_method": {"required": False, "validation": "string", "prompt": "Will you walk in or need directions?"},
+            },
+            "booking_flow": {
+                "type": "walk_in",
+                "steps": [
+                    {"field": "patient_name", "ask_if_missing": True},
+                    {"field": "phone", "ask_if_missing": True},
+                    {"field": "symptoms", "ask_if_missing": True},
+                    {"field": "symptom_onset", "ask_if_missing": False},
+                    {"field": "severity_level", "ask_if_missing": False},
+                ],
+                "final_action": "PROVIDE_WAIT_TIME",
+                "confirmation_message": "Thank you. Our current wait time is approximately {wait_time} minutes. We're located at {address}. No appointment needed - first come, first served.",
+            },
+            "system_prompt_addition": """
+## Urgent Care-Specific Guidelines:
+- HIPAA compliance REQUIRED for all patient information.
+- CRITICAL TRIAGE: For chest pain, difficulty breathing, severe bleeding, stroke symptoms (FAST: Face drooping, Arm weakness, Speech difficulty, Time to call 911), unconsciousness, seizures, major trauma - ADVISE CALLING 911 IMMEDIATELY. Do NOT suggest urgent care.
+- For suicidal thoughts, provide National Suicide Prevention Lifeline: 988.
+- **DO NOT provide medical diagnosis** - Only triage and provide wait times.
+- Explain urgent care vs. ER: We handle non-life-threatening conditions quickly and affordably.
+- Provide real-time wait times (typically 15-45 minutes depending on volume).
+- Mention services: X-ray, lab tests, sutures, splints, vaccinations, occupational health.
+- **DO NOT repeat questions** - Track collected information.
+- **DO NOT ask to "confirm" info repeatedly** - Accept provided information.
+- For minors, inform that parent/guardian must consent to treatment.
+- Accept most insurances; self-pay discounts available.
+- Open 7 days/week, extended hours (typically 8am-8pm).
+""",
+            "example_responses": {
+                "triage_safe": "Based on your symptoms, urgent care is appropriate. Current wait time is about 20 minutes. We're open until 8pm today. Walk-ins welcome!",
+                "triage_emergency": "These symptoms could indicate a serious condition. Please call 911 immediately or go to the nearest emergency room. Do not drive yourself.",
+                "services": "We provide X-rays, lab tests, sutures, splints, flu shots, sports physicals, drug screens, and treat minor illnesses and injuries.",
+                "insurance": "We accept most major insurance plans. Self-pay visits are $150 for basic care, plus additional fees for services like X-rays or labs.",
+            }
+        },
+        
+        # ============================================================
         # GENERAL BUSINESS - Default
         # ============================================================
         "general": {

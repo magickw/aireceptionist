@@ -2037,8 +2037,6 @@ async def _get_business_context(business_id: int, db: Session = None) -> Dict[st
     
     # Get services from business settings if available
     services = business.settings.get("services", []) if business.settings else []
-    if not services:
-        services = ["Consultation", "Service 1", "Service 2"]
     
     # Get menu items if available
     menu_items = db.query(MenuItem).filter(
@@ -2059,6 +2057,19 @@ async def _get_business_context(business_id: int, db: Session = None) -> Dict[st
             }
             for item in menu_items
         ]
+        
+        # If no services defined in settings, use menu item categories or names
+        # This ensures AI uses actual business offerings instead of generic placeholders
+        if not services:
+            categories = set(item.category for item in menu_items if item.category)
+            if categories:
+                services = list(categories)
+            else:
+                services = [item.name for item in menu_items[:5]]
+    
+    # Final fallback - only if truly nothing is configured
+    if not services:
+        services = ["Consultation"]
     
     return {
         "name": business.name,

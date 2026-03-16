@@ -10,6 +10,8 @@ VALID_BUSINESS_TYPES = [
     "real_estate",
     "automotive",
     "salon",
+    "barbershop",
+    "nail_salon",
     "dental",
     "veterinary",
     "fitness",

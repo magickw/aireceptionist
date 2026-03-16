@@ -1184,6 +1184,384 @@ BUSINESS_TEMPLATES = {
             "symptoms_inquiry": "I'm concerned to hear about {pet_name}'s symptoms. Can you describe what's happening so I can determine the urgency?",
         }
     },
+    "chiropractic": {
+        "name": "Chiropractic Clinic",
+        "icon": "accessibility_new",
+        "description": "Healthcare facility specializing in musculoskeletal and nervous system health",
+        "autonomy_level": "RESTRICTED",
+        "risk_profile": {
+            "high_risk_intents": ["severe_pain", "numbness_weakness", "loss_of_bladder_control", "trauma_injury", "cauda_equina_symptoms"],
+            "auto_escalate_threshold": 0.3,
+            "confidence_threshold": 0.85,
+        },
+        "common_intents": [
+            "book_appointment", "back_pain", "neck_pain", "headache_relief",
+            "sciatica_treatment", "joint_adjustment", "spinal_decompression",
+            "sports_injury", "whiplash_treatment", "posture_correction",
+            "wellness_adjustment", "first_visit_consultation", "insurance_inquiry"
+        ],
+        "fields": {
+            "patient_name": {"required": True, "validation": "string", "prompt": "May I have your full name?"},
+            "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+            "reason_for_visit": {"required": True, "validation": "string", "prompt": "What's the main reason for your visit today?"},
+            "pain_level": {"required": False, "validation": "string", "prompt": "On a scale of 1-10, how would you rate your pain?"},
+            "injury_onset": {"required": False, "validation": "string", "prompt": "When did this start? Was it sudden or gradual?"},
+            "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for your appointment?"},
+            "preferred_time": {"required": True, "validation": "string", "prompt": "What time works best?"},
+        },
+        "booking_flow": {
+            "type": "appointment",
+            "steps": [
+                {"field": "patient_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "reason_for_visit", "ask_if_missing": True},
+                {"field": "pain_level", "ask_if_missing": False},
+                {"field": "injury_onset", "ask_if_missing": False},
+                {"field": "preferred_date", "ask_if_missing": True},
+                {"field": "preferred_time", "ask_if_missing": True},
+            ],
+            "final_action": "CREATE_APPOINTMENT",
+            "confirmation_message": "Your chiropractic appointment for {reason_for_visit} is confirmed for {preferred_date} at {preferred_time}. Please arrive 15 minutes early.",
+        },
+        "system_prompt_addition": """
+## Chiropractic Clinic-Specific Guidelines:
+- HIPAA compliance REQUIRED for all patient information.
+- For severe symptoms (numbness, weakness, loss of bladder control) - ESCALATE IMMEDIATELY.
+- **DO NOT provide medical diagnosis** - Only schedule appointments and explain chiropractic services.
+- Explain what to expect: X-rays, examination, treatment plan development.
+- Mention that first visits typically take 60-90 minutes.
+- **DO NOT repeat questions** - Track collected information.
+- Offer same-day appointments for acute pain when possible.
+""",
+        "example_responses": {
+            "appointment": "I can schedule you with our chiropractor. What brings you in today?",
+            "first_visit": "For your first visit, please arrive 15 minutes early. We'll do a comprehensive exam and discuss your treatment plan.",
+            "emergency": "These symptoms require immediate medical attention. I'm connecting you with our doctor right away.",
+        }
+    },
+    "physical_therapy": {
+        "name": "Physical Therapy Clinic",
+        "icon": "self_improvement",
+        "description": "Rehabilitation facility for injury recovery and physical mobility",
+        "autonomy_level": "RESTRICTED",
+        "risk_profile": {
+            "high_risk_intents": ["post_surgery_complications", "severe_pain", "fall_risk", "neurological_symptoms", "chest_pain"],
+            "auto_escalate_threshold": 0.3,
+            "confidence_threshold": 0.85,
+        },
+        "common_intents": [
+            "book_evaluation", "post_surgery_rehab", "sports_injury", "back_pain",
+            "neck_pain", "knee_pain", "shoulder_pain", "stroke_recovery",
+            "balance_issues", "mobility_training", "manual_therapy",
+            "therapeutic_exercise", "workers_compensation", "motor_vehicle_injury"
+        ],
+        "fields": {
+            "patient_name": {"required": True, "validation": "string", "prompt": "May I have your full name?"},
+            "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+            "condition_area": {"required": True, "validation": "string", "prompt": "What area needs treatment? (back, knee, shoulder, etc.)"},
+            "referral_source": {"required": False, "validation": "string", "prompt": "Were you referred by a doctor?"},
+            "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for your evaluation?"},
+            "preferred_time": {"required": True, "validation": "string", "prompt": "Morning, afternoon, or evening?"},
+        },
+        "booking_flow": {
+            "type": "appointment",
+            "steps": [
+                {"field": "patient_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "condition_area", "ask_if_missing": True},
+                {"field": "referral_source", "ask_if_missing": False},
+                {"field": "preferred_date", "ask_if_missing": True},
+                {"field": "preferred_time", "ask_if_missing": True},
+            ],
+            "final_action": "CREATE_APPOINTMENT",
+            "confirmation_message": "Your physical therapy evaluation is scheduled for {preferred_date} at {preferred_time}. Please bring your referral.",
+        },
+        "system_prompt_addition": """
+## Physical Therapy-Specific Guidelines:
+- HIPAA compliance REQUIRED for all patient information.
+- For post-surgery patients, confirm surgery date and restrictions.
+- **DO NOT provide medical advice** - Only schedule evaluations and explain PT process.
+- Mention that evaluations take 60 minutes.
+- **DO NOT repeat questions** - Track collected information.
+""",
+        "example_responses": {
+            "evaluation": "I'll schedule your initial evaluation. Our therapist will create a personalized treatment plan for you.",
+            "post_surgery": "For post-surgery rehab, we'll coordinate with your surgeon's protocol. When was your surgery?",
+        }
+    },
+    "optometry": {
+        "name": "Optometry / Eye Care",
+        "icon": "visibility",
+        "description": "Comprehensive eye care facility with exams and optical shop",
+        "autonomy_level": "RESTRICTED",
+        "risk_profile": {
+            "high_risk_intents": ["sudden_vision_loss", "eye_trauma", "chemical_exposure", "flashes_floaters_sudden", "eye_pain_severe"],
+            "auto_escalate_threshold": 0.3,
+            "confidence_threshold": 0.85,
+        },
+        "common_intents": [
+            "comprehensive_eye_exam", "contact_lens_fitting", "glasses_exam",
+            "dry_eye_treatment", "pink_eye", "glaucoma_screening",
+            "cataract_consultation", "frame_selection", "emergency_eye_care"
+        ],
+        "fields": {
+            "patient_name": {"required": True, "validation": "string", "prompt": "May I have your full name?"},
+            "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+            "exam_type": {"required": True, "validation": "string", "prompt": "What type of exam do you need? (glasses, contacts, etc.)"},
+            "vision_insurance": {"required": False, "validation": "string", "prompt": "Do you have vision insurance?"},
+            "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works for your appointment?"},
+            "preferred_time": {"required": True, "validation": "string", "prompt": "What time works best?"},
+        },
+        "booking_flow": {
+            "type": "appointment",
+            "steps": [
+                {"field": "patient_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "exam_type", "ask_if_missing": True},
+                {"field": "vision_insurance", "ask_if_missing": False},
+                {"field": "preferred_date", "ask_if_missing": True},
+                {"field": "preferred_time", "ask_if_missing": True},
+            ],
+            "final_action": "CREATE_APPOINTMENT",
+            "confirmation_message": "Your {exam_type} is scheduled for {preferred_date} at {preferred_time}. Please bring your insurance card.",
+        },
+        "system_prompt_addition": """
+## Optometry/Eye Care-Specific Guidelines:
+- HIPAA compliance REQUIRED for all patient information.
+- For sudden vision loss, trauma, or severe eye pain - ESCALATE IMMEDIATELY.
+- Distinguish between medical eye exams and routine vision exams.
+- **DO NOT provide medical diagnosis** - Only schedule and provide general info.
+- **DO NOT repeat questions** - Track collected information.
+""",
+        "example_responses": {
+            "comprehensive_exam": "I'll schedule your comprehensive eye exam. This includes checking your vision and eye health.",
+            "emergency": "This sounds like an emergency. We have same-day slots available. Please come in immediately.",
+        }
+    },
+    "urgent_care": {
+        "name": "Urgent Care Center",
+        "icon": "emergency",
+        "description": "Immediate medical care for non-life-threatening conditions",
+        "autonomy_level": "RESTRICTED",
+        "risk_profile": {
+            "high_risk_intents": ["chest_pain", "difficulty_breathing", "severe_bleeding", "stroke_symptoms", "unconscious", "seizure", "major_trauma", "suicidal_thoughts"],
+            "auto_escalate_threshold": 0.2,
+            "confidence_threshold": 0.9,
+        },
+        "common_intents": [
+            "walk_in_visit", "minor_emergency", "fever_cold_flu", "sore_throat",
+            "ear_infection", "UTI", "minor_cut_laceration", "sprain_strain",
+            "vaccination_flu_shot", "drug_screening", "sports_physical"
+        ],
+        "fields": {
+            "patient_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+            "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+            "symptoms": {"required": True, "validation": "string", "prompt": "What are your symptoms?"},
+            "symptom_onset": {"required": False, "validation": "string", "prompt": "When did this start?"},
+        },
+        "booking_flow": {
+            "type": "walk_in",
+            "steps": [
+                {"field": "patient_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "symptoms", "ask_if_missing": True},
+                {"field": "symptom_onset", "ask_if_missing": False},
+            ],
+            "final_action": "PROVIDE_WAIT_TIME",
+            "confirmation_message": "Thank you. Our current wait time is approximately {wait_time} minutes. No appointment needed.",
+        },
+        "system_prompt_addition": """
+## Urgent Care-Specific Guidelines:
+- HIPAA compliance REQUIRED for all patient information.
+- CRITICAL TRIAGE: For chest pain, difficulty breathing, stroke symptoms (FAST) - ADVISE CALLING 911 IMMEDIATELY.
+- **DO NOT provide medical diagnosis** - Only triage and provide wait times.
+- Explain urgent care vs. ER: We handle non-life-threatening conditions.
+- **DO NOT repeat questions** - Track collected information.
+""",
+        "example_responses": {
+            "triage_safe": "Based on your symptoms, urgent care is appropriate. Current wait time is about 20 minutes.",
+            "triage_emergency": "These symptoms could indicate a serious condition. Please call 911 immediately.",
+        }
+    },
+    "car_dealership": {
+        "name": "Car Dealership",
+        "icon": "directions_car",
+        "description": "Full-service automotive dealership for sales, service, and parts",
+        "autonomy_level": "MEDIUM",
+        "risk_profile": {
+            "high_risk_intents": ["financing_inquiry", "trade_in_value", "price_negotiation", "test_drive_liability", "safety_recall"],
+            "auto_escalate_threshold": 0.5,
+            "confidence_threshold": 0.7,
+        },
+        "common_intents": [
+            "schedule_test_drive", "service_appointment", "parts_inquiry",
+            "inventory_check", "financing_options", "trade_in_inquiry",
+            "sales_consultation", "hours_location", "lease_return",
+            "recall_info", "roadside_assistance", "pricing_inquiry"
+        ],
+        "fields": {
+            "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+            "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+            "department": {"required": True, "validation": "string", "prompt": "Which department are you looking for? (Sales, Service, or Parts)"},
+            "vehicle_interest": {"required": False, "validation": "string", "prompt": "Which vehicle model are you interested in?"},
+            "preferred_date": {"required": True, "validation": "future_date", "prompt": "What date works best?"},
+            "preferred_time": {"required": True, "validation": "string", "prompt": "What time would you prefer?"},
+        },
+        "booking_flow": {
+            "type": "appointment",
+            "steps": [
+                {"field": "customer_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "department", "ask_if_missing": True},
+                {"field": "preferred_date", "ask_if_missing": True},
+                {"field": "preferred_time", "ask_if_missing": True},
+            ],
+            "final_action": "CREATE_APPOINTMENT",
+            "confirmation_message": "Your {department} appointment is confirmed for {preferred_date} at {preferred_time}.",
+        },
+        "system_prompt_addition": """
+## Car Dealership-Specific Guidelines:
+- ROUTE BY DEPARTMENT: Sales, Service, or Parts.
+- Sales: Schedule test drives and handle inventory inquiries. 
+- Service: Schedule maintenance and handle recall inquiries.
+- **DO NOT negotiate pricing** - Provide MSRP and offer a sales consultation for final pricing.
+- For financing, explain basic options but escalate to Finance Manager.
+""",
+        "example_responses": {
+            "test_drive": "I'd be happy to schedule a test drive. Which model are you interested in?",
+            "service": "Our service department can help with that. When would you like to bring your vehicle in?",
+        }
+    },
+    "grocery": {
+        "name": "Grocery Store",
+        "icon": "local_grocery_store",
+        "description": "Supermarket with online ordering, delivery, and pickup services",
+        "autonomy_level": "HIGH",
+        "risk_profile": {
+            "high_risk_intents": ["food_safety_complaint", "delivery_missing", "payment_error", "allergy_inquiry"],
+            "auto_escalate_threshold": 0.6,
+            "confidence_threshold": 0.5,
+        },
+        "common_intents": [
+            "check_stock", "place_delivery_order", "curbside_pickup",
+            "store_hours", "weekly_specials", "loyalty_points",
+            "return_policy", "bakery_order", "deli_order"
+        ],
+        "fields": {
+            "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name for the order?"},
+            "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+            "item_list": {"required": True, "validation": "string", "prompt": "What items would you like to order?"},
+            "fulfillment_method": {"required": True, "validation": "string", "prompt": "Would you like delivery or curbside pickup?"},
+        },
+        "booking_flow": {
+            "type": "order",
+            "steps": [
+                {"field": "customer_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "item_list", "ask_if_missing": True},
+                {"field": "fulfillment_method", "ask_if_missing": True},
+            ],
+            "final_action": "PLACE_ORDER",
+            "confirmation_message": "Your {fulfillment_method} order has been placed. We'll notify you when it's ready.",
+        },
+        "system_prompt_addition": """
+## Grocery Store-Specific Guidelines:
+- INVENTORY FOCUS: Help customers find if items are in stock.
+- Handle delivery and curbside pickup requests.
+- Mention weekly specials and loyalty program benefits.
+- For food safety complaints, escalate to Store Manager immediately.
+""",
+        "example_responses": {
+            "stock": "Let me check if we have that in stock for you...",
+            "delivery": "I can help you place a delivery order. What do you need today?",
+        }
+    },
+    "it_services": {
+        "name": "IT Services",
+        "icon": "computer",
+        "description": "Technical support and managed IT services provider",
+        "autonomy_level": "MEDIUM",
+        "risk_profile": {
+            "high_risk_intents": ["security_breach", "server_down", "data_loss", "urgent_fix", "password_reset_identity"],
+            "auto_escalate_threshold": 0.4,
+            "confidence_threshold": 0.75,
+        },
+        "common_intents": [
+            "open_support_ticket", "check_ticket_status", "schedule_consultation",
+            "hardware_repair", "software_install", "network_issue",
+            "managed_services", "cybersecurity_audit", "emergency_support"
+        ],
+        "fields": {
+            "customer_name": {"required": True, "validation": "string", "prompt": "May I have your name?"},
+            "phone": {"required": True, "validation": "phone", "prompt": "What's the best number for a technician to call?"},
+            "issue_description": {"required": True, "validation": "string", "prompt": "Can you briefly describe the issue?"},
+            "urgency_level": {"required": True, "validation": "string", "prompt": "How urgent is this? (Low, Medium, High, Critical)"},
+        },
+        "booking_flow": {
+            "type": "ticket",
+            "steps": [
+                {"field": "customer_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "issue_description", "ask_if_missing": True},
+                {"field": "urgency_level", "ask_if_missing": True},
+            ],
+            "final_action": "OPEN_TICKET",
+            "confirmation_message": "I've opened a support ticket. A technician will contact you based on your {urgency_level} urgency.",
+        },
+        "system_prompt_addition": """
+## IT Services-Specific Guidelines:
+- TRIAGE SPECIALIST: Determine urgency and type of issue.
+- Critical issues (Server down, Security breach) MUST be escalated immediately.
+- **DO NOT attempt technical fixes** - Your goal is to triage and route.
+""",
+        "example_responses": {
+            "ticket": "I'll get a support ticket started for you. What's the problem?",
+            "emergency": "Since your server is down, I'm escalating this to our emergency team right now.",
+        }
+    },
+    "staffing_agency": {
+        "name": "Staffing Agency",
+        "icon": "groups",
+        "description": "Recruitment and workforce solutions for employers and job seekers",
+        "autonomy_level": "MEDIUM",
+        "risk_profile": {
+            "high_risk_intents": ["payroll_dispute", "harassment_report", "injury_on_job", "urgent_fulfillment"],
+            "auto_escalate_threshold": 0.5,
+            "confidence_threshold": 0.7,
+        },
+        "common_intents": [
+            "job_search", "apply_for_job", "submit_timesheet",
+            "hire_talent", "interview_scheduling", "payroll_inquiry",
+            "onboarding_status", "temp_to_perm", "referral_program"
+        ],
+        "fields": {
+            "full_name": {"required": True, "validation": "string", "prompt": "May I have your full name?"},
+            "phone": {"required": True, "validation": "phone", "prompt": "What's the best number to reach you?"},
+            "user_type": {"required": True, "validation": "string", "prompt": "Are you a job seeker or an employer looking to hire?"},
+            "industry_focus": {"required": True, "validation": "string", "prompt": "Which industry are you focused on?"},
+        },
+        "booking_flow": {
+            "type": "application",
+            "steps": [
+                {"field": "full_name", "ask_if_missing": True},
+                {"field": "phone", "ask_if_missing": True},
+                {"field": "user_type", "ask_if_missing": True},
+                {"field": "industry_focus", "ask_if_missing": True},
+            ],
+            "final_action": "CREATE_LEAD",
+            "confirmation_message": "Thank you! A recruiter specializing in {industry_focus} will contact you shortly.",
+        },
+        "system_prompt_addition": """
+## Staffing Agency-Specific Guidelines:
+- TWO-SIDED MARKET: Identify if caller is a Candidate (Job Seeker) or a Client (Employer).
+- For payroll disputes or workplace injuries, escalate immediately.
+- **DO NOT guarantee placement** - Explain recruiters will review applications.
+""",
+        "example_responses": {
+            "candidate": "We have several openings in {industry_focus}. What kind of role are you looking for?",
+            "employer": "I can help you find talent for your team. What industry are you hiring for?",
+        }
+    },
     "general": {
         "name": "General Business",
         "icon": "business",
@@ -1308,6 +1686,38 @@ BUSINESS_TYPE_SUGGESTIONS = {
     "veterinary": {
         "keywords": ["veterinary", "veterinarian", "vet", "animal hospital", "vet clinic", "animal doctor", "pet health", "animal healthcare", "vet practice", "veterinary medicine", "vet services", "pet clinic", "animal clinic"],
         "phrases": ["veterinary clinic", "veterinary hospital", "veterinary services", "animal hospital", "veterinary practice", "vet clinic", "pet health", "animal healthcare", "veterinary care"],
+    },
+    "chiropractic": {
+        "keywords": ["chiropractic", "chiropractor", "back pain", "neck pain", "adjustment", "spinal", "alignment", "posture", "wellness", "sciatica", "headache", "whiplash", "joint pain", "subluxation"],
+        "phrases": ["chiropractic clinic", "spinal adjustment", "back pain relief", "chiropractor office", "wellness adjustment", "chiropractic care", "neck pain treatment", "posture correction"],
+    },
+    "physical_therapy": {
+        "keywords": ["physical therapy", "pt", "physiotherapy", "rehabilitation", "rehab", "injury", "mobility", "exercise", "strength", "balance", "stroke recovery", "post-surgery", "sports medicine", "manual therapy"],
+        "phrases": ["physical therapy clinic", "rehabilitation center", "pt evaluation", "post-surgery rehab", "mobility training", "physical therapy services", "sports injury rehab", "physiotherapy office"],
+    },
+    "optometry": {
+        "keywords": ["optometry", "optometrist", "eye", "vision", "glasses", "contacts", "contact lens", "exam", "ophthalmology", "lasik", "cataract", "glaucoma", "dry eye", "eye doctor"],
+        "phrases": ["optometry clinic", "eye exam", "vision care", "contact lens fitting", "optometrist office", "eye care center", "glasses exam", "ophthalmic services"],
+    },
+    "urgent_care": {
+        "keywords": ["urgent care", "walk-in", "minor emergency", "fever", "flu", "sore throat", "infection", "injury", "medical", "clinic", "treatment", "emergency", "sick", "doctor"],
+        "phrases": ["urgent care center", "walk-in clinic", "medical treatment", "minor emergency care", "urgent medical care", "acute care", "immediate care", "healthcare clinic"],
+    },
+    "car_dealership": {
+        "keywords": ["car dealership", "auto sales", "car dealer", "vehicle sales", "test drive", "buy a car", "used cars", "new cars", "car service", "auto repair", "dealership parts"],
+        "phrases": ["car dealership", "auto dealer", "sales department", "service department", "parts department", "schedule test drive", "vehicle inventory", "car financing"],
+    },
+    "grocery": {
+        "keywords": ["grocery", "supermarket", "food store", "grocery delivery", "curbside pickup", "check stock", "weekly specials", "grocery items", "shopping list", "bakery", "deli"],
+        "phrases": ["grocery store", "supermarket", "grocery delivery", "curbside pickup", "food shopping", "check availability", "weekly ad", "bakery order", "deli counter"],
+    },
+    "it_services": {
+        "keywords": ["it services", "tech support", "computer repair", "network issues", "managed it", "cybersecurity", "software install", "support ticket", "help desk", "it consulting"],
+        "phrases": ["it services", "technical support", "managed it services", "tech support help desk", "open support ticket", "it consulting", "cybersecurity services"],
+    },
+    "staffing_agency": {
+        "keywords": ["staffing agency", "recruitment", "headhunter", "temp agency", "hiring", "job search", "apply for job", "employment agency", "talent acquisition", "timesheet"],
+        "phrases": ["staffing agency", "recruitment firm", "employment agency", "hire talent", "job application", "staffing solutions", "recruiting services"],
     },
 }
 

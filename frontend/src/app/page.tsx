@@ -82,6 +82,8 @@ const businessTypes = [
   { name: "Medical", icon: "🏥", description: "Appointments, patient inquiries, triage" },
   { name: "Dental", icon: "🦷", description: "Scheduling, insurance, procedures" },
   { name: "Salon", icon: "💇", description: "Bookings, services, availability" },
+  { name: "Barbershop", icon: "✂️", description: "Haircuts, beard trims, walk-ins" },
+  { name: "Nail Salon", icon: "💅", description: "Manicures, pedicures, nail art" },
   { name: "Fitness", icon: "💪", description: "Membership, classes, scheduling" },
   { name: "Retail", icon: "🛒", description: "Orders, inventory, support" },
   { name: "Auto Repair", icon: "🔧", description: "Appointments, parts, diagnostics" },
@@ -90,6 +92,13 @@ const businessTypes = [
   { name: "Education", icon: "📚", description: "Enrollments, courses, support" },
   { name: "Hotel", icon: "🏨", description: "Reservations, services, check-in" },
   { name: "HVAC", icon: "❄️", description: "Emergency repairs, maintenance" },
+  { name: "Plumbing", icon: "🔩", description: "Leak repair, drain cleaning, water heaters" },
+  { name: "Electrical", icon: "⚡", description: "Wiring, panel upgrades, EV chargers" },
+  { name: "Pest Control", icon: "🐛", description: "Inspections, treatments, prevention" },
+  { name: "Chiropractic", icon: "🧘", description: "Back pain, adjustments, wellness care" },
+  { name: "Physical Therapy", icon: "💪", description: "Rehabilitation, injury recovery, mobility" },
+  { name: "Optometry", icon: "👁️", description: "Eye exams, glasses, contact lenses" },
+  { name: "Urgent Care", icon: "🚑", description: "Walk-in care, minor emergencies, X-rays" },
   { name: "Accounting", icon: "📊", description: "Tax, consultations, documents" },
   { name: "General", icon: "🏢", description: "Customizable for any business" }
 ];
@@ -473,7 +482,7 @@ export default function LandingPage() {
           gutterBottom
           sx={{ textAlign: 'center', fontWeight: 'bold', mb: 2 }}
         >
-          14+ Business Types Supported
+          23+ Business Types Supported
         </Typography>
         <Typography
           variant="h6"
@@ -731,7 +740,7 @@ export default function LandingPage() {
           </Grid>
           <Divider sx={{ my: 4 }} />
           <Typography variant="body2" color="text.secondary" align="center">
-            © 2026 Receptium. All rights reserved. Powered by Nova AI Engine.
+            © 2026 Receptium. All rights reserved. Powered by Amazon Nova AI Engine.
           </Typography>
         </Container>
       </Box>
