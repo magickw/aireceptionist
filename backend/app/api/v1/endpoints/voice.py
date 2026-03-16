@@ -1067,86 +1067,47 @@ async def voice_websocket(
                         continue
 
                 # Handle specific actions from reasoning (skip if pending appointment already handled)
+                selected_action = reasoning_result.get("selected_action")
 
-                                selected_action = reasoning_result.get("selected_action")
+                pending_handled = "pending_appointment" not in ws_session and (
+                    "I've booked your appointment" in agent_response or "I couldn't book" in agent_response
+                )
+                menu_item = entities.get("menu_item") or entities.get("service")
+                quantity = entities.get("quantity", 1) if isinstance(entities.get("quantity"), int) else 1
 
-                
+                # Detect clarification phrases - customer is NOT adding items
+                # (content_lower is already defined above)
+                clarification_phrases = [
+                    "i just wanted", "i didn't say", "i meant", "what i meant",
+                    "i already", "already ordered", "don't add", "didn't want to add",
+                    "no i didn't", "that's not what", "i said i wanted", "clarify",
+                    "i was just saying", "just clarifying", "i meant to say"
+                ]
+                is_clarification = any(phrase in content_lower for phrase in clarification_phrases)
 
-                                pending_handled = "pending_appointment" not in ws_session and (
-
-                                    "I've booked your appointment" in agent_response or "I couldn't book" in agent_response
-
-                                )
-
-                                menu_item = entities.get("menu_item") or entities.get("service")
-
-                                quantity = entities.get("quantity", 1) if isinstance(entities.get("quantity"), int) else 1
-
-                
-
-                                # Detect clarification phrases - customer is NOT adding items
-
-                                # (content_lower is already defined above)
-
-                                clarification_phrases = [
-
-                                    "i just wanted", "i didn't say", "i meant", "what i meant",
-
-                                    "i already", "already ordered", "don't add", "didn't want to add",
-
-                                    "no i didn't", "that's not what", "i said i wanted", "clarify",
-
-                                    "i was just saying", "just clarifying", "i meant to say"
-
-                                ]
-
-                                is_clarification = any(phrase in content_lower for phrase in clarification_phrases)
-
-                
-
-                                # Skip action execution if governance is handling the response
-
-                                # This prevents actions from being executed when human intervention is required
-
-                                if governance_handled:
-
-                                    # Set a flag to track that approval is pending
-
-                                    ws_session["pending_approval"] = {
-
-                                        "call_session_id": session_id,
-
-                                        "governance_tier": governance_tier,
-
-                                        "request_type": "HUMAN_INTERVENTION",
-
-                                        "intent": detected_intent,
-
-                                        "confidence": confidence,
-
-                                        "context": {
-
-                                            "original_action": selected_action,
-
-                                            "entities": entities,
-
-                                            "reasoning_result": reasoning_result
-
-                                        }
-
-                                    }
-
-                                    # Skip all action execution - just send the governance response
-
-                                    pass
+                # Skip action execution if governance is handling the response
+                # This prevents actions from being executed when human intervention is required
+                if governance_handled:
+                    # Set a flag to track that approval is pending
+                    ws_session["pending_approval"] = {
+                        "call_session_id": session_id,
+                        "governance_tier": governance_tier,
+                        "request_type": "HUMAN_INTERVENTION",
+                        "intent": detected_intent,
+                        "confidence": confidence,
+                        "context": {
+                            "original_action": selected_action,
+                            "entities": entities,
+                            "reasoning_result": reasoning_result
+                        }
+                    }
+                    # Skip all action execution - just send the governance response
+                    pass
 
                                 # Handle PLACE_ORDER action - ONLY when explicitly triggered by the model
-
-                                elif pending_handled:
-
-                                    pass  # Appointment already created from pending confirmation
-
-                                elif selected_action == "PLACE_ORDER" and not is_clarification:
+                elif pending_handled:
+                    pass  # Appointment already created from pending confirmation
+                elif selected_action == "PLACE_ORDER" and not is_clarification:
                     if menu_item and business_context.get("menu"):
                         menu_lower = menu_item.lower()
                         for item in business_context.get("menu", []):
