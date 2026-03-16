@@ -58,7 +58,7 @@ async def connect_calendly(
         raise HTTPException(status_code=500, detail=str(e))
 
 
-@router.post("/callback/calendly")
+@router.get("/callback/calendly")
 async def calendly_callback(
     code: str,
     state: str,
@@ -164,7 +164,8 @@ async def get_scheduled_events(
         if not start_time:
             start_time = datetime.now(timezone.utc)
         if not end_time:
-            end_time = start_time.replace(day=start_time.day + 30)
+            from datetime import timedelta
+            end_time = start_time + timedelta(days=30)
         
         # Get events from Calendly
         events = await calendly_service.get_scheduled_events(

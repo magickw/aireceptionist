@@ -219,7 +219,11 @@ class CalendlyService:
         access_token = await self.get_access_token(integration, db)
         
         url = f"{self.BASE_URL}/scheduled_events"
-        params = {}
+        # Calendly requires filtering by user or organization — without it the API returns 400
+        user_uri = integration.calendar_id
+        if not user_uri:
+            raise Exception("Calendly user URI not found")
+        params = {"user": user_uri}
         
         if start_time:
             params["min_start_time"] = start_time.isoformat()
@@ -253,12 +257,13 @@ class CalendlyService:
         
         url = f"{self.BASE_URL}/webhook_subscriptions"
         
+        # Calendly webhook API: top-level fields, scope must be "user" or "organization"
         payload = {
-            "webhook_subscription": {
-                "url": webhook_url,
-                "events": events,
-                "scope": integration.calendar_id
-            }
+            "url": webhook_url,
+            "events": events,
+            "scope": "user",
+            "organization": integration.calendar_id,
+            "user": integration.calendar_id,
         }
         
         headers = {
@@ -345,11 +350,12 @@ class CalendlyService:
         event_type = payload.get("event_type")
         
         # Handle different event types
-        if event_type == "invitee_created":
+        # Calendly sends dot-notation: "invitee.created", "invitee.canceled"
+        if event_type in ("invitee.created", "invitee_created"):
             return await self._handle_invitee_created(event_data, db)
-        elif event_type == "invitee_canceled":
+        elif event_type in ("invitee.canceled", "invitee_canceled"):
             return await self._handle_invitee_canceled(event_data, db)
-        elif event_type == "invitee_rescheduled":
+        elif event_type in ("invitee.rescheduled", "invitee_rescheduled"):
             return await self._handle_invitee_rescheduled(event_data, db)
         else:
             return {"status": "ignored", "reason": f"Unknown event type: {event_type}"}

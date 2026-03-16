@@ -19,7 +19,7 @@ import Error from '@mui/icons-material/Error';
 import Refresh from '@mui/icons-material/Refresh';
 import Link from '@mui/icons-material/Link';
 import Delete from '@mui/icons-material/Delete';
-import api from '@/services/api';
+import api, { calendlyApi } from '@/services/api';
 
 interface CalendlyIntegration {
   id: number;
@@ -99,7 +99,7 @@ export default function CalendlyPage() {
 
   const fetchEventTypes = async (integrationId: number) => {
     try {
-      const response = await api.get(`/calendly/${integrationId}/event-types`);
+      const response = await calendlyApi.getEventTypes(integrationId);
       setEventTypes(response.data.event_types || []);
     } catch (err: any) {
       console.error('Error fetching event types:', err);
@@ -108,12 +108,7 @@ export default function CalendlyPage() {
 
   const fetchEvents = async (integrationId: number) => {
     try {
-      const response = await api.get(`/calendly/${integrationId}/events`, {
-        params: {
-          start_time: selectedDateRange.start,
-          end_time: selectedDateRange.end
-        }
-      });
+      const response = await calendlyApi.getEvents(integrationId, selectedDateRange.start, selectedDateRange.end);
       setEvents(response.data.events || []);
     } catch (err: any) {
       console.error('Error fetching events:', err);
@@ -123,13 +118,9 @@ export default function CalendlyPage() {
   const handleConnect = async () => {
     setConnecting(true);
     setError('');
-    
     try {
-      const response = await api.get('/calendly/connect/calendly');
-      const authUrl = response.data.auth_url;
-      
-      // Open OAuth popup or redirect
-      window.location.href = authUrl;
+      const response = await calendlyApi.connect();
+      window.location.href = response.data.auth_url;
     } catch (err: any) {
       setError('Failed to initiate Calendly connection: ' + (err.response?.data?.detail || err.message));
       setConnecting(false);
@@ -138,18 +129,13 @@ export default function CalendlyPage() {
 
   const handleDisconnect = async () => {
     if (!integration) return;
-    
-    if (!confirm('Are you sure you want to disconnect Calendly? This will stop all Calendly integrations.')) {
-      return;
-    }
-    
+    if (!confirm('Are you sure you want to disconnect Calendly? This will stop all Calendly integrations.')) return;
     try {
       await api.delete(`/calendar/${integration.id}`);
       setSuccess('Calendly disconnected successfully');
       setIntegration(null);
       setEventTypes([]);
       setEvents([]);
-      
       setTimeout(() => setSuccess(''), 5000);
     } catch (err: any) {
       setError('Failed to disconnect Calendly: ' + (err.response?.data?.detail || err.message));
