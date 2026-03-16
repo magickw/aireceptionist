@@ -132,50 +132,58 @@ class Customer360Service:
         }
     
     async def _calculate_lifetime_value(self, db: Session, customer) -> Dict:
-        """Calculate customer lifetime value with projections"""
-        from app.models.models import Order
-        
-        # Historical value
-        historical_value = float(customer.total_spent or 0)
-        
-        # Get order history for trend analysis
+        """Calculate customer lifetime value with projections (orders + appointments)"""
+        from app.models.models import Order, Appointment
+
+        # Historical order revenue
         orders = db.query(Order).filter(
             Order.customer_id == customer.id
         ).order_by(Order.created_at).all()
-        
-        if not orders:
-            return {
-                "historical": 0,
-                "projected_12_month": 0,
-                "confidence": 0
-            }
-        
-        # Calculate average order value
-        avg_order_value = historical_value / len(orders) if orders else 0
-        
-        # Calculate order frequency (orders per month)
-        if len(orders) >= 2:
-            first_order = orders[0].created_at
-            last_order = orders[-1].created_at
-            months_active = max(1, (last_order - first_order).days / 30)
-            orders_per_month = len(orders) / months_active
+
+        order_revenue = sum(float(o.total_amount or 0) for o in orders if o.status in ["completed", "confirmed"])
+
+        # Appointment revenue (use service_price if available, else 0)
+        appointments = db.query(Appointment).filter(
+            Appointment.customer_id == customer.id,
+            Appointment.status == "completed"
+        ).all()
+
+        appointment_revenue = sum(
+            float(getattr(a, "service_price", None) or 0) for a in appointments
+        )
+
+        historical_value = order_revenue + appointment_revenue
+
+        all_transactions = len(orders) + len(appointments)
+        if all_transactions == 0:
+            return {"historical": 0, "projected_12_month": 0, "confidence": 0}
+
+        avg_transaction_value = historical_value / all_transactions if all_transactions else 0
+
+        # Calculate transaction frequency (per month)
+        all_dates = (
+            [o.created_at for o in orders if o.created_at] +
+            [a.appointment_time for a in appointments if a.appointment_time]
+        )
+        if len(all_dates) >= 2:
+            all_dates.sort()
+            months_active = max(1, (all_dates[-1] - all_dates[0]).days / 30)
+            transactions_per_month = all_transactions / months_active
         else:
-            orders_per_month = 0.5  # Assume one order every 2 months
-        
-        # Project 12-month value
-        projected_12_month = avg_order_value * orders_per_month * 12
-        
-        # Apply retention factor based on churn risk
+            transactions_per_month = 0.5
+
+        # Project 12-month value with churn-adjusted retention
         churn_risk = float(customer.churn_risk or 0.2)
-        retention_factor = 1 - churn_risk
-        projected_12_month *= retention_factor
-        
+        projected_12_month = avg_transaction_value * transactions_per_month * 12 * (1 - churn_risk)
+
         return {
             "historical": round(historical_value, 2),
             "projected_12_month": round(projected_12_month, 2),
-            "average_order_value": round(avg_order_value, 2),
-            "orders_per_month": round(orders_per_month, 2),
-            "confidence": min(1.0, len(orders) / 10)  # More orders = more confident
+            "average_transaction_value": round(avg_transaction_value, 2),
+            "transactions_per_month": round(transactions_per_month, 2),
+            "order_revenue": round(order_revenue, 2),
+            "appointment_revenue": round(appointment_revenue, 2),
+            "confidence": min(1.0, all_transactions / 10),
         }
     
     async def _generate_customer_insights(self, db: Session, customer) -> List[Dict]:

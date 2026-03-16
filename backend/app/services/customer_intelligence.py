@@ -31,8 +31,8 @@ class CustomerIntelligenceService:
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
-        # Using Titan Embeddings for stable text analysis
-        self.embedding_model = "amazon.titan-embed-text-v1"
+        self.embedding_model = settings.BEDROCK_EMBEDDING_MODEL
+        self.reasoning_model = settings.BEDROCK_REASONING_MODEL
         
         # Initialize prediction models
         self.prediction_models = {}
@@ -742,9 +742,9 @@ Provide a JSON response with the following structure:
 """
             
             response = self.bedrock_runtime.invoke_model(
-                modelId=self.embedding_model,
+                modelId=self.reasoning_model,
                 body=json.dumps({
-                    "messages": [{"role": "user", "content": prediction_prompt}],
+                    "messages": [{"role": "user", "content": [{"text": prediction_prompt}]}],
                     "inferenceConfig": {
                         "maxTokens": 1024,
                         "temperature": 0.3
@@ -753,16 +753,14 @@ Provide a JSON response with the following structure:
             )
             
             response_body = json.loads(response["body"].read().decode())
-            content = response_body["messages"][0]["content"]
+            content = response_body.get("output", {}).get("message", {}).get("content", [])
+            text = "".join(block.get("text", "") for block in content if isinstance(block, dict))
             
-            # Extract JSON response
             import re
-            json_match = re.search(r'\{.*\}', content[0]["text"], re.DOTALL)
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
-                prediction_result = json.loads(json_match.group())
-                return prediction_result
+                return json.loads(json_match.group())
             else:
-                # Fallback prediction
                 return {
                     "prediction_type": prediction_type,
                     "prediction": "general_inquiry",
@@ -925,9 +923,9 @@ Provide a JSON response with the following structure:
 """
             
             response = self.bedrock_runtime.invoke_model(
-                modelId=self.embedding_model,
+                modelId=self.reasoning_model,
                 body=json.dumps({
-                    "messages": [{"role": "user", "content": pattern_prompt}],
+                    "messages": [{"role": "user", "content": [{"text": pattern_prompt}]}],
                     "inferenceConfig": {
                         "maxTokens": 1024,
                         "temperature": 0.3
@@ -936,11 +934,11 @@ Provide a JSON response with the following structure:
             )
             
             response_body = json.loads(response["body"].read().decode())
-            content = response_body["messages"][0]["content"]
+            content = response_body.get("output", {}).get("message", {}).get("content", [])
+            text = "".join(block.get("text", "") for block in content if isinstance(block, dict))
             
-            # Extract JSON response
             import re
-            json_match = re.search(r'\{.*\}', content[0]["text"], re.DOTALL)
+            json_match = re.search(r'\{.*\}', text, re.DOTALL)
             if json_match:
                 behavioral_analysis = json.loads(json_match.group())
                 return {
@@ -951,7 +949,6 @@ Provide a JSON response with the following structure:
                     **behavioral_analysis
                 }
             else:
-                # Return basic analysis
                 return {
                     "customer_phone": customer_phone,
                     "analysis_period_days": days,

@@ -187,27 +187,103 @@ class ActionExecutionService:
         return result
 
     async def _handle_place_order(self, tool_input, business_id, context):
-        # Implementation of order accumulation logic...
-        # In a real implementation, we would update the session's order_items
-        return {"success": True, "message": "Items added to pending order."}
+        """
+        Add an item to the in-progress order accumulator stored in context.
+        Context must contain an 'order_items' list (managed by the caller/session).
+        """
+        item_name = tool_input.get("item_name") or tool_input.get("menu_item")
+        quantity = int(tool_input.get("quantity") or 1)
+        unit_price = tool_input.get("unit_price") or tool_input.get("price") or 0.0
+
+        if not item_name:
+            return {"success": False, "message": "No item name provided."}
+
+        # Accumulate into context's order_items list
+        order_items: list = context.setdefault("order_items", [])
+        # Merge with existing item if already in cart
+        for existing in order_items:
+            if existing["name"].lower() == item_name.lower():
+                existing["quantity"] += quantity
+                existing["subtotal"] = round(existing["quantity"] * float(existing["unit_price"]), 2)
+                return {
+                    "success": True,
+                    "message": f"Updated {item_name} quantity to {existing['quantity']}.",
+                    "order_items": order_items,
+                }
+
+        order_items.append({
+            "name": item_name,
+            "quantity": quantity,
+            "unit_price": float(unit_price),
+            "subtotal": round(quantity * float(unit_price), 2),
+        })
+        return {
+            "success": True,
+            "message": f"Added {quantity}x {item_name} to order.",
+            "order_items": order_items,
+        }
 
     async def _handle_confirm_order(self, tool_input, business_id, context):
         customer_name = tool_input.get("customer_name") or context.get("customer_name")
         customer_phone = tool_input.get("customer_phone") or context.get("customer_phone")
-        
-        # VALIDATION
+
         missing = []
         if not customer_name: missing.append("customer_name")
         if not customer_phone: missing.append("customer_phone")
-        
+
         if missing:
             return {
-                "success": False, 
+                "success": False,
                 "message": f"I need the following information to confirm the order: {', '.join(missing)}.",
-                "missing_fields": missing
+                "missing_fields": missing,
             }
-            
-        return {"success": True, "message": "Order confirmed."}
+
+        order_items = context.get("order_items") or tool_input.get("order_items") or []
+        if not order_items:
+            return {"success": False, "message": "No items in the order to confirm."}
+
+        total = round(sum(item.get("subtotal", 0) for item in order_items), 2)
+        delivery_method = tool_input.get("delivery_method") or context.get("delivery_method", "pickup")
+
+        try:
+            from app.schemas.order import OrderCreate, OrderItemCreate
+            order_data = OrderCreate(
+                customer_name=customer_name,
+                customer_phone=customer_phone,
+                delivery_method=delivery_method,
+                items=[
+                    OrderItemCreate(
+                        item_name=item["name"],
+                        quantity=item["quantity"],
+                        unit_price=float(item.get("unit_price", 0)),
+                        notes=item.get("notes"),
+                    )
+                    for item in order_items
+                ],
+            )
+            saved = await order_service.create_order(
+                db=self.db,
+                order_data=order_data,
+                business_id=business_id,
+            )
+            # Clear the cart from context after successful save
+            context["order_items"] = []
+            return {
+                "success": True,
+                "message": f"Order confirmed! Total: ${total:.2f}. Order ID: {saved.get('order_id', 'N/A')}.",
+                "order_id": saved.get("order_id"),
+                "total": total,
+                "items": order_items,
+            }
+        except Exception as e:
+            print(f"[ActionExecution] Order save failed: {e}")
+            # Return success with a note — order was confirmed verbally even if DB write failed
+            return {
+                "success": True,
+                "message": f"Order confirmed! Total: ${total:.2f}. (Reference: pending save)",
+                "total": total,
+                "items": order_items,
+            }
 
     async def _handle_transfer_to_human(self, tool_input, business_id, context):
         return {

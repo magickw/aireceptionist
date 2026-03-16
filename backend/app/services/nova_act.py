@@ -150,7 +150,7 @@ class NovaActAutomation:
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
-        self.model_id = "amazon.nova-act-v1:0"
+        self.model_id = settings.BEDROCK_AUTOMATION_MODEL
         
         # Active workflows
         self.active_workflows: Dict[str, AutomationWorkflow] = {}
@@ -650,7 +650,7 @@ Confirm if the action appears to have been successful based on visual evidence.
             
             # Invoke Nova Lite
             response = self.bedrock_runtime.invoke_model(
-                modelId="amazon.nova-lite-v1:0",  # Use Lite for multimodal
+                modelId=settings.BEDROCK_REASONING_MODEL,  # Nova Lite for multimodal verification
                 body=json.dumps({
                     "messages": messages,
                     "inferenceConfig": {
@@ -755,7 +755,7 @@ Output format (JSON):
             response = self.bedrock_runtime.invoke_model(
                 modelId=self.model_id,
                 body=json.dumps({
-                    "messages": [{"role": "user", "content": prompt}],
+                    "messages": [{"role": "user", "content": [{"text": prompt}]}],
                     "inferenceConfig": {
                         "maxTokens": 2048,
                         "temperature": 0.3
@@ -765,8 +765,14 @@ Output format (JSON):
             
             response_body = json.loads(response["body"].read().decode())
             
-            if "messages" in response_body and len(response_body["messages"]) > 0:
-                content = response_body["messages"][0]["content"]
+            if "output" in response_body:
+                content_blocks = response_body["output"].get("message", {}).get("content", [])
+                content = "".join(b.get("text", "") for b in content_blocks if isinstance(b, dict))
+            elif "messages" in response_body and len(response_body["messages"]) > 0:
+                raw = response_body["messages"][0].get("content", "")
+                content = raw if isinstance(raw, str) else "".join(b.get("text", "") for b in raw if isinstance(b, dict))
+            else:
+                return []
                 
                 # Extract JSON from response
                 import re
@@ -1111,7 +1117,7 @@ class CognitiveAutomationEngine:
     
     def __init__(self, bedrock_runtime):
         self.bedrock_runtime = bedrock_runtime
-        self.model_id = "amazon.nova-lite-v1:0"
+        self.model_id = settings.BEDROCK_REASONING_MODEL
         self._workflow_templates = {}
         self._performance_history = {}
         self._learning_cache = {}
@@ -1501,5 +1507,5 @@ Generate optimization recommendations with the following structure (JSON):
         }
 
 
-# Cognitive automation engine instance
-cognitive_automation = None
+# Cognitive automation engine singleton (wired to nova_act's Bedrock client)
+cognitive_automation = CognitiveAutomationEngine(nova_act.bedrock_runtime)

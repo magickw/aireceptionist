@@ -361,7 +361,7 @@ async def _get_popular_services(business_id: int, db) -> str:
         return ""
     
     try:
-        from app.models.models import OrderItem, Appointment
+        from app.models.models import OrderItem, Appointment, Order
         from sqlalchemy import func
 
         # Get top 3 ordered menu items
@@ -527,7 +527,7 @@ class NovaReasoningEngine:
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
-        self.model_id = "amazon.nova-lite-v1:0"
+        self.model_id = settings.BEDROCK_REASONING_MODEL
         
         # Initialize memory store
         self.memory_store = MemoryStore()
@@ -850,12 +850,15 @@ Return ONLY a JSON object with this format:
         messages = [{"role": "user", "content": [{"text": prompt}]}]
         
         try:
-            response = await self._invoke_nova_lite(prompt, messages)
+            response = await self._invoke_nova_lite(self._build_eval_system_prompt(), messages)
             result = self._parse_reasoning_response(response)
             return float(result.get("score", 0))
         except Exception as e:
             print(f"[Nova Evaluation] Error: {e}")
             return 0.0
+
+    def _build_eval_system_prompt(self) -> str:
+        return "You are an expert AI evaluator. Return only valid JSON with a 'score' (0-100) and 'reasoning' field."
 
     async def generate_synthetic_training_data(
         self,
@@ -881,14 +884,13 @@ Return ONLY a JSON list of objects:
   ...
 ]
 """
+        system_prompt = "You are a training data generator. Return only a valid JSON array of scenario objects."
         messages = [{"role": "user", "content": [{"text": prompt}]}]
         
         try:
-            response = await self._invoke_nova_lite(prompt, messages)
-            # Clean markdown if present
+            response = await self._invoke_nova_lite(system_prompt, messages)
             cleaned = re.sub(r'```json\s*', '', str(response), flags=re.IGNORECASE)
             cleaned = re.sub(r'```', '', cleaned, flags=re.IGNORECASE).strip()
-            
             return json.loads(cleaned)
         except Exception as e:
             print(f"[Nova Synthetic] Error: {e}")
@@ -1930,142 +1932,3 @@ Apply thorough multi-step reasoning to understand and address the customer's nee
 # Singleton instance
 nova_reasoning = NovaReasoningEngine()
 
-
-class CustomerMemoryStore:
-    """
-    Persistent memory store for customer information and preferences.
-    Enables long-term learning and personalization across sessions.
-    """
-    
-    def __init__(self):
-        self._memory_store: Dict[str, Dict[str, Any]] = {}
-        self._timestamps: Dict[str, datetime] = {}
-    
-    async def store_memory(
-        self,
-        customer_id: str,
-        memory_key: str,
-        memory_value: Any,
-        ttl_hours: Optional[int] = None
-    ):
-        """
-        Store customer memory with optional TTL.
-        
-        Args:
-            customer_id: Unique customer identifier
-            memory_key: Key for the memory entry
-            memory_value: Value to store
-            ttl_hours: Optional time-to-live in hours
-        """
-        if customer_id not in self._memory_store:
-            self._memory_store[customer_id] = {}
-        
-        self._memory_store[customer_id][memory_key] = {
-            "value": memory_value,
-            "stored_at": datetime.now().isoformat(),
-            "ttl_hours": ttl_hours
-        }
-        
-        self._timestamps[customer_id] = datetime.now()
-    
-    async def retrieve_memory(
-        self,
-        customer_id: str,
-        memory_key: Optional[str] = None
-    ) -> Dict[str, Any]:
-        """
-        Retrieve customer memory.
-        
-        Args:
-            customer_id: Unique customer identifier
-            memory_key: Optional specific key to retrieve, or all if None
-            
-        Returns:
-            Dictionary containing memory entries
-        """
-        if customer_id not in self._memory_store:
-            return {}
-        
-        memories = self._memory_store[customer_id]
-        
-        # Check TTL and clean expired entries
-        current_time = datetime.now()
-        valid_memories = {}
-        
-        for key, memory_data in memories.items():
-            if memory_key and key != memory_key:
-                continue
-            
-            # Check if memory has expired
-            if memory_data.get("ttl_hours"):
-                stored_time = datetime.fromisoformat(memory_data["stored_at"])
-                expiry_time = stored_time + timedelta(hours=memory_data["ttl_hours"])
-                if current_time > expiry_time:
-                    continue  # Skip expired memory
-            
-            valid_memories[key] = memory_data
-        
-        return valid_memories
-    
-    async def get_customer_context(
-        self,
-        customer_id: str
-    ) -> Dict[str, Any]:
-        """
-        Get comprehensive customer context from stored memories.
-        
-        Args:
-            customer_id: Unique customer identifier
-            
-        Returns:
-            Dictionary with customer context
-        """
-        memories = await self.retrieve_memory(customer_id)
-        
-        context = {
-            "customer_id": customer_id,
-            "stored_preferences": {},
-            "interaction_history": {},
-            "behavioral_patterns": {}
-        }
-        
-        for key, memory_data in memories.items():
-            value = memory_data["value"]
-            
-            if key.startswith("preference_"):
-                context["stored_preferences"][key.replace("preference_", "")] = value
-            elif key.startswith("history_"):
-                context["interaction_history"][key.replace("history_", "")] = value
-            elif key.startswith("pattern_"):
-                context["behavioral_patterns"][key.replace("pattern_", "")] = value
-        
-        return context
-    
-    async def cleanup_expired_memories(self):
-        """Clean up expired memories for all customers."""
-        current_time = datetime.now()
-        
-        for customer_id in list(self._memory_store.keys()):
-            memories = self._memory_store[customer_id]
-            valid_memories = {}
-            
-            for key, memory_data in memories.items():
-                if memory_data.get("ttl_hours"):
-                    stored_time = datetime.fromisoformat(memory_data["stored_at"])
-                    expiry_time = stored_time + timedelta(hours=memory_data["ttl_hours"])
-                    if current_time > expiry_time:
-                        continue  # Skip expired memory
-                
-                valid_memories[key] = memory_data
-            
-            if valid_memories:
-                self._memory_store[customer_id] = valid_memories
-            else:
-                # Remove customer entry if no valid memories
-                del self._memory_store[customer_id]
-                if customer_id in self._timestamps:
-                    del self._timestamps[customer_id]
-
-
-# Singleton memory store instance
-memory_store = CustomerMemoryStore()

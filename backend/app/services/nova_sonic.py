@@ -35,7 +35,7 @@ class NovaSonicHandler:
             aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
             aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY
         )
-        self.model_id = "amazon.nova-sonic-v1:0"
+        self.model_id = settings.BEDROCK_VOICE_MODEL
         
         # Audio configuration
         self.sample_rate = 16000  # 16kHz for voice
@@ -114,22 +114,15 @@ class NovaSonicHandler:
 
     async def process_audio_stream(
         self,
-        audio_stream: AsyncGenerator[bytes, None],
+        audio_stream,
         conversation_context: Optional[Dict[str, Any]] = None
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ):
         """
-        Process incoming audio stream and generate speech-to-speech responses.
-        
-        Args:
-            audio_stream: Async generator of audio chunks (PCM16 bytes)
-            conversation_context: Context about the conversation (history, customer info, etc.)
-            
-        Yields:
-            Dictionaries with response data:
-            - {"type": "transcript", "text": "..."}
-            - {"type": "audio", "data": bytes}
-            - {"type": "reasoning", "data": {...}}
-            - {"type": "complete", "transcript": "..."}
+        Batch audio pipeline: collect → transcribe (Transcribe) → reason (Nova Lite) → synthesize (Polly).
+
+        NOTE: This is the HTTP/batch fallback path used when a full WebSocket
+        streaming session (NovaSonicStreamSession) is not available.
+        For real-time bidirectional voice, use create_streaming_session() instead.
         """
         try:
             # Collect audio chunks
@@ -164,13 +157,13 @@ class NovaSonicHandler:
         self,
         audio_data: bytes,
         context: Optional[Dict[str, Any]] = None
-    ) -> AsyncGenerator[Dict[str, Any], None]:
+    ):
         """
-        Invoke Nova 2 Lite with multimodal audio input.
-        
-        This uses Nova's native multimodal capabilities to understand
-        speech directly from audio bytes, providing better accuracy
-        and lower latency than a separate STT step.
+        Batch STT → Nova Lite reasoning → Polly TTS pipeline.
+
+        This is the fallback implementation used when the native Nova Sonic
+        bidirectional streaming API (NovaSonicStreamSession) is unavailable.
+        It provides the same logical flow but with higher latency.
         """
         
         # Step 1: Use Nova Lite to understand the audio
@@ -206,6 +199,7 @@ class NovaSonicHandler:
                 # but Nova Lite should respond in the same language.
                 pass
 
+            from app.services.nova_reasoning import nova_reasoning
             reasoning_result = await nova_reasoning.reason(
                 conversation=transcript,
                 business_context=business_context,

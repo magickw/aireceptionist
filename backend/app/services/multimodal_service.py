@@ -190,25 +190,30 @@ Focus on details that would be relevant for a business receptionist AI assistant
     def _extract_text_from_document(self, content: bytes, file_type: str) -> str:
         """
         Extract text from document.
-        
-        Args:
-            content: File content
-            file_type: MIME type
-        
-        Returns:
-            Extracted text
         """
-        # Simple text extraction for supported formats
         if file_type == 'text/plain':
             return content.decode('utf-8', errors='ignore')
         elif file_type == 'application/pdf':
-            # Would need a PDF library like PyPDF2
-            return "[PDF content would be extracted here]"
-        elif file_type in ['application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
-            # Would need a Word document library like python-docx
-            return "[Word document content would be extracted here]"
-        else:
-            return "[Unable to extract text from this document type]"
+            try:
+                import pypdf
+                reader = pypdf.PdfReader(io.BytesIO(content))
+                return "\n".join(page.extract_text() or "" for page in reader.pages)
+            except ImportError:
+                try:
+                    import PyPDF2
+                    reader = PyPDF2.PdfReader(io.BytesIO(content))
+                    return "\n".join(page.extract_text() or "" for page in reader.pages)
+                except ImportError:
+                    return "[PDF extraction requires pypdf: pip install pypdf]"
+        elif file_type in ['application/msword',
+                           'application/vnd.openxmlformats-officedocument.wordprocessingml.document']:
+            try:
+                import docx
+                doc = docx.Document(io.BytesIO(content))
+                return "\n".join(para.text for para in doc.paragraphs)
+            except ImportError:
+                return "[Word extraction requires python-docx: pip install python-docx]"
+        return "[Unable to extract text from this document type]"
     
     def create_multimodal_context(
         self,
@@ -305,6 +310,17 @@ multimodal_service = MultimodalService()
 
 
 def process_uploaded_file(file: UploadFile, business_id: int, session_id: str) -> Dict[str, Any]:
-    """Convenience function for processing uploaded files"""
+    """Convenience function for processing uploaded files (sync wrapper)."""
     import asyncio
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    if loop and loop.is_running():
+        # Already inside an async context — callers should use await directly
+        raise RuntimeError(
+            "process_uploaded_file() cannot be called from an async context. "
+            "Use 'await multimodal_service.process_file(...)' instead."
+        )
     return asyncio.run(multimodal_service.process_file(file, business_id, session_id))
