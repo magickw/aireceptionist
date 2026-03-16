@@ -1931,4 +1931,3 @@ Apply thorough multi-step reasoning to understand and address the customer's nee
 
 # Singleton instance
 nova_reasoning = NovaReasoningEngine()
-
