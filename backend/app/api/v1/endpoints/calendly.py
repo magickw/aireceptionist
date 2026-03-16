@@ -12,11 +12,12 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request, Header
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 from pydantic import BaseModel
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from app.api import deps
 from app.services.calendly_service import calendly_service
-from app.models.models import CalendarIntegration
+from app.models.models import CalendarIntegration, Appointment as DBAppointment
+from app.schemas.appointment import AppointmentCreate
 
 
 router = APIRouter()
@@ -349,3 +350,99 @@ async def get_integration_status(
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.post("/{integration_id}/import")
+async def import_calendly_events(
+    integration_id: int,
+    business_id: int = Depends(deps.get_current_business_id),
+    db: Session = Depends(deps.get_db),
+    start_date: Optional[datetime] = Query(None, description="Start date for events to import"),
+    end_date: Optional[datetime] = Query(None, description="End date for events to import")
+):
+    """
+    Import events from Calendly into built-in appointments.
+    
+    This fetches scheduled events from Calendly and creates internal appointments.
+    """
+    # Get integration
+    integration = db.query(CalendarIntegration).filter(
+        CalendarIntegration.id == integration_id,
+        CalendarIntegration.business_id == business_id,
+        CalendarIntegration.provider == "calendly"
+    ).first()
+    
+    if not integration:
+        raise HTTPException(status_code=404, detail="Calendly integration not found")
+    
+    if integration.status != "active":
+        raise HTTPException(status_code=400, detail="Integration is not active")
+    
+    # Default to next 30 days if no date range provided
+    if not start_date:
+        start_date = datetime.now(timezone.utc)
+    if not end_date:
+        end_date = start_date + timedelta(days=30)
+    
+    try:
+        # Get scheduled events from Calendly
+        events = await calendly_service.get_scheduled_events(
+            integration, db, start_date, end_date
+        )
+        
+        imported_count = 0
+        failed_count = 0
+        failed_events = []
+        
+        for event in events:
+            try:
+                start_time_str = event.get("start_time")
+                if not start_time_str:
+                    continue
+                
+                start_time = datetime.fromisoformat(start_time_str.replace("Z", "+00:00"))
+                
+                # Get invitee info
+                invitee_name = event.get("name", "Unknown")
+                invitee_email = event.get("email", "")
+                event_type_name = event.get("event_type", {}).get("name", "Calendly Event")
+                
+                # Check for existing appointment to avoid duplicates
+                existing = db.query(DBAppointment).filter(
+                    DBAppointment.business_id == business_id,
+                    DBAppointment.appointment_time == start_time,
+                    DBAppointment.source == "calendly"
+                ).first()
+                
+                if existing:
+                    continue
+                
+                # Create appointment
+                appointment = DBAppointment(
+                    customer_name=invitee_name,
+                    customer_phone="",  # Calendly doesn't provide phone directly
+                    appointment_time=start_time,
+                    service_type=event_type_name,
+                    status="scheduled",
+                    business_id=business_id,
+                    source="calendly"
+                )
+                db.add(appointment)
+                imported_count += 1
+                
+            except Exception as e:
+                failed_count += 1
+                failed_events.append({"event": event.get("uri", "unknown"), "error": str(e)})
+        
+        db.commit()
+        
+        return {
+            "success": True,
+            "message": f"Successfully imported {imported_count} Calendly events",
+            "imported_count": imported_count,
+            "failed_count": failed_count,
+            "failed_events": failed_events
+        }
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to import Calendly events: {str(e)}")

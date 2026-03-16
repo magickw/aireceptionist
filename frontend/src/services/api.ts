@@ -295,6 +295,8 @@ export const calendlyApi = {
   deleteWebhook: (integrationId: number, subscriptionId: string) =>
     api.delete(`/calendly/${integrationId}/webhooks/${subscriptionId}`),
   getStatus: (integrationId: number) => api.get(`/calendly/${integrationId}/status`),
+  importEvents: (integrationId: number, startDate?: string, endDate?: string) =>
+    api.post(`/calendly/${integrationId}/import`, null, { params: { start_date: startDate, end_date: endDate } }),
 };
 
 // Business Types API

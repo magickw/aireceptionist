@@ -8,13 +8,13 @@ import {
   DialogTitle, DialogContent, DialogActions, TextField, MenuItem,
   Tooltip
 } from '@mui/material';
-import { Add, Delete, CalendarMonth, Google, Microsoft, Edit, CloudDownload } from '@mui/icons-material';
+import { Add, Delete, CalendarMonth, Google, Microsoft, Edit, CloudDownload, Event } from '@mui/icons-material';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { AdapterDayjs } from '@mui/x-date-pickers/AdapterDayjs';
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker';
 
 import dayjs, { Dayjs } from 'dayjs';
-import api, { calendarApi } from '@/services/api';
+import api, { calendarApi, calendlyApi } from '@/services/api';
 import { useAuth } from '@/context/AuthContext'; // Assuming AuthContext provides user/business info
 
 interface CalendarIntegration {
@@ -58,6 +58,8 @@ export default function CalendarPage() {
 
   const [integrations, setIntegrations] = useState<CalendarIntegration[]>([]);
   const [externalEvents, setExternalEvents] = useState<ExternalCalendarEvent[]>([]);
+  const [calendlyIntegration, setCalendlyIntegration] = useState<CalendarIntegration | null>(null);
+  const [calendlyEvents, setCalendlyEvents] = useState<ExternalCalendarEvent[]>([]);
   const [builtInAppointments, setBuiltInAppointments] = useState<BuiltInAppointment[]>([]);
   const [availableSlots, setAvailableSlots] = useState<AvailableSlot[]>([]);
 
@@ -128,7 +130,7 @@ export default function CalendarPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get(`/calendar-builtin/appointments?business_id=${businessId}`);
+      const response = await api.get(`/calendar-builtin/appointments/?business_id=${businessId}`);
       const filteredAppointments = response.data.filter((app: BuiltInAppointment) =>
         dayjs(app.appointment_time).isSame(selectedDate, 'day')
       );
@@ -146,7 +148,7 @@ export default function CalendarPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.get(`/calendar-builtin/availability?business_id=${businessId}&date_str=${selectedDate.format('YYYY-MM-DD')}`);
+      const response = await api.get(`/calendar-builtin/availability/?business_id=${businessId}&date_str=${selectedDate.format('YYYY-MM-DD')}`);
       setAvailableSlots(response.data);
     } catch (err: any) {
       console.error('Failed to fetch available slots:', err);
@@ -172,6 +174,34 @@ export default function CalendarPage() {
     fetchAvailableSlots();
   }, [selectedDate, fetchBuiltInAppointments, fetchAvailableSlots]);
 
+  // Fetch Calendly events when integration exists
+  useEffect(() => {
+    const fetchCalendlyData = async () => {
+      try {
+        const res = await calendarApi.list();
+        const calInt = res.data.integrations?.find((i: CalendarIntegration) => i.provider === 'calendly' && i.status === 'active');
+        if (calInt) {
+          setCalendlyIntegration(calInt);
+          // Fetch Calendly events
+          const eventsRes = await calendlyApi.getEvents(calInt.id, selectedDate.startOf('day').toISOString(), selectedDate.endOf('day').toISOString());
+          const events = eventsRes.data.events || [];
+          setCalendlyEvents(events.map((e: any) => ({
+            id: e.uri || e.id,
+            summary: `${e.invitee_name || 'Guest'} - ${e.event_type || 'Calendly Event'}`,
+            description: `Email: ${e.invitee_email || 'N/A'}`,
+            start: e.start_time,
+            end: e.end_time,
+            attendees: e.invitee_email ? [e.invitee_email] : [],
+            integration_id: calInt.id,
+          })));
+        }
+      } catch (err) {
+        console.error('Failed to fetch Calendly data:', err);
+      }
+    };
+    fetchCalendlyData();
+  }, [selectedDate]);
+
   // Handlers for External Calendar Integrations
   const handleConnectGoogle = async () => {
     try {
@@ -188,6 +218,15 @@ export default function CalendarPage() {
       window.location.href = res.data.auth_url;
     } catch (err: any) {
       setError(err.response?.data?.detail || 'Failed to initiate Microsoft connection');
+    }
+  };
+
+  const handleConnectCalendly = async () => {
+    try {
+      const res = await calendlyApi.connect();
+      window.location.href = res.data.auth_url;
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Failed to initiate Calendly connection');
     }
   };
 
@@ -223,7 +262,21 @@ export default function CalendarPage() {
     setLoading(true);
     setError(null);
     try {
-      const response = await api.post(`/calendar/import-events?integration_id=${selectedIntegrationForImport}&start_date=${importDateRange.start.toISOString()}&end_date=${importDateRange.end.toISOString()}`);
+      let response;
+      
+      // Check if it's a Calendly import (using negative ID as identifier)
+      if (selectedIntegrationForImport < 0 && calendlyIntegration) {
+        // Calendly import
+        response = await calendlyApi.importEvents(
+          calendlyIntegration.id,
+          importDateRange.start.toISOString(),
+          importDateRange.end.toISOString()
+        );
+      } else {
+        // Google/Microsoft import
+        response = await api.post(`/calendar/import-events?integration_id=${selectedIntegrationForImport}&start_date=${importDateRange.start.toISOString()}&end_date=${importDateRange.end.toISOString()}`);
+      }
+      
       alert(`Import complete: ${response.data.imported_count} imported, ${response.data.failed_count} failed.`);
       setImportDialogOpen(false);
       fetchBuiltInAppointments(); // Refresh built-in appointments
@@ -293,7 +346,7 @@ export default function CalendarPage() {
       if (currentBuiltInAppointment) {
         await api.put(`/calendar-builtin/appointments/${currentBuiltInAppointment.id}`, payload);
       } else {
-        await api.post('/calendar-builtin/appointments', payload);
+        await api.post('/calendar-builtin/appointments/', payload);
       }
       handleCloseAddEditBuiltInDialog();
       fetchBuiltInAppointments();
@@ -347,9 +400,20 @@ export default function CalendarPage() {
         source: integrations.find(int => int.id === event.integration_id)?.provider || 'Unknown',
         original: event,
       })),
+      ...calendlyEvents.map(event => ({
+        id: event.id,
+        summary: event.summary,
+        description: event.description,
+        start: event.start,
+        end: event.end,
+        attendees: event.attendees,
+        type: 'External',
+        source: 'calendly',
+        original: event,
+      })),
     ];
     return combined.sort((a, b) => dayjs(a.start).diff(dayjs(b.start)));
-  }, [builtInAppointments, externalEvents, integrations]);
+  }, [builtInAppointments, externalEvents, integrations, calendlyEvents]);
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
@@ -415,14 +479,34 @@ export default function CalendarPage() {
                     Connect Outlook
                   </Button>
                 </Grid>
+                <Grid item xs={12}>
+                  <Button 
+                    variant="outlined" 
+                    fullWidth 
+                    onClick={handleConnectCalendly} 
+                    startIcon={<Event />}
+                    color={calendlyIntegration ? 'success' : 'primary'}
+                  >
+                    {calendlyIntegration ? 'Calendly Connected' : 'Connect Calendly'}
+                  </Button>
+                </Grid>
               </Grid>
 
-              {integrations.length > 0 && (
+              {(integrations.length > 0 || calendlyIntegration) && (
                 <Box>
                   <Typography variant="subtitle2" sx={{ mt: 2, mb: 1 }}>Active Integrations:</Typography>
                   {integrations.map((int) => (
                     <Chip key={int.id} label={`${int.provider} (${int.status})`} size="small" sx={{ mr: 1, mb: 1 }} />
                   ))}
+                  {calendlyIntegration && (
+                    <Chip 
+                      key={calendlyIntegration.id} 
+                      label={`calendly (${calendlyIntegration.status})`} 
+                      size="small" 
+                      sx={{ mr: 1, mb: 1 }}
+                      color="success"
+                    />
+                  )}
                   <Button variant="contained" fullWidth startIcon={<CloudDownload />} sx={{ mt: 2 }} onClick={() => setImportDialogOpen(true)}>
                     Import External Events
                   </Button>
@@ -601,6 +685,11 @@ export default function CalendarPage() {
                 {integration.provider} - {integration.calendar_id || 'Primary'} ({integration.status})
               </MenuItem>
             ))}
+            {calendlyIntegration && (
+              <MenuItem key="calendly" value={-1}>
+                Calendly ({calendlyIntegration.status})
+              </MenuItem>
+            )}
           </TextField>
           {/* Direct import here as this is a client-side only form */}
           <LocalizationProvider dateAdapter={AdapterDayjs}>

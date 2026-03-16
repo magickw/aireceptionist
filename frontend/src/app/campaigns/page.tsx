@@ -52,7 +52,7 @@ export default function CampaignsPage() {
       if (bizResponse.data.length > 0) {
         const bid = bizResponse.data[0].id;
         setBusinessId(bid);
-        const response = await api.get(`/campaigns/stats?business_id=${bid}`);
+        const response = await api.get(`/campaigns/stats/overview?business_id=${bid}`);
         setStats(response.data);
       }
     } catch (err) {
