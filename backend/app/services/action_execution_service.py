@@ -119,19 +119,16 @@ class ActionExecutionService:
             
             if day_hours:
                 try:
-                    start_hour, start_minute = map(int, day_hours["start"].split(':'))
-                    end_hour, end_minute = map(int, day_hours["end"].split(':'))
-                    
-                    day_start = appointment_time.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
-                    day_end = appointment_time.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
-                    
+                    from app.services.calendar_service import _parse_day_hours
+                    sh, sm, eh, em = _parse_day_hours(day_hours)
+                    day_start = appointment_time.replace(hour=sh, minute=sm, second=0, microsecond=0)
+                    day_end = appointment_time.replace(hour=eh, minute=em, second=0, microsecond=0)
                     if not (day_start <= appointment_time < day_end):
                         return {
                             "success": False,
-                            "message": f"The requested time is outside our operating hours ({day_hours['start']} - {day_hours['end']}). Please choose a time during business hours."
+                            "message": f"The requested time is outside our operating hours ({sh:02d}:{sm:02d} - {eh:02d}:{em:02d}). Please choose a time during business hours."
                         }
                 except (KeyError, ValueError) as e:
-                    # If operating hours format is invalid, log but don't block
                     print(f"[ActionExecution] Invalid operating hours format: {e}")
 
         # Check no-show risk before booking
@@ -163,6 +160,41 @@ class ActionExecutionService:
         
         if not appointment_time:
             return {"available": False, "message": "Could not parse the date and time."}
+
+        # Validate against business operating hours before checking calendar
+        from app.models.models import Business
+        business = self.db.query(Business).filter(Business.id == business_id).first()
+        if business and business.operating_hours:
+            day_of_week = appointment_time.strftime('%A').lower()
+            day_hours = business.operating_hours.get(day_of_week)
+
+            if day_hours is None:
+                # Business is closed on this day entirely
+                suggestions = await smart_scheduling_service.suggest_optimal_times(
+                    self.db, business_id, context.get("customer_phone", ""), appointment_time
+                )
+                return {
+                    "available": False,
+                    "message": f"We are closed on {appointment_time.strftime('%A')}s. Please choose a day we are open.",
+                    "suggested_alternatives": suggestions.get("suggested_times", []),
+                }
+
+            try:
+                from app.services.calendar_service import _parse_day_hours
+                sh, sm, eh, em = _parse_day_hours(day_hours)
+                day_start = appointment_time.replace(hour=sh, minute=sm, second=0, microsecond=0)
+                day_end = appointment_time.replace(hour=eh, minute=em, second=0, microsecond=0)
+                if not (day_start <= appointment_time < day_end):
+                    suggestions = await smart_scheduling_service.suggest_optimal_times(
+                        self.db, business_id, context.get("customer_phone", ""), appointment_time
+                    )
+                    return {
+                        "available": False,
+                        "message": f"That time is outside our operating hours ({sh:02d}:{sm:02d} – {eh:02d}:{em:02d} on {appointment_time.strftime('%A')}s). Please choose a time during business hours.",
+                        "suggested_alternatives": suggestions.get("suggested_times", []),
+                    }
+            except (KeyError, ValueError) as e:
+                print(f"[ActionExecution] Invalid operating hours format: {e}")
 
         integration = self.db.query(CalendarIntegration).filter(
             CalendarIntegration.business_id == business_id,

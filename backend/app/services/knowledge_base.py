@@ -98,6 +98,8 @@ class KnowledgeBaseService:
             "inputText": text[:10000]  # Limit input size
         }
         
+        if not body["inputText"].strip():
+            return []
         response = self.bedrock_runtime.invoke_model(
             modelId=self.embedding_model_id,
             body=json.dumps(body)
@@ -276,18 +278,8 @@ class KnowledgeBaseService:
         db: Session,
         max_chars: int = 2000
     ) -> str:
-        """
-        Get relevant context from knowledge base for AI reasoning.
-        
-        Args:
-            query: User query
-            business_id: Business ID
-            db: Database session
-            max_chars: Maximum characters to return
-            
-        Returns:
-            Combined context string from relevant chunks
-        """
+        if not query or not query.strip():
+            return ""
         results = await self.search(query, business_id, db, top_k=5)
         
         if not results:

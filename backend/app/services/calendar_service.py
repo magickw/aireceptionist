@@ -19,6 +19,30 @@ from app.core.encryption import encryption_service
 from app.models.models import CalendarIntegration, Appointment, Business
 
 
+def _parse_day_hours(day_hours) -> tuple:
+    """
+    Parse operating hours for a single day into (start_hour, start_minute, end_hour, end_minute).
+
+    Accepts two formats stored in business.operating_hours:
+      - dict:   {"start": "09:00", "end": "17:00"}
+      - string: "09:00-17:00"
+
+    Returns (start_hour, start_minute, end_hour, end_minute) as ints,
+    or raises ValueError if the format is unrecognised.
+    """
+    if isinstance(day_hours, dict):
+        start_str = day_hours["start"]
+        end_str = day_hours["end"]
+    elif isinstance(day_hours, str) and "-" in day_hours:
+        start_str, end_str = day_hours.split("-", 1)
+    else:
+        raise ValueError(f"Unrecognised operating hours format: {day_hours!r}")
+
+    sh, sm = map(int, start_str.strip().split(":"))
+    eh, em = map(int, end_str.strip().split(":"))
+    return sh, sm, eh, em
+
+
 class CalendarService:
     """Service for calendar integrations"""
     
@@ -522,8 +546,7 @@ class CalendarService:
             business_hours = business.operating_hours.get(day_of_week, {"start": "09:00", "end": "17:00"})
             
         try:
-            start_hour, start_minute = map(int, business_hours["start"].split(':'))
-            end_hour, end_minute = map(int, business_hours["end"].split(':'))
+            start_hour, start_minute, end_hour, end_minute = _parse_day_hours(business_hours)
         except (KeyError, ValueError):
             start_hour, start_minute = 9, 0
             end_hour, end_minute = 17, 0
@@ -701,22 +724,21 @@ Booked via AI Receptionist
             
             if day_hours:
                 try:
-                    start_hour, start_minute = map(int, day_hours["start"].split(':'))
-                    end_hour, end_minute = map(int, day_hours["end"].split(':'))
-                    
+                    start_hour, start_minute, end_hour, end_minute = _parse_day_hours(day_hours)
                     day_start = start_time.replace(hour=start_hour, minute=start_minute, second=0, microsecond=0)
                     day_end = start_time.replace(hour=end_hour, minute=end_minute, second=0, microsecond=0)
                     
                     if not (day_start <= start_time < day_end):
+                        start_str = f"{start_hour:02d}:{start_minute:02d}"
+                        end_str = f"{end_hour:02d}:{end_minute:02d}"
                         return {
                             "success": False,
                             "appointment": None,
                             "calendar_event": None,
                             "conflicts": [],
-                            "message": f"The requested time is outside our operating hours ({day_hours['start']} - {day_hours['end']}). Please choose a time during business hours."
+                            "message": f"The requested time is outside our operating hours ({start_str} - {end_str}). Please choose a time during business hours."
                         }
                 except (KeyError, ValueError) as e:
-                    # If operating hours format is invalid, log but don't block
                     print(f"[Calendar Service] Invalid operating hours format: {e}")
         
         # Check local database conflicts first (all appointments)

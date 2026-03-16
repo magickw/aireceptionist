@@ -9,8 +9,10 @@ class AgentCore:
     For full multi-turn voice sessions use NovaReasoningEngine + NovaSonicStreamSession.
     """
 
-    def __init__(self, business_context: Optional[Dict[str, Any]] = None):
+    def __init__(self, business_context: Optional[Dict[str, Any]] = None, db=None, business_id: Optional[int] = None):
         ctx = business_context or {}
+        self._db = db
+        self._business_id = business_id or ctx.get("business_id")
         business_name = ctx.get("name", "this business")
         business_type = ctx.get("type", "general")
         services = ", ".join(ctx.get("services", [])) or "general services"
@@ -34,7 +36,7 @@ Keep responses under 2 sentences — suitable for voice."""
 
         self.messages: List[Dict[str, Any]] = []
 
-    def process_input(self, user_text: str) -> str:
+    async def process_input(self, user_text: str) -> str:
         self.messages.append({"role": "user", "content": [{"text": user_text}]})
 
         response_message = nova_service.generate_response(self.messages)
@@ -50,7 +52,7 @@ Keep responses under 2 sentences — suitable for voice."""
             if "text" in block:
                 text_parts.append(block["text"])
             elif "toolUse" in block:
-                tool_result = self._execute_tool(block["toolUse"])
+                tool_result = await self._execute_tool(block["toolUse"])
                 tool_results.append({
                     "toolResult": {
                         "toolUseId": block["toolUse"]["toolUseId"],
@@ -68,12 +70,17 @@ Keep responses under 2 sentences — suitable for voice."""
 
         return " ".join(text_parts).strip() or "I'm here to help. Could you please repeat that?"
 
-    def _execute_tool(self, tool_use: Dict[str, Any]) -> Dict[str, Any]:
+    async def _execute_tool(self, tool_use: Dict[str, Any]) -> Dict[str, Any]:
         """Dispatch tool calls to the appropriate handler."""
         name = tool_use.get("name", "")
         inputs = tool_use.get("input", {})
 
         if name == "check_availability":
+            # Delegate to ActionExecutionService so business hours are enforced
+            from app.services.action_execution_service import ActionExecutionService
+            if hasattr(self, "_db") and self._db and hasattr(self, "_business_id"):
+                svc = ActionExecutionService(self._db)
+                return await svc.execute_action("checkAvailability", inputs, self._business_id)
             return {"available": True, "message": f"The slot on {inputs.get('date')} at {inputs.get('time')} is available."}
         elif name == "book_appointment":
             return {

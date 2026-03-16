@@ -6,7 +6,7 @@ Provides custom report generation and data export
 from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Optional
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, desc
 import json
 
 
