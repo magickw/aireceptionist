@@ -163,7 +163,6 @@ export default function Header() {
         {!isAuthenticated && (
           <>
             {renderNavItem({ label: 'Home', href: '/' }, handleDrawerToggle)}
-            {renderNavItem({ label: 'Demo', href: '/call-simulator', icon: <PhoneIcon fontSize="small" /> }, handleDrawerToggle)}
             <Divider sx={{ my: 1 }} />
           </>
         )}
@@ -328,27 +327,6 @@ export default function Header() {
                   }}
                 >
                   Home
-                </Button>
-                <Button
-                  color="inherit"
-                  component={Link}
-                  href="/call-simulator"
-                  sx={{
-                    textTransform: 'none',
-                    fontSize: '0.875rem',
-                    fontWeight: 600,
-                    px: 1.5,
-                    py: 0.75,
-                    borderRadius: 10,
-                    minWidth: 'auto',
-                    transition: 'all 0.2s ease',
-                    '&:hover': {
-                      bgcolor: 'rgba(255,255,255,0.15)',
-                      transform: 'translateY(-1px)',
-                    },
-                  }}
-                >
-                  Demo
                 </Button>
               </>
             )}

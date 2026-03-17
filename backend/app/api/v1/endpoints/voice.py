@@ -562,15 +562,25 @@ async def voice_websocket(
                     _knowledge_ctx = await knowledge_base_service.get_relevant_context(
                         query="business services hours information", business_id=business_id, db=db, max_chars=1500
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[Voice WS] Knowledge base error: {e}")
+                    # Rollback to reset transaction state after SQL error
+                    # This prevents cascading failures on subsequent queries
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
                 try:
                     from app.services.nova_reasoning import get_training_context
                     _training_ctx = await get_training_context(
                         business_id=business_id, db=db
                     )
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[Voice WS] Training context error: {e}")
+                    try:
+                        db.rollback()
+                    except Exception:
+                        pass
 
             customer_context = {
                 "name": ws_session.get("customer_name") or "Unknown",
