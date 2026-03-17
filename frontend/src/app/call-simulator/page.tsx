@@ -253,6 +253,12 @@ export default function CallSimulator() {
       wsRef.current = ws;
 
       ws.onopen = () => {
+        // Guard: don't proceed if unmounted
+        if (unmountedRef.current) {
+          console.log('[CallSim] WebSocket opened but component unmounted, closing');
+          ws.close();
+          return;
+        }
         console.log('[CallSim] WebSocket connected');
         const token = localStorage.getItem('token');
         if (token) {
@@ -378,6 +384,12 @@ export default function CallSimulator() {
       switchToHttpFallback();
     }
   }, [switchToHttpFallback]);
+
+  // Reset unmounted flag on mount
+  useEffect(() => {
+    unmountedRef.current = false;
+    userEndedCallRef.current = false;
+  }, []);
 
   // Initial connection
   useEffect(() => {

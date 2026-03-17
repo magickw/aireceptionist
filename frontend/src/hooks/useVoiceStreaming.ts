@@ -81,13 +81,6 @@ export function useVoiceStreaming({
   const nextPlayTimeRef = useRef(0);
   const MAX_PLAYBACK_QUEUE_SIZE = 50;
 
-  // Mic level polling cleanup
-  useEffect(() => {
-    return () => {
-      if (levelTimerRef.current) cancelAnimationFrame(levelTimerRef.current);
-    };
-  }, []);
-
   const startRecording = useCallback(async () => {
     // Guard: don't start if already recording
     if (processorRef.current || mediaStreamRef.current) {
@@ -456,15 +449,36 @@ export function useVoiceStreaming({
 
   useEffect(() => {
     return () => {
+      // Stop mic level polling
+      if (levelTimerRef.current) {
+        cancelAnimationFrame(levelTimerRef.current);
+        levelTimerRef.current = null;
+      }
+      // Stop any active recording
       if (mediaStreamRef.current) {
         mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+        mediaStreamRef.current = null;
       }
+      if (processorRef.current) {
+        processorRef.current.disconnect();
+        processorRef.current = null;
+      }
+      if (analyserRef.current) {
+        analyserRef.current.disconnect();
+        analyserRef.current = null;
+      }
+      // Close audio contexts
       if (audioContextRef.current) {
         audioContextRef.current.close().catch(() => {});
+        audioContextRef.current = null;
       }
       if (playbackCtxRef.current) {
         playbackCtxRef.current.close().catch(() => {});
+        playbackCtxRef.current = null;
       }
+      // Clear playback queue
+      playbackQueueRef.current = [];
+      currentSourceRef.current = null;
     };
   }, []);
 
