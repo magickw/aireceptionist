@@ -140,6 +140,66 @@ async def startup_event():
                 conn.commit()
                 print("[Startup] Campaigns tables created successfully")
 
+            # E6: Ensure escalation contact columns exist in businesses table
+            escalation_columns = [
+                ('emergency_contact_name', 'VARCHAR(255)'),
+                ('emergency_contact_phone', 'VARCHAR(20)'),
+                ('emergency_contact_email', 'VARCHAR(255)'),
+                ('secondary_contact_name', 'VARCHAR(255)'),
+                ('secondary_contact_phone', 'VARCHAR(20)'),
+                ('escalation_priority', "VARCHAR(20) DEFAULT 'sms_then_push'"),
+            ]
+            for col_name, col_type in escalation_columns:
+                result = conn.execute(text(f"""
+                    SELECT EXISTS (
+                        SELECT FROM information_schema.columns 
+                        WHERE table_name = 'businesses' AND column_name = '{col_name}'
+                    )
+                """))
+                if not result.scalar():
+                    print(f"[Startup] Adding {col_name} column to businesses table...")
+                    conn.execute(text(f"ALTER TABLE businesses ADD COLUMN {col_name} {col_type}"))
+                    conn.commit()
+
+            # E6: Ensure escalations table exists
+            result = conn.execute(text("""
+                SELECT EXISTS (
+                    SELECT FROM information_schema.tables
+                    WHERE table_name = 'escalations'
+                )
+            """))
+            if not result.scalar():
+                print("[Startup] Creating escalations table...")
+                conn.execute(text("""
+                    CREATE TABLE escalations (
+                        id SERIAL PRIMARY KEY,
+                        business_id INTEGER NOT NULL REFERENCES businesses(id),
+                        call_session_id VARCHAR(100),
+                        customer_id INTEGER REFERENCES customers(id),
+                        state VARCHAR(20) DEFAULT 'triggered' NOT NULL,
+                        trigger_type VARCHAR(50) NOT NULL,
+                        severity VARCHAR(20) DEFAULT 'medium',
+                        trigger_reason TEXT,
+                        sla_deadline TIMESTAMP,
+                        sla_breached BOOLEAN DEFAULT FALSE,
+                        notification_channels VARCHAR[],
+                        primary_contact_notified_at TIMESTAMP,
+                        fallback_contact_notified_at TIMESTAMP,
+                        acknowledged_at TIMESTAMP,
+                        acknowledged_by INTEGER REFERENCES users(id),
+                        resolved_at TIMESTAMP,
+                        resolved_by INTEGER REFERENCES users(id),
+                        resolution_notes TEXT,
+                        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    )
+                """))
+                conn.execute(text("CREATE INDEX ix_escalations_business_id ON escalations(business_id)"))
+                conn.execute(text("CREATE INDEX ix_escalations_state ON escalations(state)"))
+                conn.execute(text("CREATE INDEX ix_escalations_sla_deadline ON escalations(sla_deadline)"))
+                conn.commit()
+                print("[Startup] Escalations table created successfully")
+
             # Clean up stale refresh tokens
             try:
                 result = conn.execute(text("""
