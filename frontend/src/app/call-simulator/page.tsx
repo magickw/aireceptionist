@@ -373,6 +373,22 @@ export default function CallSimulator() {
           console.log('[CallSim] Latency:', data.metrics);
         } else if (data.type === 'call_ended') {
           console.log('[CallSim] Call ended by server');
+          // Clean up call state when server ends the call
+          if (isRecording) stopRecordingRef.current?.();
+          stopPlaybackRef.current?.();
+          setCurrentCall(null);
+          setThoughts([]);
+          setStreamingText('');
+          setIsSpeaking(false);
+          setIsStreamingReady(false);
+          setSttPreview('');
+          setIsProcessing(false);
+          // Close WebSocket - server ended the call
+          if (wsRef.current) {
+            wsRef.current.onclose = null; // Prevent reconnection attempt
+            wsRef.current.close();
+            wsRef.current = null;
+          }
         } else if (data.type === 'error') {
           console.error('[CallSim] Backend error:', data.message);
           showSnackbarRef.current(`Error: ${data.message}`, 'error');
