@@ -89,8 +89,12 @@ export default function CallSimulator() {
     browserCompatibility,
   } = useVoiceStreaming({
     wsRef,
-    onPlaybackStart: () => setIsSpeaking(true),
+    onPlaybackStart: () => {
+      if (unmountedRef.current) return;
+      setIsSpeaking(true);
+    },
     onPlaybackEnd: () => {
+      if (unmountedRef.current) return;
       setIsSpeaking(false);
       // Auto-start recording after AI finishes speaking (phone-like UX)
       if (autoStartEnabledRef.current) {
@@ -101,6 +105,9 @@ export default function CallSimulator() {
         }
         // Small delay to let echo cancellation settle
         autoStartTimerRef.current = setTimeout(() => {
+          // Guard: don't proceed if component is unmounted
+          if (unmountedRef.current) return;
+
           if (autoStartEnabledRef.current && !isRecording) {
             console.log('[CallSim] Auto-starting recording after playback ended');
             startRecordingRef.current?.();
@@ -274,9 +281,11 @@ export default function CallSimulator() {
 
       ws.onclose = () => {
         console.log('[CallSim] WebSocket closed');
-        setIsStreamingReady(false);
 
+        // Guard: don't update state if component is unmounted
         if (unmountedRef.current || userEndedCallRef.current) return;
+
+        setIsStreamingReady(false);
 
         // Attempt reconnect
         if (reconnectAttemptsRef.current < MAX_RECONNECT_ATTEMPTS) {
@@ -300,6 +309,9 @@ export default function CallSimulator() {
       };
 
       ws.onmessage = (event) => {
+        // Guard: don't process messages if component is unmounted
+        if (unmountedRef.current) return;
+
         const data = JSON.parse(event.data);
         console.log('[CallSim] WS message type:', data.type, data);
 
@@ -370,6 +382,9 @@ export default function CallSimulator() {
 
       // Fallback to HTTP if WebSocket fails within 15 seconds
       wsFallbackTimerRef.current = setTimeout(() => {
+        // Guard: don't proceed if component is unmounted
+        if (unmountedRef.current) return;
+
         if (connectionStatusRef.current === 'connecting') {
           console.log('[CallSim] WebSocket timed out, switching to HTTP fallback');
           ws.close();

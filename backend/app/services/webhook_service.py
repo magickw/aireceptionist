@@ -39,7 +39,12 @@ class WebhookService:
         "customer.churn_risk",
         "automation.started",
         "automation.completed",
-        "automation.failed"
+        "automation.failed",
+        # Escalation events
+        "escalation.triggered",
+        "escalation.acknowledged", 
+        "escalation.resolved",
+        "human_intervention.requested",
     ]
     
     def __init__(self):

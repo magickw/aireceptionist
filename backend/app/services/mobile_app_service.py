@@ -26,6 +26,10 @@ class NotificationType(str, Enum):
     ALERT_HIGH_VOLUME = "alert_high_volume"
     ALERT_NEGATIVE_SENTIMENT = "alert_negative_sentiment"
     SYSTEM_UPDATE = "system_update"
+    # Escalation notifications
+    ESCALATION_TRIGGERED = "escalation_triggered"
+    HUMAN_INTERVENTION_REQUIRED = "human_intervention_required"
+    EMERGENCY_ALERT = "emergency_alert"
 
 
 class DevicePlatform(str, Enum):
@@ -101,6 +105,22 @@ class MobileAppService:
             "title": "System Update",
             "body_template": "{message}",
             "priority": "normal"
+        },
+        # Escalation notification templates
+        NotificationType.ESCALATION_TRIGGERED: {
+            "title": "⚠️ Escalation Required",
+            "body_template": "{trigger_type}: {reason}. Customer: {customer_phone}",
+            "priority": "high"
+        },
+        NotificationType.HUMAN_INTERVENTION_REQUIRED: {
+            "title": "🔴 Human Intervention Needed",
+            "body_template": "Customer {customer_phone} needs assistance. Reason: {reason}",
+            "priority": "high"
+        },
+        NotificationType.EMERGENCY_ALERT: {
+            "title": "🚨 EMERGENCY ALERT",
+            "body_template": "{trigger_type} detected from {customer_phone}. {reason}",
+            "priority": "high"
         }
     }
     

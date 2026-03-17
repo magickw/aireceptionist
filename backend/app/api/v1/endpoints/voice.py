@@ -200,10 +200,60 @@ async def _run_streaming_relay(
                 break
 
             if safety_trigger:
-                # Safety triggered — send canned response via Polly TTS fallback
+                # Safety triggered — handle escalation with customer messaging
+                
+                # 1. Send customer hold message first (reassuring the customer)
+                hold_message = "Please hold for just a moment while I connect you with a specialist. Someone will be with you shortly."
+                try:
+                    hold_audio = await nova_sonic._synthesize_speech(hold_message)
+                    await websocket.send_json({
+                        "type": "hold_status",
+                        "message": hold_message,
+                        "status": "connecting"
+                    })
+                    if hold_audio:
+                        await websocket.send_json({
+                            "type": "audio",
+                            "audio": nova_sonic.encode_audio_base64(hold_audio),
+                            "format": "pcm16",
+                            "sample_rate": 16000,
+                        })
+                    print(f"[Voice WS] Sent hold message to customer")
+                except Exception as e:
+                    print(f"[Voice WS] Error sending hold message: {e}")
+                
+                # 2. Send escalation notifications (SMS, push, webhook)
+                try:
+                    from app.services.escalation_service import escalation_service, EscalationLevel
+                    
+                    # Determine escalation level based on trigger type
+                    trigger_type = safety_trigger.get("trigger_type", "safety")
+                    requires_911 = safety_trigger.get("requires_911", False)
+                    
+                    escalation_level = EscalationLevel.EMERGENCY if requires_911 else EscalationLevel.HIGH
+                    
+                    # Get customer phone from session
+                    customer_phone = ws_session.get("customer_phone")
+                    
+                    # Send notifications asynchronously (don't block)
+                    asyncio.create_task(
+                        escalation_service.notify_escalation(
+                            db=db,
+                            business_id=business_id,
+                            trigger_type=trigger_type,
+                            reason=safety_trigger.get("reason", "Safety trigger"),
+                            context={"requires_911": requires_911},
+                            session_id=session_id,
+                            customer_phone=customer_phone,
+                            escalation_level=escalation_level
+                        )
+                    )
+                    print(f"[Voice WS] Escalation notification triggered: {trigger_type}")
+                except Exception as e:
+                    print(f"[Voice WS] Failed to send escalation notification: {e}")
+                
+                # 3. Send human intervention request to frontend
                 safety_response = safety_trigger.get("reason", "Transferring to human agent.")
-                # Synthesize safety response with Polly
-                audio_data = await nova_sonic._synthesize_speech(safety_response)
                 try:
                     await websocket.send_json({
                         "type": "human_intervention_request",
@@ -216,6 +266,8 @@ async def _run_streaming_relay(
                         "is_last": True,
                         "full_text": safety_response,
                     })
+                    # Synthesize and send safety response audio
+                    audio_data = await nova_sonic._synthesize_speech(safety_response)
                     if audio_data:
                         await websocket.send_json({
                             "type": "audio",
@@ -1799,7 +1851,7 @@ async def voice_websocket(
                 if relay_task and not relay_task.done():
                     relay_task.cancel()
                 summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if conversation_history else ""
-                _end_call_session(ws_session, session_id, summary, final_sentiment)
+                await _end_call_session(ws_session, session_id, summary, final_sentiment)
                 # Get a DB session for saving
                 from app.api.deps import get_db
                 db_gen = get_db()
@@ -1823,7 +1875,7 @@ async def voice_websocket(
         # Get a new DB session for cleanup
         db = next(get_db())
         summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
-        _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
+        await _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
         await _save_confirmed_order(ws_session, session_id, db)
         manager.disconnect(session_id)
         db.close()
@@ -1845,7 +1897,7 @@ async def voice_websocket(
         try:
             db = next(get_db())
             summary = " | ".join([f"{m['role']}: {m['content'][:100]}" for m in conversation_history[-5:]]) if 'conversation_history' in dir() and conversation_history else ""
-            _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
+            await _end_call_session(ws_session, session_id, summary, final_sentiment if 'final_sentiment' in dir() else "neutral")
             await _save_confirmed_order(ws_session, session_id, db)
             db.close()
         except Exception:
@@ -1941,7 +1993,7 @@ def _create_call_session(ws_session: Dict[str, Any], session_id: str) -> None:
             pass
 
 
-def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str = None, sentiment: str = None) -> None:
+async def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str = None, sentiment: str = None) -> None:
     """Update CallSession record when call ends and analyze quality."""
     try:
         from app.api.deps import get_db
@@ -1964,17 +2016,18 @@ def _end_call_session(ws_session: Dict[str, Any], session_id: str, summary: str 
             if sentiment:
                 call_session.sentiment = sentiment
 
-            # E2: Publish call_end event to event bus
+            # E2: Publish call_end event to event bus - AWAIT to ensure delivery
             try:
                 from app.services.event_bus import event_bus, session_registry
-                asyncio.create_task(event_bus.publish({
+                await event_bus.publish({
                     "type": "call_end",
                     "session_id": session_id,
                     "business_id": ws_session.get("business_id"),
                     "duration_seconds": call_session.duration_seconds,
                     "sentiment": sentiment,
-                }))
+                })
                 session_registry.deregister(session_id)
+                print(f"[Voice WS] call_end event published for session {session_id}")
             except Exception as eb_err:
                 print(f"[Voice WS] Event bus call_end error: {eb_err}")
 

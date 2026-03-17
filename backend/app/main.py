@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from slowapi.errors import RateLimitExceeded
-from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments, customer_360, revenue_analytics, smart_scheduling, builtin_calendar, campaigns, voice_personas, portal, dashboard_ws, calendly
+from app.api.v1.endpoints import auth, businesses, call_logs, appointments, analytics, integrations, twilio, voice, automation, customer_intelligence, knowledge_base, call_summaries, webhooks, calendar, sms, forecasting, email, chatbot, reports, sentiment, churn, voice_greetings, call_routing, ai_training, menu, business_types, orders, approvals, business_templates, multimodal, diagnostics, payments, customer_360, revenue_analytics, smart_scheduling, builtin_calendar, campaigns, voice_personas, portal, dashboard_ws, calendly, escalations
 from app.core.config import settings
 from app.core.exceptions import register_exception_handlers
 from app.core.middleware import RequestLoggingMiddleware
@@ -253,6 +253,7 @@ app.include_router(revenue_analytics.router, prefix=f"{settings.API_V1_STR}/reve
 app.include_router(smart_scheduling.router, prefix=f"{settings.API_V1_STR}/smart-scheduling", tags=["smart-scheduling"])
 app.include_router(campaigns.router, prefix=f"{settings.API_V1_STR}/campaigns", tags=["campaigns"])
 app.include_router(voice_personas.router, prefix=f"{settings.API_V1_STR}/voice-personas", tags=["voice-personas"])
+app.include_router(escalations.router, prefix=f"{settings.API_V1_STR}/escalations", tags=["escalations"])
 app.include_router(portal.router, prefix=f"{settings.API_V1_STR}/portal", tags=["portal"])
 app.include_router(dashboard_ws.router, prefix=f"{settings.API_V1_STR}", tags=["dashboard-ws"])
 app.include_router(calendly.router, prefix=f"{settings.API_V1_STR}/calendly", tags=["calendly"])

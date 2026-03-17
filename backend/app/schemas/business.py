@@ -58,6 +58,18 @@ class BusinessBase(BaseModel):
     operating_hours: Optional[dict] = None
     settings: Optional[dict] = None
     business_license: Optional[str] = None
+    
+    # Escalation contact fields
+    emergency_contact_name: Optional[str] = Field(None, max_length=255)
+    emergency_contact_phone: Optional[str] = Field(None, max_length=20)
+    emergency_contact_email: Optional[str] = Field(None, max_length=255)
+    fallback_contact_name: Optional[str] = Field(None, max_length=255)
+    fallback_contact_phone: Optional[str] = Field(None, max_length=20)
+    fallback_contact_email: Optional[str] = Field(None, max_length=255)
+    escalation_settings: Optional[dict] = Field(
+        None,
+        description="Settings for escalation behavior: notify_via_sms, notify_via_push, notify_via_email, fallback_timeout_seconds"
+    )
 
     @field_validator("type")
     @classmethod

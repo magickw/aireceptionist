@@ -57,6 +57,13 @@ class Business(Base):
     operating_hours = Column(JSON)
     business_license = Column(String(100))
     status = Column(String(20), default="active")
+    # Emergency/Escalation contacts
+    emergency_contact_name = Column(String(255))  # Primary contact name
+    emergency_contact_phone = Column(String(20))  # Primary contact phone (E.164 format)
+    emergency_contact_email = Column(String(255))  # Primary contact email
+    secondary_contact_name = Column(String(255))  # Fallback contact name
+    secondary_contact_phone = Column(String(20))  # Fallback contact phone
+    escalation_priority = Column(String(20), default="sms_then_push")  # sms, push, email, sms_then_push
     created_at = Column(DateTime, server_default=func.now())
     updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
 
@@ -789,3 +796,54 @@ class CustomerHistoryEmbedding(Base):
     
     business = relationship("Business", backref="customer_embeddings")
     call_session = relationship("CallSession", backref="embedding")
+
+
+class Escalation(Base):
+    """Escalation tracking with state machine for human intervention requests"""
+    __tablename__ = "escalations"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    business_id = Column(Integer, ForeignKey("businesses.id"), nullable=False)
+    call_session_id = Column(String(100), ForeignKey("call_sessions.id"))
+    
+    # State machine: triggered -> notified -> acknowledged -> resolved
+    state = Column(String(20), default="triggered", nullable=False, index=True)
+    
+    # Escalation details
+    trigger_type = Column(String(50), nullable=False)  # safety, complaint, vip, emergency, manual
+    severity = Column(String(20), default="medium")  # low, medium, high, emergency
+    reason = Column(Text, nullable=False)
+    context = Column(JSON)  # Full context (customer phone, transcript snippet, etc.)
+    
+    # Customer info
+    customer_phone = Column(String(20))
+    customer_name = Column(String(255))
+    
+    # Notification tracking
+    notified_contacts = Column(JSON)  # List of contacts that were notified
+    notification_channels = Column(JSON)  # ["sms", "push", "email", "webhook"]
+    
+    # Acknowledgment tracking
+    acknowledged_by = Column(Integer, ForeignKey("users.id"))
+    acknowledged_at = Column(DateTime)
+    acknowledgment_notes = Column(Text)
+    
+    # Resolution tracking
+    resolved_by = Column(Integer, ForeignKey("users.id"))
+    resolved_at = Column(DateTime)
+    resolution_notes = Column(Text)
+    resolution_action = Column(String(50))  # callback, transfer, handled_by_ai, dismissed
+    
+    # SLA tracking
+    sla_deadline = Column(DateTime)  # When escalation must be acknowledged
+    sla_breached = Column(Boolean, default=False)
+    
+    # Timestamps
+    created_at = Column(DateTime, server_default=func.now(), index=True)
+    updated_at = Column(DateTime, server_default=func.now(), onupdate=func.now())
+    
+    # Relationships
+    business = relationship("Business", backref="escalations")
+    call_session = relationship("CallSession", backref="escalations")
+    acknowledger = relationship("User", foreign_keys=[acknowledged_by])
+    resolver = relationship("User", foreign_keys=[resolved_by])
