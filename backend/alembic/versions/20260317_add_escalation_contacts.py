@@ -21,17 +21,15 @@ def upgrade():
     op.add_column('businesses', sa.Column('emergency_contact_name', sa.String(255), nullable=True))
     op.add_column('businesses', sa.Column('emergency_contact_phone', sa.String(20), nullable=True))
     op.add_column('businesses', sa.Column('emergency_contact_email', sa.String(255), nullable=True))
-    op.add_column('businesses', sa.Column('fallback_contact_name', sa.String(255), nullable=True))
-    op.add_column('businesses', sa.Column('fallback_contact_phone', sa.String(20), nullable=True))
-    op.add_column('businesses', sa.Column('fallback_contact_email', sa.String(255), nullable=True))
-    op.add_column('businesses', sa.Column('escalation_settings', JSON, nullable=True))
+    op.add_column('businesses', sa.Column('secondary_contact_name', sa.String(255), nullable=True))
+    op.add_column('businesses', sa.Column('secondary_contact_phone', sa.String(20), nullable=True))
+    op.add_column('businesses', sa.Column('escalation_priority', sa.String(20), nullable=True, server_default='sms_then_push'))
 
 
 def downgrade():
-    op.drop_column('businesses', 'escalation_settings')
-    op.drop_column('businesses', 'fallback_contact_email')
-    op.drop_column('businesses', 'fallback_contact_phone')
-    op.drop_column('businesses', 'fallback_contact_name')
+    op.drop_column('businesses', 'escalation_priority')
+    op.drop_column('businesses', 'secondary_contact_phone')
+    op.drop_column('businesses', 'secondary_contact_name')
     op.drop_column('businesses', 'emergency_contact_email')
     op.drop_column('businesses', 'emergency_contact_phone')
     op.drop_column('businesses', 'emergency_contact_name')
