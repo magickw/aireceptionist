@@ -75,6 +75,7 @@ export default function CallSimulator() {
   const stopPlaybackRef = useRef<(() => void) | null>(null);
   const autoStartEnabledRef = useRef(false);
   const autoStartTimerRef = useRef<NodeJS.Timeout | null>(null);
+  const wsFallbackTimerRef = useRef<NodeJS.Timeout | null>(null);
 
   // Voice streaming hook
   const {
@@ -362,7 +363,7 @@ export default function CallSimulator() {
       };
 
       // Fallback to HTTP if WebSocket fails within 15 seconds
-      setTimeout(() => {
+      wsFallbackTimerRef.current = setTimeout(() => {
         if (connectionStatusRef.current === 'connecting') {
           console.log('[CallSim] WebSocket timed out, switching to HTTP fallback');
           ws.close();
@@ -398,6 +399,10 @@ export default function CallSimulator() {
         clearTimeout(autoStartTimerRef.current);
         autoStartTimerRef.current = null;
       }
+      if (wsFallbackTimerRef.current) {
+        clearTimeout(wsFallbackTimerRef.current);
+        wsFallbackTimerRef.current = null;
+      }
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
         pollIntervalRef.current = null;
@@ -407,8 +412,15 @@ export default function CallSimulator() {
       stopRecordingRef.current?.();
       stopPlaybackRef.current?.();
 
-      // Close WebSocket
-      wsRef.current?.close();
+      // Close WebSocket - clear handlers first to prevent reconnection attempts
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.onerror = null;
+        wsRef.current.onmessage = null;
+        wsRef.current.onopen = null;
+        wsRef.current.close();
+        wsRef.current = null;
+      }
     };
   }, [connectWs]);
 
