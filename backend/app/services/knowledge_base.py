@@ -232,6 +232,7 @@ class KnowledgeBaseService:
             embedding_str = "[" + ",".join(map(str, query_embedding)) + "]"
             
             # Execute similarity search
+            # Use CAST() instead of :: for type casting with named parameters
             result = db.execute(
                 text("""
                     SELECT 
@@ -240,12 +241,12 @@ class KnowledgeBaseService:
                         dc.document_id,
                         kbd.file_name,
                         -- Cosine similarity (1 - cosine_distance)
-                        (1 - (dc.embedding <=> :embedding::vector)) as similarity
+                        (1 - (dc.embedding <=> CAST(:embedding AS vector))) as similarity
                     FROM document_chunks dc
                     JOIN knowledge_base_documents kbd ON dc.document_id = kbd.id
                     WHERE kbd.business_id = :business_id
                     AND kbd.status = 'complete'
-                    ORDER BY dc.embedding <=> :embedding::vector
+                    ORDER BY dc.embedding <=> CAST(:embedding AS vector)
                     LIMIT :top_k
                 """),
                 {

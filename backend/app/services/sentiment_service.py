@@ -164,9 +164,11 @@ Return only valid JSON."""
             return {"error": "Call not found"}
         
         # Analyze from transcript or summary
+        # Use getattr for transcript since the model may not have this field
         text_to_analyze = ""
-        if call.transcript:
-            text_to_analyze = call.transcript
+        transcript = getattr(call, 'transcript', None)
+        if transcript:
+            text_to_analyze = transcript
         elif call.summary:
             text_to_analyze = call.summary
         
@@ -289,8 +291,10 @@ Return only valid JSON."""
         scores = {}
         
         # 1. Sentiment Score (0-100)
-        if call.transcript and include_transcript_analysis:
-            sentiment_result = await self.analyze_text_ai(call.transcript, context="call quality assessment")
+        # Use getattr for transcript since the model may not have this field
+        call_transcript = getattr(call, 'transcript', None)
+        if call_transcript and include_transcript_analysis:
+            sentiment_result = await self.analyze_text_ai(call_transcript, context="call quality assessment")
             scores["sentiment"] = {
                 "score": int(sentiment_result.get("score", 0.5) * 100),
                 "sentiment": sentiment_result.get("sentiment"),
@@ -392,7 +396,9 @@ Return only valid JSON."""
     
     async def _predict_satisfaction(self, call, db: Session) -> int:
         """Predict customer satisfaction using AI"""
-        if not call.transcript:
+        # Use getattr for transcript since the model may not have this field
+        call_transcript = getattr(call, 'transcript', None)
+        if not call_transcript:
             return 50
         
         try:
@@ -403,7 +409,7 @@ Consider: issue resolution, tone, wait time mentions, repeated requests, gratitu
             response = self.bedrock_runtime.invoke_model(
                 modelId=self.model_id,
                 body=json.dumps({
-                    "messages": [{"role": "user", "content": [{"text": f"Transcript:\n{call.transcript[:2000]}"}]}],
+                    "messages": [{"role": "user", "content": [{"text": f"Transcript:\n{call_transcript[:2000]}"}]}],
                     "system": [{"text": system_prompt}],
                     "inferenceConfig": {"maxTokens": 200, "temperature": 0.1}
                 })
