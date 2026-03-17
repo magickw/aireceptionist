@@ -93,12 +93,18 @@ export default function CallSimulator() {
       setIsSpeaking(false);
       // Auto-start recording after AI finishes speaking (phone-like UX)
       if (autoStartEnabledRef.current) {
+        // Clear any existing timer first to prevent race conditions
+        if (autoStartTimerRef.current) {
+          clearTimeout(autoStartTimerRef.current);
+          autoStartTimerRef.current = null;
+        }
         // Small delay to let echo cancellation settle
         autoStartTimerRef.current = setTimeout(() => {
-          if (autoStartEnabledRef.current) {
+          if (autoStartEnabledRef.current && !isRecording) {
             console.log('[CallSim] Auto-starting recording after playback ended');
             startRecordingRef.current?.();
           }
+          autoStartTimerRef.current = null;
         }, 300);
       }
     },

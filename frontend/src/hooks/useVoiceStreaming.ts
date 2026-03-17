@@ -89,6 +89,12 @@ export function useVoiceStreaming({
   }, []);
 
   const startRecording = useCallback(async () => {
+    // Guard: don't start if already recording
+    if (processorRef.current || mediaStreamRef.current) {
+      console.log('[useVoiceStreaming] startRecording called but already recording, skipping');
+      return;
+    }
+    
     try {
       // 1. Mic capture
       const stream = await navigator.mediaDevices.getUserMedia({

@@ -490,6 +490,7 @@ async def voice_websocket(
     # === Audio Buffer for Batch Mode ===
     audio_buffer = b""  # Buffer to accumulate audio chunks in batch mode
     audio_buffer_threshold = 16000 * 1 * 2  # ~1 second of 16kHz PCM16 audio
+    processing_turn = False  # Guard against multiple concurrent transcriptions
 
     # === Nova Sonic Streaming Setup ===
     use_streaming = app_settings.NOVA_SONIC_STREAMING_ENABLED
@@ -1555,7 +1556,13 @@ async def voice_websocket(
             elif message_type == "audio_start":
                 # Mark beginning of user voice turn (streaming mode)
                 client_sample_rate = data.get("sample_rate")
-                print(f"[Voice WS] Received audio_start: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}, client_sample_rate={client_sample_rate}")
+                print(f"[Voice WS] Received audio_start: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}, client_sample_rate={client_sample_rate}, processing_turn={processing_turn}")
+                
+                # Guard against starting a new turn while one is being processed
+                if processing_turn:
+                    print(f"[Voice WS] Skipping audio_start - turn already being processed")
+                    continue
+                
                 if use_streaming and sonic_session and sonic_session.is_active:
                     await sonic_session.start_user_turn()
                     print(f"[Voice WS] Started user turn")
@@ -1571,20 +1578,31 @@ async def voice_websocket(
                     print(f"[Voice WS] Not using streaming mode, audio_start ignored")
 
             elif message_type == "audio_stop":
-                print(f"[Voice WS] Received audio_stop: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}")
+                print(f"[Voice WS] Received audio_stop: use_streaming={use_streaming}, sonic_session={bool(sonic_session)}, is_active={sonic_session.is_active if sonic_session else 'N/A'}, processing_turn={processing_turn}")
+                
+                # Guard against multiple concurrent transcription sessions
+                if processing_turn:
+                    print(f"[Voice WS] Skipping audio_stop - turn already being processed")
+                    continue
+                
                 if use_streaming and sonic_session and sonic_session.is_active:
                     # STREAMING PATH: end user turn triggers STT + model response
-                    await sonic_session.end_user_turn()
-                    # Send latency metrics after turn completes
-                    await asyncio.sleep(0.5)  # brief wait for metrics to populate
-                    metrics = sonic_session.latency.get_metrics()
-                    if metrics:
-                        await manager.send_json(session_id, {
-                            "type": "latency_metrics",
-                            "metrics": metrics,
-                        })
-                elif audio_buffer:
+                    processing_turn = True
+                    try:
+                        await sonic_session.end_user_turn()
+                        # Send latency metrics after turn completes
+                        await asyncio.sleep(0.5)  # brief wait for metrics to populate
+                        metrics = sonic_session.latency.get_metrics()
+                        if metrics:
+                            await manager.send_json(session_id, {
+                                "type": "latency_metrics",
+                                "metrics": metrics,
+                            })
+                    finally:
+                        processing_turn = False
+                elif audio_buffer and not processing_turn:
                     # BATCH FALLBACK: flush remaining audio buffer on stop
+                    processing_turn = True
                     try:
                         tracker = manager.latency_trackers.get(session_id)
                         if tracker:
@@ -1646,6 +1664,8 @@ async def voice_websocket(
                             "type": "error",
                             "message": f"Audio processing error: {str(e)}",
                         })
+                    finally:
+                        processing_turn = False
 
             elif message_type == "audio":
                 if use_streaming and sonic_session and sonic_session.is_active:
