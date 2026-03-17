@@ -62,9 +62,9 @@ export function useVoiceStreaming({
   const noiseFloorRef = useRef<number | null>(null); // Measured ambient noise level
   const calibrationSamplesRef = useRef<number[]>([]); // Samples during calibration phase
   const CALIBRATION_CHUNKS = 5; // Number of chunks to sample for noise floor (calibration phase)
-  const SPEECH_RATIO = 3.0; // Speech must be 3x above noise floor to be detected
+  const SPEECH_RATIO = 2.0; // Speech must be 2x above noise floor to be detected
   const SILENCE_RATIO = 1.5; // Below 1.5x noise floor is considered silence
-  const SILENCE_DURATION = 2500; // 2.5 seconds of silence after speech before auto-stop
+  const SILENCE_DURATION = 3500; // 3.5 seconds of silence after speech before auto-stop (allows for natural pauses)
   const MIN_RECORDING_DURATION = 1000; // 1 second minimum before allowing auto-stop
   const MIN_SPEECH_CHUNKS = 3; // Minimum consecutive chunks above speech threshold
   const MIN_SILENCE_CHUNKS = 5; // Minimum consecutive chunks below silence threshold
@@ -132,6 +132,11 @@ export function useVoiceStreaming({
       let chunkCount = 0;
 
       processor.onaudioprocess = (e) => {
+        // Guard: exit if processor has been disconnected
+        if (!processorRef.current) {
+          return;
+        }
+        
         const inputData = e.inputBuffer.getChannelData(0);
         chunkCount++;
         chunkCountRef.current = chunkCount;
@@ -213,8 +218,13 @@ export function useVoiceStreaming({
               }
             }
           } else {
-            // In between speech and silence thresholds - don't change counters
-            // This creates a hysteresis effect for more stable detection
+            // In between speech and silence thresholds
+            // Treat as "soft speech" - reset silence counter to prevent premature stop
+            // This handles trailing speech sounds and soft speaking
+            if (hasSpeechRef.current) {
+              silenceChunkCountRef.current = 0;
+              silenceStartRef.current = null;
+            }
           }
         }
 
@@ -257,9 +267,8 @@ export function useVoiceStreaming({
             content: base64
           }));
 
-          chunkCount++;
           if (chunkCount <= 3) {
-            console.log(`[useVoiceStreaming] Audio chunk #${chunkCount}: ${int16Data.length} samples, ${uint8View.length} bytes, avgLevel=${avgLevel.toFixed(4)}`);
+            console.log(`[useVoiceStreaming] Audio chunk #${chunkCount}: ${int16Data.length} samples, ${uint8View.length} bytes, rmsLevel=${rmsLevel.toFixed(4)}`);
           }
         }
       };
@@ -307,8 +316,17 @@ export function useVoiceStreaming({
   }, [wsRef]);
 
   const stopRecording = useCallback(() => {
-    // Reset silence timer
+    // Guard against multiple rapid calls
+    if (!processorRef.current && !mediaStreamRef.current) {
+      console.log('[useVoiceStreaming] stopRecording called but already stopped');
+      return;
+    }
+    
+    // Reset silence timer and speech detection state
     silenceStartRef.current = null;
+    hasSpeechRef.current = false;
+    speechChunkCountRef.current = 0;
+    silenceChunkCountRef.current = 0;
     
     // Send audio_stop to backend
     if (wsRef.current?.readyState === WebSocket.OPEN) {
