@@ -589,7 +589,7 @@ export default function Header() {
       <Drawer
         variant="temporary"
         anchor="left"
-        open={mobileOpen}
+        open={mobileOpen && isMobile}
         onClose={handleDrawerToggle}
         ModalProps={{
           keepMounted: true,
