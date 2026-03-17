@@ -27,6 +27,7 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [mounted, setMounted] = useState(false);
   const router = useRouter();
   const pathname = usePathname();
 
@@ -69,14 +70,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
   }, []);
 
+  // Set mounted state after hydration
   useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    // Only run after component is mounted (client-side)
+    if (!mounted) return;
+    
     const token = localStorage.getItem('token');
     if (token) {
       fetchUser();
     } else {
       setIsLoading(false);
     }
-  }, []);
+  }, [mounted]);
 
   // Set up keepalive ping every 4 minutes when user is authenticated
   useEffect(() => {

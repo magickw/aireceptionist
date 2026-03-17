@@ -47,6 +47,7 @@ export default function CallSimulator() {
 
   // Reconnect state
   const reconnectAttemptsRef = useRef(0);
+  const reconnectTimerRef = useRef<NodeJS.Timeout | null>(null);
   const userEndedCallRef = useRef(false);
   const unmountedRef = useRef(false);
   const MAX_RECONNECT_ATTEMPTS = 5;
@@ -70,6 +71,8 @@ export default function CallSimulator() {
 
   // Refs for auto-start recording (phone-like UX)
   const startRecordingRef = useRef<(() => Promise<void>) | null>(null);
+  const stopRecordingRef = useRef<(() => void) | null>(null);
+  const stopPlaybackRef = useRef<(() => void) | null>(null);
   const autoStartEnabledRef = useRef(false);
   const autoStartTimerRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -116,6 +119,8 @@ export default function CallSimulator() {
 
   // Keep refs in sync with latest values
   startRecordingRef.current = startRecording;
+  stopRecordingRef.current = stopRecording;
+  stopPlaybackRef.current = stopPlayback;
   autoStartEnabledRef.current = !!currentCall && inputMode === 'voice' && !userEndedCallRef.current;
 
   // Create HTTP session
@@ -268,7 +273,7 @@ export default function CallSimulator() {
           console.log(`[CallSim] Reconnecting in ${delay}ms (attempt ${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})`);
           setConnectionStatus('disconnected');
           showSnackbarRef.current(`Connection lost. Reconnecting (${attempt + 1}/${MAX_RECONNECT_ATTEMPTS})...`, 'warning');
-          setTimeout(() => connectWs(true), delay);
+          reconnectTimerRef.current = setTimeout(() => connectWs(true), delay);
         } else {
           console.log('[CallSim] Max reconnect attempts reached, falling back to HTTP');
           showSnackbarRef.current('Connection lost. Switched to HTTP fallback.', 'error');
@@ -374,12 +379,30 @@ export default function CallSimulator() {
     }
 
     return () => {
+      // Mark as unmounted to prevent state updates and reconnects
       unmountedRef.current = true;
       userEndedCallRef.current = true;
-      wsRef.current?.close();
+
+      // Clear any pending timers
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      if (autoStartTimerRef.current) {
+        clearTimeout(autoStartTimerRef.current);
+        autoStartTimerRef.current = null;
+      }
       if (pollIntervalRef.current) {
         clearInterval(pollIntervalRef.current);
+        pollIntervalRef.current = null;
       }
+
+      // Stop any active audio/recording
+      stopRecordingRef.current?.();
+      stopPlaybackRef.current?.();
+
+      // Close WebSocket
+      wsRef.current?.close();
     };
   }, [connectWs]);
 
