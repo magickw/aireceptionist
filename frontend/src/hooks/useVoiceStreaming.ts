@@ -32,6 +32,9 @@ export function useVoiceStreaming({
   const [isPlaying, setIsPlaying] = useState(false);
   const [micLevel, setMicLevel] = useState(0);
   const [browserCompatibility, setBrowserCompatibility] = useState<BrowserCompatibility | null>(null);
+  
+  // Track unmounted state to prevent state updates after cleanup
+  const unmountedRef = useRef(false);
 
   // Check browser compatibility on mount
   useEffect(() => {
@@ -359,6 +362,29 @@ export function useVoiceStreaming({
     setIsRecording(false);
   }, [wsRef]);
 
+  // Ref version of stopRecording for cleanup (no state updates)
+  const cleanupRecording = useCallback(() => {
+    silenceStartRef.current = null;
+    hasSpeechRef.current = false;
+    
+    if (processorRef.current) {
+      processorRef.current.disconnect();
+      processorRef.current = null;
+    }
+    if (mediaStreamRef.current) {
+      mediaStreamRef.current.getTracks().forEach((t) => t.stop());
+      mediaStreamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    if (levelTimerRef.current) {
+      cancelAnimationFrame(levelTimerRef.current);
+      levelTimerRef.current = null;
+    }
+  }, []);
+
   const getPlaybackCtx = useCallback(() => {
     if (!playbackCtxRef.current || playbackCtxRef.current.state === 'closed') {
       playbackCtxRef.current = new AudioContext();
@@ -373,8 +399,10 @@ export function useVoiceStreaming({
     if (isPlayingNextRef.current) return;
     const buf = playbackQueueRef.current.shift();
     if (!buf) {
-      setIsPlaying(false);
-      onPlaybackEnd?.();
+      if (!unmountedRef.current) {
+        setIsPlaying(false);
+        onPlaybackEnd?.();
+      }
       return;
     }
 
@@ -392,7 +420,10 @@ export function useVoiceStreaming({
     src.onended = () => {
       isPlayingNextRef.current = false;
       currentSourceRef.current = null;
-      scheduleNext();
+      // Only continue playback if not unmounted
+      if (!unmountedRef.current) {
+        scheduleNext();
+      }
     };
   }, [getPlaybackCtx, onPlaybackEnd]);
 
@@ -421,7 +452,7 @@ export function useVoiceStreaming({
         }
         playbackQueueRef.current.push(audioBuffer);
 
-        if (!isPlaying) {
+        if (!isPlaying && !unmountedRef.current) {
           setIsPlaying(true);
           onPlaybackStart?.();
           scheduleNext();
@@ -434,6 +465,9 @@ export function useVoiceStreaming({
   );
 
   const stopPlayback = useCallback(() => {
+    // Skip state updates if unmounted
+    if (unmountedRef.current) return;
+    
     playbackQueueRef.current = [];
     nextPlayTimeRef.current = 0;
     if (currentSourceRef.current) {
@@ -447,40 +481,41 @@ export function useVoiceStreaming({
     onPlaybackEnd?.();
   }, [onPlaybackEnd]);
 
+  // Ref version of stopPlayback for cleanup (no state updates or callbacks)
+  const cleanupPlayback = useCallback(() => {
+    playbackQueueRef.current = [];
+    nextPlayTimeRef.current = 0;
+    if (currentSourceRef.current) {
+      try {
+        currentSourceRef.current.stop();
+      } catch {}
+      currentSourceRef.current = null;
+    }
+    isPlayingNextRef.current = false;
+  }, []);
+
   useEffect(() => {
     return () => {
+      // Mark as unmounted first to prevent any state updates
+      unmountedRef.current = true;
+      
       // Stop mic level polling
       if (levelTimerRef.current) {
         cancelAnimationFrame(levelTimerRef.current);
         levelTimerRef.current = null;
       }
-      // Stop any active recording
-      if (mediaStreamRef.current) {
-        mediaStreamRef.current.getTracks().forEach((t) => t.stop());
-        mediaStreamRef.current = null;
-      }
-      if (processorRef.current) {
-        processorRef.current.disconnect();
-        processorRef.current = null;
-      }
-      if (analyserRef.current) {
-        analyserRef.current.disconnect();
-        analyserRef.current = null;
-      }
+      
+      // Use cleanup versions that don't trigger state updates
+      cleanupRecording();
+      cleanupPlayback();
+      
       // Close audio contexts
-      if (audioContextRef.current) {
-        audioContextRef.current.close().catch(() => {});
-        audioContextRef.current = null;
-      }
       if (playbackCtxRef.current) {
         playbackCtxRef.current.close().catch(() => {});
         playbackCtxRef.current = null;
       }
-      // Clear playback queue
-      playbackQueueRef.current = [];
-      currentSourceRef.current = null;
     };
-  }, []);
+  }, [cleanupRecording, cleanupPlayback]);
 
   return {
     isRecording,

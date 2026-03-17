@@ -480,6 +480,21 @@ export default function CallSimulator() {
     return () => document.removeEventListener('visibilitychange', handleVisibility);
   }, [showSnackbar]);
 
+  // E3: beforeunload - ensure WebSocket cleanup before page unload
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // Force cleanup on page unload
+      unmountedRef.current = true;
+      userEndedCallRef.current = true;
+      if (wsRef.current) {
+        wsRef.current.onclose = null;
+        wsRef.current.close();
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [currentCall?.messages, streamingText, sttPreview]);
