@@ -455,6 +455,15 @@ export default function CallSimulator() {
       stopRecordingRef.current?.();
       stopPlaybackRef.current?.();
 
+      // Send end_call to server before closing to ensure session cleanup
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ type: 'end_call' }));
+        } catch (e) {
+          // Ignore errors during cleanup
+        }
+      }
+
       // Close WebSocket - clear handlers first to prevent reconnection attempts
       if (wsRef.current) {
         wsRef.current.onclose = null;
@@ -483,6 +492,14 @@ export default function CallSimulator() {
   // E3: beforeunload - ensure WebSocket cleanup before page unload
   useEffect(() => {
     const handleBeforeUnload = () => {
+      // Send end_call message before closing to ensure server cleans up session
+      if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+        try {
+          wsRef.current.send(JSON.stringify({ type: 'end_call' }));
+        } catch (e) {
+          // Ignore errors during unload
+        }
+      }
       // Force cleanup on page unload
       unmountedRef.current = true;
       userEndedCallRef.current = true;
