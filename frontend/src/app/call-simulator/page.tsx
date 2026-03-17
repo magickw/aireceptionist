@@ -1,7 +1,7 @@
 'use client';
 import * as React from 'react';
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper, Chip, ToggleButtonGroup, ToggleButton, Tooltip, Snackbar, Alert, useTheme, useMediaQuery } from '@mui/material';
+import { Container, Typography, Box, Grid, Card, CardHeader, CardContent, TextField, IconButton, Button, List, ListItem, Paper, Chip, ToggleButtonGroup, ToggleButton, Tooltip, Snackbar, Alert, useTheme, useMediaQuery, CircularProgress } from '@mui/material';
 import SendIcon from '@mui/icons-material/Send';
 import MicIcon from '@mui/icons-material/Mic';
 import MicOffIcon from '@mui/icons-material/MicOff';
@@ -12,6 +12,7 @@ import VoiceVisualizer from '@/components/VoiceVisualizer';
 import { getWebSocketUrl } from '@/services/api';
 import api from '@/services/api';
 import { useVoiceStreaming } from '@/hooks/useVoiceStreaming';
+import { useAuth } from '@/context/AuthContext';
 
 interface SnackbarState {
   open: boolean;
@@ -22,6 +23,7 @@ interface SnackbarState {
 export default function CallSimulator() {
   const theme = useTheme();
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+  const { isAuthenticated, isLoading: authLoading } = useAuth();
 
   const [currentCall, setCurrentCall] = useState<any>(null);
   const [messageInput, setMessageInput] = useState('');
@@ -422,11 +424,14 @@ export default function CallSimulator() {
     userEndedCallRef.current = false;
   }, []);
 
-  // Initial connection
+  // Initial connection - only connect if authenticated
   useEffect(() => {
-    if (typeof window !== 'undefined') {
-      connectWs();
+    // Don't connect if still loading auth or not authenticated
+    if (typeof window === 'undefined' || authLoading || !isAuthenticated) {
+      return;
     }
+
+    connectWs();
 
     return () => {
       // Mark as unmounted to prevent state updates and reconnects
@@ -585,6 +590,20 @@ export default function CallSimulator() {
   };
 
   const micButtonSize = isMobile ? 72 : 56;
+
+  // Show loading while checking auth
+  if (authLoading) {
+    return (
+      <Container maxWidth="xl" sx={{ mt: 4, mb: 4, display: 'flex', justifyContent: 'center', alignItems: 'center', minHeight: '50vh' }}>
+        <CircularProgress />
+      </Container>
+    );
+  }
+
+  // Don't render if not authenticated (ProtectedRoute should redirect, but this is a safety check)
+  if (!isAuthenticated) {
+    return null;
+  }
 
   return (
     <Container maxWidth="xl" sx={{ mt: 4, mb: 4 }}>
