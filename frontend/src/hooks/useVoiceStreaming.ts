@@ -57,9 +57,12 @@ export function useVoiceStreaming({
   const recordingStartRef = useRef<number | null>(null);
   const hasSpeechRef = useRef(false); // Track whether user has spoken during this recording
   const audioBufferRef = useRef<Int16Array[]>([]);
-  const SILENCE_THRESHOLD = 0.006; // Lower threshold — only true silence triggers, not soft speech or breathing
-  const SILENCE_DURATION = 2500; // 2.5 seconds of continuous silence after speech before auto-stop (allows for natural pauses)
-  const MIN_RECORDING_DURATION = 800; // 0.8 seconds minimum before allowing auto-stop (requires more speech before stopping)
+  const SILENCE_THRESHOLD = 0.002; // Lower threshold - actual speech often shows as 0.001-0.007
+  const SILENCE_DURATION = 3000; // 3 seconds of continuous silence after speech before auto-stop (allows for natural pauses)
+  const MIN_RECORDING_DURATION = 1200; // 1.2 seconds minimum before allowing auto-stop
+  const SPEECH_SUSTAINED_THRESHOLD = 0.001; // For sustained speech detection (lower than silence threshold)
+  const speechChunkCountRef = useRef(0); // Track consecutive speech chunks
+  const silenceChunkCountRef = useRef(0); // Track consecutive silence chunks
 
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
@@ -135,35 +138,52 @@ export function useVoiceStreaming({
         // Debug logging for silence detection (every 10 chunks)
         if (chunkCount % 10 === 0 && chunkCount > 0) {
           const silenceDuration = silenceStartRef.current ? Date.now() - silenceStartRef.current : 0;
-          console.log(`[useVoiceStreaming] Chunk #${chunkCount}: avgLevel=${avgLevel.toFixed(5)}, threshold=${SILENCE_THRESHOLD.toFixed(5)}, hasSpeech=${hasSpeechRef.current}, silenceDuration=${silenceDuration}ms`);
+          console.log(`[useVoiceStreaming] Chunk #${chunkCount}: avgLevel=${avgLevel.toFixed(5)}, threshold=${SILENCE_THRESHOLD.toFixed(5)}, hasSpeech=${hasSpeechRef.current}, silenceDuration=${silenceDuration}ms, speechChunks=${speechChunkCountRef.current}, silenceChunks=${silenceChunkCountRef.current}`);
         }
 
-        // Silence detection — only auto-stop AFTER speech has been detected
-        // Use a sliding window approach: silence must be sustained over multiple chunks
-        if (avgLevel < SILENCE_THRESHOLD) {
-          if (hasSpeechRef.current) {
-            // Speech was detected previously, now it's silent — start/continue silence timer
-            if (silenceStartRef.current === null) {
-              silenceStartRef.current = Date.now();
-              console.log(`[useVoiceStreaming] Silence started at ${silenceStartRef.current}`);
-            } else {
-              const silenceDuration = Date.now() - silenceStartRef.current;
-              const recordingDuration = recordingStartRef.current ? Date.now() - recordingStartRef.current : 0;
-              if (recordingDuration >= MIN_RECORDING_DURATION && silenceDuration > SILENCE_DURATION) {
-                console.log(`[useVoiceStreaming] Silence after speech detected (${silenceDuration}ms), auto-stopping`);
-                stopRecording();
-                return;
-              }
-            }
-          }
-          // If no speech yet, just keep waiting (don't start silence timer)
-        } else {
-          // Sound detected — mark that speech has occurred, reset silence timer
-          // Only reset if the audio level is significantly above the threshold (not just marginal)
-          if (avgLevel > SILENCE_THRESHOLD * 1.5) {
+        // Robust silence detection using consecutive chunk counting
+        // This prevents false positives from momentary dips in audio level
+        const isSpeechChunk = avgLevel >= SPEECH_SUSTAINED_THRESHOLD;
+        const isSilentChunk = avgLevel < SILENCE_THRESHOLD;
+        
+        if (isSpeechChunk) {
+          // Speech detected - increment speech chunk counter
+          speechChunkCountRef.current++;
+          silenceChunkCountRef.current = 0;
+          
+          // Require at least 3 consecutive speech chunks before considering it "speech"
+          // This filters out brief noise spikes
+          if (speechChunkCountRef.current >= 3) {
             hasSpeechRef.current = true;
             silenceStartRef.current = null;
           }
+        } else if (isSilentChunk) {
+          // Silence detected - increment silence chunk counter
+          silenceChunkCountRef.current++;
+          speechChunkCountRef.current = 0;
+          
+          if (hasSpeechRef.current) {
+            // Speech was detected previously, now tracking silence
+            // Require at least 5 consecutive silent chunks (~100ms at 4096 samples/chunk)
+            // before starting the silence timer
+            if (silenceChunkCountRef.current >= 5) {
+              if (silenceStartRef.current === null) {
+                silenceStartRef.current = Date.now();
+                console.log(`[useVoiceStreaming] Silence started at ${silenceStartRef.current}`);
+              } else {
+                const silenceDuration = Date.now() - silenceStartRef.current;
+                const recordingDuration = recordingStartRef.current ? Date.now() - recordingStartRef.current : 0;
+                if (recordingDuration >= MIN_RECORDING_DURATION && silenceDuration > SILENCE_DURATION) {
+                  console.log(`[useVoiceStreaming] Silence after speech detected (${silenceDuration}ms), auto-stopping`);
+                  stopRecording();
+                  return;
+                }
+              }
+            }
+          }
+        } else {
+          // In between - reset both counters but don't change state
+          silenceChunkCountRef.current = 0;
         }
 
         // Resample to 16kHz if the AudioContext is at a different rate
@@ -237,6 +257,8 @@ export function useVoiceStreaming({
       setIsRecording(true);
       recordingStartRef.current = Date.now();
       hasSpeechRef.current = false; // Reset speech detection for new recording
+      speechChunkCountRef.current = 0; // Reset speech chunk counter
+      silenceChunkCountRef.current = 0; // Reset silence chunk counter
     } catch (err: any) {
       console.error('[useVoiceStreaming] Microphone access denied:', err);
       if (err?.name === 'NotAllowedError') {
