@@ -57,12 +57,21 @@ export function useVoiceStreaming({
   const recordingStartRef = useRef<number | null>(null);
   const hasSpeechRef = useRef(false); // Track whether user has spoken during this recording
   const audioBufferRef = useRef<Int16Array[]>([]);
-  const SILENCE_THRESHOLD = 0.002; // Lower threshold - actual speech often shows as 0.001-0.007
-  const SILENCE_DURATION = 3000; // 3 seconds of continuous silence after speech before auto-stop (allows for natural pauses)
-  const MIN_RECORDING_DURATION = 1200; // 1.2 seconds minimum before allowing auto-stop
-  const SPEECH_SUSTAINED_THRESHOLD = 0.001; // For sustained speech detection (lower than silence threshold)
+  
+  // Dynamic noise floor detection - adapts to environment
+  const noiseFloorRef = useRef<number | null>(null); // Measured ambient noise level
+  const calibrationSamplesRef = useRef<number[]>([]); // Samples during calibration phase
+  const CALIBRATION_CHUNKS = 5; // Number of chunks to sample for noise floor (calibration phase)
+  const SPEECH_RATIO = 3.0; // Speech must be 3x above noise floor to be detected
+  const SILENCE_RATIO = 1.5; // Below 1.5x noise floor is considered silence
+  const SILENCE_DURATION = 2500; // 2.5 seconds of silence after speech before auto-stop
+  const MIN_RECORDING_DURATION = 1000; // 1 second minimum before allowing auto-stop
+  const MIN_SPEECH_CHUNKS = 3; // Minimum consecutive chunks above speech threshold
+  const MIN_SILENCE_CHUNKS = 5; // Minimum consecutive chunks below silence threshold
+  
   const speechChunkCountRef = useRef(0); // Track consecutive speech chunks
   const silenceChunkCountRef = useRef(0); // Track consecutive silence chunks
+  const chunkCountRef = useRef(0); // Total chunk count for calibration
 
   // Playback queue
   const playbackCtxRef = useRef<AudioContext | null>(null);
@@ -124,66 +133,89 @@ export function useVoiceStreaming({
 
       processor.onaudioprocess = (e) => {
         const inputData = e.inputBuffer.getChannelData(0);
+        chunkCount++;
+        chunkCountRef.current = chunkCount;
 
-        // Calculate audio level for silence detection using a sliding window
-        // Check the last ~100ms of audio (at 16kHz = 1600 samples) to detect silence
+        // Calculate audio level using RMS (more accurate for speech detection)
         const windowSize = Math.min(inputData.length, 1600); // 100ms window at 16kHz
         const startIndex = Math.max(0, inputData.length - windowSize);
-        let sum = 0;
+        let sumSq = 0;
         for (let i = startIndex; i < inputData.length; i++) {
-          sum += Math.abs(inputData[i]);
+          sumSq += inputData[i] * inputData[i];
         }
-        const avgLevel = sum / windowSize;
+        const rmsLevel = Math.sqrt(sumSq / windowSize);
 
-        // Debug logging for silence detection (every 10 chunks)
-        if (chunkCount % 10 === 0 && chunkCount > 0) {
-          const silenceDuration = silenceStartRef.current ? Date.now() - silenceStartRef.current : 0;
-          console.log(`[useVoiceStreaming] Chunk #${chunkCount}: avgLevel=${avgLevel.toFixed(5)}, threshold=${SILENCE_THRESHOLD.toFixed(5)}, hasSpeech=${hasSpeechRef.current}, silenceDuration=${silenceDuration}ms, speechChunks=${speechChunkCountRef.current}, silenceChunks=${silenceChunkCountRef.current}`);
-        }
-
-        // Robust silence detection using consecutive chunk counting
-        // This prevents false positives from momentary dips in audio level
-        const isSpeechChunk = avgLevel >= SPEECH_SUSTAINED_THRESHOLD;
-        const isSilentChunk = avgLevel < SILENCE_THRESHOLD;
-        
-        if (isSpeechChunk) {
-          // Speech detected - increment speech chunk counter
-          speechChunkCountRef.current++;
-          silenceChunkCountRef.current = 0;
+        // === CALIBRATION PHASE ===
+        // Collect initial samples to measure ambient noise floor
+        if (noiseFloorRef.current === null) {
+          calibrationSamplesRef.current.push(rmsLevel);
           
-          // Require at least 3 consecutive speech chunks before considering it "speech"
-          // This filters out brief noise spikes
-          if (speechChunkCountRef.current >= 3) {
-            hasSpeechRef.current = true;
-            silenceStartRef.current = null;
+          if (calibrationSamplesRef.current.length >= CALIBRATION_CHUNKS) {
+            // Calculate noise floor from calibration samples
+            // Use median to filter out any brief sounds during calibration
+            const sorted = [...calibrationSamplesRef.current].sort((a, b) => a - b);
+            const median = sorted[Math.floor(sorted.length / 2)];
+            noiseFloorRef.current = Math.max(median, 0.0005); // Minimum floor of 0.0005
+            console.log(`[useVoiceStreaming] Noise floor calibrated: ${noiseFloorRef.current.toFixed(6)}`);
           }
-        } else if (isSilentChunk) {
-          // Silence detected - increment silence chunk counter
-          silenceChunkCountRef.current++;
-          speechChunkCountRef.current = 0;
           
-          if (hasSpeechRef.current) {
-            // Speech was detected previously, now tracking silence
-            // Require at least 5 consecutive silent chunks (~100ms at 4096 samples/chunk)
-            // before starting the silence timer
-            if (silenceChunkCountRef.current >= 5) {
-              if (silenceStartRef.current === null) {
-                silenceStartRef.current = Date.now();
-                console.log(`[useVoiceStreaming] Silence started at ${silenceStartRef.current}`);
-              } else {
-                const silenceDuration = Date.now() - silenceStartRef.current;
-                const recordingDuration = recordingStartRef.current ? Date.now() - recordingStartRef.current : 0;
-                if (recordingDuration >= MIN_RECORDING_DURATION && silenceDuration > SILENCE_DURATION) {
-                  console.log(`[useVoiceStreaming] Silence after speech detected (${silenceDuration}ms), auto-stopping`);
-                  stopRecording();
-                  return;
+          // During calibration, just send audio but don't process speech/silence
+          // Continue to resampling section below
+        } else {
+          // === NORMAL OPERATION WITH DYNAMIC THRESHOLDS ===
+          const noiseFloor = noiseFloorRef.current;
+          const speechThreshold = noiseFloor * SPEECH_RATIO;
+          const silenceThreshold = noiseFloor * SILENCE_RATIO;
+          
+          // Debug logging (every 10 chunks)
+          if (chunkCount % 10 === 0) {
+            const silenceDuration = silenceStartRef.current ? Date.now() - silenceStartRef.current : 0;
+            console.log(`[useVoiceStreaming] Chunk #${chunkCount}: rms=${rmsLevel.toFixed(6)}, noiseFloor=${noiseFloor.toFixed(6)}, speechThresh=${speechThreshold.toFixed(6)}, silenceThresh=${silenceThreshold.toFixed(6)}, hasSpeech=${hasSpeechRef.current}, silenceMs=${silenceDuration}`);
+          }
+
+          // Determine if this chunk is speech or silence based on dynamic thresholds
+          const isSpeechChunk = rmsLevel >= speechThreshold;
+          const isSilentChunk = rmsLevel < silenceThreshold;
+          
+          if (isSpeechChunk) {
+            // Speech detected - increment speech chunk counter
+            speechChunkCountRef.current++;
+            silenceChunkCountRef.current = 0;
+            
+            // Require minimum consecutive speech chunks to confirm speech
+            if (speechChunkCountRef.current >= MIN_SPEECH_CHUNKS) {
+              if (!hasSpeechRef.current) {
+                console.log(`[useVoiceStreaming] Speech confirmed after ${speechChunkCountRef.current} chunks`);
+              }
+              hasSpeechRef.current = true;
+              silenceStartRef.current = null;
+            }
+          } else if (isSilentChunk) {
+            // Silence detected - increment silence chunk counter
+            silenceChunkCountRef.current++;
+            speechChunkCountRef.current = 0;
+            
+            if (hasSpeechRef.current) {
+              // Speech was detected previously, now tracking silence
+              if (silenceChunkCountRef.current >= MIN_SILENCE_CHUNKS) {
+                if (silenceStartRef.current === null) {
+                  silenceStartRef.current = Date.now();
+                  console.log(`[useVoiceStreaming] Silence started (below ${silenceThreshold.toFixed(6)})`);
+                } else {
+                  const silenceDuration = Date.now() - silenceStartRef.current;
+                  const recordingDuration = recordingStartRef.current ? Date.now() - recordingStartRef.current : 0;
+                  if (recordingDuration >= MIN_RECORDING_DURATION && silenceDuration > SILENCE_DURATION) {
+                    console.log(`[useVoiceStreaming] Auto-stop: ${silenceDuration}ms silence after speech`);
+                    stopRecording();
+                    return;
+                  }
                 }
               }
             }
+          } else {
+            // In between speech and silence thresholds - don't change counters
+            // This creates a hysteresis effect for more stable detection
           }
-        } else {
-          // In between - reset both counters but don't change state
-          silenceChunkCountRef.current = 0;
         }
 
         // Resample to 16kHz if the AudioContext is at a different rate
@@ -259,6 +291,9 @@ export function useVoiceStreaming({
       hasSpeechRef.current = false; // Reset speech detection for new recording
       speechChunkCountRef.current = 0; // Reset speech chunk counter
       silenceChunkCountRef.current = 0; // Reset silence chunk counter
+      noiseFloorRef.current = null; // Reset noise floor for recalibration
+      calibrationSamplesRef.current = []; // Reset calibration samples
+      chunkCountRef.current = 0; // Reset chunk count
     } catch (err: any) {
       console.error('[useVoiceStreaming] Microphone access denied:', err);
       if (err?.name === 'NotAllowedError') {
